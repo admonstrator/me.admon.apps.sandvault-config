@@ -191,9 +191,13 @@ public enum TerminalLaunch {
             ], command)
         case .ghostty:
             // Ghostty runs a `--command` string through a shell, so the zsh invocation is quoted once more.
+            // Without `--window-save-state=never` the new instance restores the saved windows, which run the
+            // default shell, instead of opening one window with the command.
             let keepOpen = command + "; exec \"$SHELL\" -l"
             return CommandInvocation("/usr/bin/open", [
-                "-na", "Ghostty", "--args", "--command=/bin/zsh -lc " + ShellQuoting.quote(keepOpen),
+                "-na", "Ghostty.app", "--args",
+                "--window-save-state=never", "--quit-after-last-window-closed=true",
+                "--command=/bin/zsh -lc " + ShellQuoting.quote(keepOpen),
             ], timeout: 30)
         }
     }

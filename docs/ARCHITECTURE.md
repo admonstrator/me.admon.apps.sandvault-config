@@ -374,7 +374,7 @@ protocols of `WorkflowModels.swift`; the concrete types are public for callers t
 
 | Protocol | Type | Runs |
 |---|---|---|
-| `HandoffService` | `RepositoryHandoff` (`readiness(of:)`, `handOff(_:)`, `handOff(_:launch:)`) | plain git on the host repository; `osascript`, `open -na Ghostty` |
+| `HandoffService` | `RepositoryHandoff` (`readiness(of:)`, `handOff(_:)`, `handOff(_:launch:)`) | plain git on the host repository; `osascript`, `open -na Ghostty.app` |
 | `RepoService` | `SandboxRepositories` (`repositories()`, `fetchBack(_:)`) | `SandboxedCommand.git` in `repos/<name>` (sandbox user, sv's profile); `git fetch --no-tags --no-recurse-submodules sandvault` in the host repository |
 | `ToolService` | `ToolAccess` (`status(of:)`, `grant(_:method:)`, `sandboxLookupInvocation`) | `/bin/zsh -lc 'command -v'`, `otool -L`, `brew info --json=v2`, `brew install`, the sandbox lookup |
 | `MigrationService` | `ConfigMigration` (`plan`, `apply`, `location(of:)`), `SecretScan` | `git config --global --get user.name` and `user.email` |
@@ -413,7 +413,7 @@ only `[A-Za-z0-9_./:,+@-]` stays bare, so zsh's `=cmd`, `~` and globs never expa
 |---|---|
 | Terminal | `osascript -e 'on run argv' -e 'tell application "Terminal"' -e activate -e 'do script (item 1 of argv)' -e 'end tell' -e 'end run' <command>` |
 | iTerm2 | the same with `set newWindow to (create window with default profile)` and `tell current session of newWindow to write text (item 1 of argv)`; the user's shell runs it, so the window stays (as upstream's launcher does) |
-| Ghostty | `open -na Ghostty --args --command=/bin/zsh -lc '<command>; exec "$SHELL" -l'` (Ghostty runs `--command` through a shell, as upstream's launcher relies on) |
+| Ghostty | `open -na Ghostty.app --args --window-save-state=never --quit-after-last-window-closed=true --command=/bin/zsh -lc '<command>; exec "$SHELL" -l'` (Ghostty runs `--command` through a shell, as upstream's launcher relies on; without `--window-save-state=never` the new instance restores the saved windows with the default shell and never shows the command) |
 
 The command reaches AppleScript as an `argv` item, never inside a string literal. A failed launch (for example a
 missing Automation permission) throws and records nothing; otherwise a `HandoffRecord` replaces the one of the same

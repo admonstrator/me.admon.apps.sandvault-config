@@ -105,7 +105,9 @@ func shellWords(_ line: String, shell: String = "/bin/sh") async throws -> [Stri
 
     @Test func ghosttyRunsZshThatKeepsTheWindowOpen() async throws {
         let invocation = TerminalLaunch.invocation(.ghostty, command: command)
-        #expect(invocation.argv.prefix(4) == ["/usr/bin/open", "-na", "Ghostty", "--args"])
+        #expect(invocation.argv.prefix(6) == [
+            "/usr/bin/open", "-na", "Ghostty.app", "--args", "--window-save-state=never", "--quit-after-last-window-closed=true",
+        ])
         let value = try #require(invocation.arguments.last?.split(separator: "=", maxSplits: 1).last.map(String.init))
         #expect(invocation.arguments.last?.hasPrefix("--command=") == true)
         // Ghostty hands the value to a shell; that shell must see zsh -lc '<command>; exec "$SHELL" -l'.
