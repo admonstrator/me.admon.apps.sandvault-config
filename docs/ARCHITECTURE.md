@@ -139,9 +139,13 @@ last session and count as sandbox processes. A second capture during a session c
 `ps -E` prints no environment for Apple binaries (`zsh`, `caffeinate`, the agents above), so their session comes
 from the parent chain and sv's launcher; agent lookup walks every root of a session for that reason.
 
-**Still open:** lsof with established outbound connections, a sandbox denial in the unified log (none appeared in
-either capture), `taskpolicy -b -p` on another user's process, lsof latency through sudo against the 200 ms
-budget, and whether the reporting subsystem duplicates kernel reports.
+Sandbox denials of the session reach `log stream` as kernel messages (`processID` 0, sender `Sandbox.kext`,
+level Error) in the parsed format. `log show`, even with `--info --debug`, does not have them a few seconds later:
+macOS 27 does not store them. Learn mode therefore relies on `--follow`/`stream()`; `--last` only finds what
+happens to be in memory.
+
+**Still open:** lsof with established outbound connections, `taskpolicy -b -p` on another user's process, lsof latency through sudo against the 200 ms
+budget, and whether the reporting subsystem duplicates kernel reports (it did not report the probe at all).
 
 ## 5 · Enforce
 

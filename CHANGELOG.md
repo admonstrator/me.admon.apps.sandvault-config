@@ -15,11 +15,13 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
 - Die Session-Zuordnung sucht den Agenten jetzt unter allen Wurzeln einer Session. macOS zeigt die Umgebung von
   Apple-Programmen wie `zsh -i` nicht an; ohne sichtbaren Launcher zerfiel eine Session sonst in mehrere Wurzeln, und
   als Befehl stand „Python“ statt „claude“.
+- `svctl violations --last` sagt jetzt, warum es meist leer bleibt: macOS 27 speichert die Sandbox-Meldungen des
+  Kernels nicht im Log, nur `log stream` (`--follow`) sieht sie.
 
 ### Tests
 - Fixtures für dscl, dseditgroup, `ls -led`, sudoers und das sv-Profil durch echte Ausgaben ersetzt; neue echte
   Fixtures für ps ohne Session, lsof ohne Sockets, nettop ohne Zeilen, das Unified Log und `launchctl print` ohne
-  Dienst, dazu Prozesse, Umgebung, lsof und nettop einer laufenden Session. 392 Tests.
+  Dienst, dazu Prozesse, Umgebung, lsof und nettop einer laufenden Session. 393 Tests.
 
 ## 0.1.0 · 2026-10-09
 

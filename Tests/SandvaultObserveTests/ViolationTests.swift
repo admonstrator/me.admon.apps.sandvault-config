@@ -59,6 +59,21 @@ import Testing
         #expect(try fixture("log-violations-none.ndjson").split(separator: "\n").compactMap { ViolationParser.parse(line: String($0)) }.isEmpty)
     }
 
+    @Test func parsesALiveDenialOnMacOS27() throws {
+        // `log stream` while the session ran `touch /Users/Shared/sv-probe; ls /Library/Keychains`. `log show`
+        // with --info --debug a moment later had none of these: the kernel's reports are not stored.
+        let lines = try fixture("log-stream-denials.ndjson").split(separator: "\n").map(String.init)
+        let violations = lines.compactMap(ViolationParser.parse(line:))
+        #expect(violations.map(\.raw) == [
+            "Sandbox: touch(87299) deny(1) file-write-create /Users/Shared/sv-probe",
+            "Sandbox: ls(87300) deny(1) file-read-metadata /Library/Keychains",
+            "1 duplicate report for Sandbox: ls(87300) deny(1) file-read-metadata /Library/Keychains",
+        ])
+        #expect(violations[0].operation == "file-write-create")
+        #expect(violations[0].target == "/Users/Shared/sv-probe")
+        #expect(violations.map(\.occurrences) == [1, 1, 1])
+    }
+
     @Test func skipsNonJSONAndForeignLines() throws {
         let lines = try fixture("log-violations.ndjson").split(separator: "\n").map(String.init)
         #expect(ViolationParser.parse(line: lines[0]) == nil)  // "Filtering the log data using ..."

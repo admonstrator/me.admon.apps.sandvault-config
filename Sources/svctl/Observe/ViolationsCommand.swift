@@ -8,7 +8,9 @@ struct ViolationsCommand: AsyncParsableCommand {
         commandName: "violations",
         abstract: "Show sandbox denials from the unified log and suggest rules for them (learn mode).",
         discussion: """
-        Reads `log show` (or `log stream` with --follow), which needs an administrator account. Only denials of \
+        Reads `log show` (or `log stream` with --follow), which needs an administrator account. macOS 27 does \
+        not keep the kernel's sandbox reports in the log store, so `log show` rarely finds any; --follow sees \
+        them as they happen. Only denials of \
         processes known to belong to the sandbox user are shown unless --all is given; short-lived processes can \
         exit before they are seen and then count as unattributed.
         """
@@ -64,6 +66,7 @@ struct ViolationsCommand: AsyncParsableCommand {
 
         if shown.isEmpty {
             Output.line("no sandbox violations in the last \(last)")
+            Output.line("macOS does not keep sandbox denials in the log store; --follow shows them as they happen")
         } else {
             Output.table(["TIME", "PID", "PROCESS", "COUNT", "OPERATION", "TARGET"], shown.map(Self.row))
         }

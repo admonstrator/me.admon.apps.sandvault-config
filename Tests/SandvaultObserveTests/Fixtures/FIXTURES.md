@@ -25,6 +25,7 @@ denials by sandbox processes).
 | `log-violations.ndjson` | `/usr/bin/log show --style ndjson --last 10m --predicate '((processID == 0) AND (senderImagePath CONTAINS "/Sandbox")) OR (subsystem == "com.apple.sandbox.reporting")'` (normal, duplicate-report, reporting-subsystem copy, System Policy and other noise) | synthetic |
 | `log-violations-host-only.ndjson` | the same with `--last 30m`: two denials of host processes (one "301 duplicate reports for"), then the closing `{"count":2,"finished":1}` | real |
 | `log-violations-none.ndjson` | `log show` with nothing found: only `{"count":0,"finished":1}` | real |
+| `log-stream-denials.ndjson` | `log stream --style ndjson --level debug` with a predicate on the message text, while the session ran `touch /Users/Shared/sv-probe; ls /Library/Keychains`: the filter line, three kernel denials and opendirectoryd noise (machine SID zeroed) | real |
 | `dscl-user.txt` | `/usr/bin/dscl . -read /Users/sandvault-alice UniqueID PrimaryGroupID NFSHomeDirectory UserShell` | real |
 | `dscl-group.txt` | `/usr/bin/dscl . -read /Groups/sandvault-alice PrimaryGroupID` | real |
 | `dscl-record-missing.txt` | `/usr/bin/dscl . -read /Users/nobody-here` (stdout and stderr) | real |
