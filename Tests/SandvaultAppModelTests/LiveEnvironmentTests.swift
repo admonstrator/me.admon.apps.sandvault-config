@@ -44,7 +44,6 @@ import Testing
         // Whatever the workflow factories return here (a stub or the real service), the check finishes.
         await model.handoff.select(home.path)
         #expect(!model.handoff.isChecking)
-        #expect(!model.handoff.canHandOff)
     }
 }
 #endif

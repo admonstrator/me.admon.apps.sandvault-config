@@ -65,6 +65,23 @@ import Testing
         #expect(symbol(.blocked) == "xmark.shield.fill")
     }
 
+    @Test func menuBarSymbolFollowsModeNetdAndAsks() async throws {
+        let world = TestWorld()
+        defer { world.cleanUp() }
+        try world.store.save(AppConfig(network: NetworkPolicy(mode: .proxyOnly)))
+        let now = world.clock.current.get()
+        let ask = AskRequest(host: "a.example", port: 443, kind: .transparentTLS, createdAt: now, expiresAt: now.addingTimeInterval(30))
+        world.netd.queue.set([.client(FakeNetdClient(pending: [ask]))])
+        let model = world.model()
+        #expect(model.menuBarSymbol == "exclamationmark.triangle")
+        model.netd.start()
+        defer { model.netd.stop() }
+        #expect(await eventually { model.menuBarSymbol == "exclamationmark.shield.fill" })
+        await model.asks.answer(ask, .denyOnce)
+        #expect(model.menuBarSymbol == "checkmark.shield.fill")
+        #expect(model.menuBar.stateTitle == "Firewall: proxy only")
+    }
+
     @Test func droppedFoldersGoToTheHandOffPage() async throws {
         let world = TestWorld()
         defer { world.cleanUp() }

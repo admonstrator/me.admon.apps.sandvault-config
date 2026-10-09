@@ -210,6 +210,14 @@ public final class AppModel {
 
     // MARK: Menu bar
 
+    /// The status item's symbol; cheap and independent of the connection records, so the icon does not redraw per record.
+    public var menuBarSymbol: String {
+        MenuBarSummary.state(
+            mode: editor.config.network.mode, panicActive: firewall.panicActive, netdRunning: netd.isConnected,
+            pendingAsks: asks.pending.count
+        ).symbolName
+    }
+
     public var menuBar: MenuBarSummary {
         MenuBarSummary(
             mode: editor.config.network.mode, panicActive: firewall.panicActive, netdRunning: netd.isConnected,
@@ -236,19 +244,7 @@ public struct MenuBarSummary: Sendable, Equatable {
         mode: FirewallMode, panicActive: Bool, netdRunning: Bool, snapshot: ProcessSnapshot?, records: [ConnectionRecord],
         pendingAsks: Int, now: Date
     ) {
-        if panicActive || mode == .blocked {
-            (symbolName, stateTitle) = ("xmark.shield.fill", panicActive ? "Panic: sandbox blocked" : "Firewall: blocked")
-        } else if pendingAsks > 0 {
-            (symbolName, stateTitle) = ("exclamationmark.shield.fill", "Waiting for your answer")
-        } else if mode == .proxyOnly && !netdRunning {
-            (symbolName, stateTitle) = ("exclamationmark.triangle", "Proxy only, but netd is not running")
-        } else if mode == .off {
-            (symbolName, stateTitle) = ("shield.slash", "Firewall off")
-        } else if mode == .open {
-            (symbolName, stateTitle) = ("shield.lefthalf.filled", "Firewall: open")
-        } else {
-            (symbolName, stateTitle) = ("checkmark.shield.fill", "Firewall: proxy only")
-        }
+        (symbolName, stateTitle) = Self.state(mode: mode, panicActive: panicActive, netdRunning: netdRunning, pendingAsks: pendingAsks)
         sessions = snapshot?.sessions.count ?? 0
         processes = snapshot?.processes.count ?? 0
         self.pendingAsks = pendingAsks
@@ -265,6 +261,20 @@ public struct MenuBarSummary: Sendable, Equatable {
             hosts[record.host] = entry
         }
         recentDenied = Array(hosts.values.sorted { ($0.lastSeen, $1.host) > ($1.lastSeen, $0.host) }.prefix(Self.recentLimit))
+    }
+
+    /// Symbol and title, in priority order: blocked, waiting asks, proxy-only without netd, then the mode.
+    public static func state(mode: FirewallMode, panicActive: Bool, netdRunning: Bool, pendingAsks: Int) -> (symbolName: String, title: String) {
+        if panicActive || mode == .blocked {
+            return ("xmark.shield.fill", panicActive ? "Panic: sandbox blocked" : "Firewall: blocked")
+        }
+        if pendingAsks > 0 { return ("exclamationmark.shield.fill", "Waiting for your answer") }
+        if mode == .proxyOnly && !netdRunning { return ("exclamationmark.triangle", "Proxy only, but netd is not running") }
+        switch mode {
+        case .off: return ("shield.slash", "Firewall off")
+        case .open: return ("shield.lefthalf.filled", "Firewall: open")
+        case .proxyOnly, .blocked: return ("checkmark.shield.fill", "Firewall: proxy only")
+        }
     }
 }
 
