@@ -270,7 +270,62 @@ Each step is undone by `svctl firewall off`, `svctl rules reset --yes` and final
 
 ## 6 · Net
 
-_Agent C fills this section._
+`sandvault-netd run` (LaunchAgent `<bundle id>.netd`, host user) builds a `NetDaemon` from `NetdOptions` and the
+seams `Observe.makeProcessAttributor`, `Observe.makeLocalPortSource`, `Enforce.makePolicyApplier`. All listeners
+are SwiftNIO on `127.0.0.1`, ports from `NetworkPolicy.ports`:
+
+| Listener | Input | Target |
+|---|---|---|
+| explicit proxy (18080) | `CONNECT host:port`, absolute-form `http://` requests | tunnel, or origin-form request without hop-by-hop and `Proxy-*` headers |
+| transparent HTTP (18081) | pf-redirected port 80 | `Host` header, port 80 |
+| transparent TLS (18443) | pf-redirected port 443 | SNI of the buffered ClientHello, port 443; bytes are replayed |
+| DNS (18053, UDP + TCP) | pf-redirected port 53 | upstream from `--upstream-dns` or the first `nameserver` of `/etc/resolv.conf` |
+| control | `AppPaths.effectiveControlSocket`, mode 0600 | `ControlRequest` / `ControlEvent` lines |
+
+**Decision path** (`NetRuntime.authorize`, one per connection, one per plain HTTP request):
+`PolicyEngine.evaluate` (exact > longer `*.suffix` > `*`; deny > allow > ask; no match → `defaultAction`; ports
+other than 80/443 need an explicit `allow`) → `ask` goes to `AskCoordinator` → resolution: `DnsOverride` (exempt
+from the guard), IP literal, or `getaddrinfo` on NIO's thread pool → addresses in `PrivateNetworks.all` are dropped
+when `blockPrivateDestinations` → connect. A refusal answers `403` with one line naming the rule or default and
+`svctl proxy allow <host>`; the transparent TLS listener just closes. DNS: deny → NXDOMAIN, override → synthesized
+A/AAAA, ask → REFUSED while the ask is raised, allow → forwarded.
+
+**Asks** are raised only while a control client subscribes to `.asks` (else `askFallback` applies at once). Concurrent
+asks for one host share one `AskRequest`; the connection waits up to `askTimeoutSeconds`. An answer is remembered for
+30 s (so the DNS query that raised it and the connection after it agree); `*Always` saves a rule through
+`ConfigStore` (`.host` exact, `.domain` → `*.<registrable domain>`, see `RegistrableDomain`) and swaps the policy.
+
+**TLS inspection** applies when `inspection.enabled` and the matching rule has `inspect` (not for IP literals):
+`CAStore` keeps the P-256 CA in `AppPaths.caDir` (`ca-key.pem` 0600, `ca-cert.pem`), `InspectionService` signs a
+30-day leaf per host with one in-memory key and caches the server context; ALPN `http/1.1` only; the upstream side
+verifies against the platform roots. Requests and responses become `HTTPSummary` entries with
+`inspection.redactHeaders` replaced by `<redacted>`; bodies are relayed, never stored. `CAPublisher` writes the CA
+and a bundle (system roots + CA) into `_sandvault-config/` through `SharedFiles`.
+
+**Sandbox environment**: `SandboxEnvironmentBlock` writes `ManagedBlock.zshenv` into `$SHARED_WORKSPACE/user/.zshenv`
+through `SharedFiles` (proxy variables, `NO_PROXY`, CA variables with inspection; removed when the mode is `off`).
+netd syncs it on start and on every reload; `svctl proxy env apply|remove` does it by hand.
+
+**Records**: every decision yields a `ConnectionRecord` (raw bytes on the client socket, duration, process from the
+client's source port). `ConnectionLog` appends JSON Lines to `AppPaths.connectionLog` (rotation at 10 MB, three old
+files) and keeps the last 1000 for `.recent`; records are also pushed to `.connections` subscribers. Every 5 s netd
+pushes `.status` and, in `open`/`proxyOnly` with `localhost == .sandboxAndHelpers`, `LocalPortRefresher` calls
+`applyFirewall` when the allowed loopback ports changed (errors logged once per kind).
+
+**Client API** for svctl and the app: `ControlClient` (`connect`, `request`, `events`, typed `status`, `subscribe`,
+`answer`, `pendingAsks`, `recent`, `reloadConfig`), the config edits on `NetworkPolicy` (`upsertDomainRule`,
+`removeDomainRule(selector:)`, `upsertDnsOverride`, `removeDnsOverride(selector:)`), `ConnectionLog.read`,
+`CAStore`, `CAPublisher`, `SandboxEnvironmentBlock`, `NetdLaunchAgent`, `Net.makeCheckProvider` (`net.netd`,
+`net.ports`, `net.launchagent`, `net.ca`, `net.zshenv`).
+
+**CLI**: `svctl proxy status|rules|allow <pattern> [--inspect]|deny|ask|remove <id-prefix|pattern>|default
+<allow|deny|ask>|inspection <on|off>|env apply|env remove`, `svctl dns list|override <pattern> <address>|remove`,
+`svctl ca create|show|publish|remove`, `svctl netlog [--follow] [--limit n] [--denied] [--host text]`,
+`svctl asks [--follow] [--answer <id-prefix> <allow-once|allow-always|deny-once|deny-always> [--domain]]`,
+`svctl netd install [--executable path]|uninstall|status|restart`. Config edits send `reloadConfig` when netd answers.
+
+Limits: HTTP upgrades (WebSocket over plain `ws://`) are not forwarded; a plain HTTP request body is not
+back-pressured; inspection covers HTTP/1.1 only (clients negotiating `h2` fall back through ALPN).
 
 ## 7 · Workflow
 
