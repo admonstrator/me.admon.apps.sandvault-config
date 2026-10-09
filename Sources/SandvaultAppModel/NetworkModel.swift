@@ -42,7 +42,9 @@ public final class NetworkModel {
     }
 
     public var socketRows: [SocketRow] {
-        sockets.map(SocketRow.init).sorted { ($0.isListening ? 0 : 1, $0.process, $0.localPort) < ($1.isListening ? 0 : 1, $1.process, $1.localPort) }
+        sockets.enumerated()
+            .map { SocketRow($0.element, index: $0.offset) }
+            .sorted { ($0.isListening ? 0 : 1, $0.process, $0.localPort, $0.index) < ($1.isListening ? 0 : 1, $1.process, $1.localPort, $1.index) }
     }
 
     /// The rule that currently decides `host`, if one matches (exact > longer suffix > `*`).
@@ -140,10 +142,13 @@ public struct SocketRow: Identifiable, Sendable, Equatable {
     public var remote: String
     public var state: String
     public var isListening: Bool
+    /// Position in the lsof output; lsof can list identical sockets (unconnected UDP), so it keeps ids unique.
+    public var index: Int
 
-    public var id: String { "\(pid)-\(proto.rawValue)-\(local)-\(remote)" }
+    public var id: Int { index }
 
-    public init(_ connection: SandboxConnection) {
+    public init(_ connection: SandboxConnection, index: Int) {
+        self.index = index
         pid = connection.pid
         process = connection.process
         proto = connection.proto

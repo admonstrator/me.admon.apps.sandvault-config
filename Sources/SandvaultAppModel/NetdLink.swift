@@ -38,6 +38,19 @@ public final class NetdLink {
 
     public var isConnected: Bool { state == .connected }
 
+    /// One line for status bars: what netd is doing, or why it is not reachable.
+    public var summary: String {
+        switch state {
+        case .stopped: return "Not connected to sandvault-netd"
+        case .connecting: return "Connecting to sandvault-netd..."
+        case .waiting(let retryIn, let reason): return "sandvault-netd not reachable (\(reason)); retrying in \(Format.duration(Int(retryIn.rounded(.up))))"
+        case .connected:
+            guard let status else { return "Connected to sandvault-netd" }
+            return "sandvault-netd: \(status.mode.displayName.lowercased()), \(status.activeConnections) active, "
+                + "\(status.allowedCount) allowed, \(status.deniedCount) denied since \(Format.time(status.startedAt))"
+        }
+    }
+
     public func start() {
         guard task == nil else { return }
         task = Task { [weak self] in await self?.run() }

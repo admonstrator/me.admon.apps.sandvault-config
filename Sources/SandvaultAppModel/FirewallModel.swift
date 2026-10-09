@@ -45,6 +45,22 @@ public final class FirewallModel {
         return (loaded.firewallMode ?? .off) != network.mode
     }
 
+    /// What pf has loaded, for the mode section.
+    public var loadedSummary: String {
+        guard let loaded else { return loadedError.map { "unknown (\($0))" } ?? "unknown" }
+        var parts = [(loaded.firewallMode ?? .off).displayName.lowercased()]
+        if let enabled = loaded.pfEnabled { parts.append(enabled ? "pf enabled" : "pf disabled") }
+        if loaded.panicActive { parts.append("PANIC active") }
+        if loaded.anchorChanged { parts.append("anchor differs from the last apply") }
+        return parts.joined(separator: ", ")
+    }
+
+    public var caSummary: String {
+        guard ca.exists else { return "not created (turning inspection on creates it)" }
+        let published = ca.published.map { "published copy \($0.rawValue)" } ?? "published copy unknown"
+        return "SHA-256 \(ca.fingerprint ?? "?") · \(published)"
+    }
+
     public func refreshStatus() async {
         do {
             loaded = try await policy.status()
@@ -295,5 +311,16 @@ public struct FirewallApplyPlan: Identifiable, Sendable, Equatable {
 
     public var previewText: String {
         rules ?? "# mode off: the anchor \(AppPaths.pfAnchor) is flushed\n"
+    }
+
+    /// `Anchor com.apple/sandvault-config for uid 601; loopback ports 3000, 9222`.
+    public var summary: String {
+        guard let uid else { return "Flushes the anchor \(AppPaths.pfAnchor); the sandbox's network is no longer filtered." }
+        var text = "Anchor \(AppPaths.pfAnchor) for uid \(uid)"
+        if state.network.localhost == .sandboxAndHelpers {
+            let ports = state.dynamicLocalPorts.map(String.init).joined(separator: ", ")
+            text += "; loopback ports " + (ports.isEmpty ? "none" : ports)
+        }
+        return text
     }
 }

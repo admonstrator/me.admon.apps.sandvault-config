@@ -1,5 +1,6 @@
 import Foundation
 import SandvaultCore
+import SandvaultEnforce
 
 /// Display strings, kept here so the SwiftUI layer only places them.
 public enum Format {
@@ -298,4 +299,72 @@ extension SandboxPreset {
 
 extension TransportProtocol {
     public var displayName: String { rawValue.uppercased() }
+}
+
+extension ProfileDrift {
+    public var displayName: String {
+        switch self {
+        case .inSync: "In sync with the configuration"
+        case .missing: "Block missing (sv --rebuild rewrites the profile)"
+        case .outdated: "Block differs from the configuration"
+        case .unexpected: "Block present, but no rules are configured"
+        case .profileMissing: "sv's profile not found"
+        }
+    }
+
+    public var tint: Tint {
+        switch self {
+        case .inSync: .green
+        case .missing, .outdated, .unexpected: .orange
+        case .profileMissing: .gray
+        }
+    }
+}
+
+extension RuleSuggestion {
+    /// `allow read-write literal /path`, `allow mach com.example`.
+    public var summary: String {
+        let rule: SandboxRule = switch proposal {
+        case .file(let file): .file(file)
+        case .mach(let mach): .mach(mach)
+        case .exec(let exec): .exec(exec)
+        }
+        return "\(rule.effect.rawValue) \(rule.summary)"
+    }
+
+    public var note: String? {
+        switch proposal {
+        case .file(let rule): rule.note
+        case .mach(let rule): rule.note
+        case .exec(let rule): rule.note
+        }
+    }
+}
+
+extension RepoStatus {
+    /// `main · 3 new commits to fetch · uncommitted changes`.
+    public var summary: String {
+        var parts: [String] = [branch ?? "detached"]
+        if let unfetchedCommits, unfetchedCommits > 0 { parts.append("\(unfetchedCommits) new commit\(unfetchedCommits == 1 ? "" : "s") to fetch") }
+        if let aheadOfOrigin, aheadOfOrigin > 0 { parts.append("\(aheadOfOrigin) ahead of origin") }
+        if let behindOrigin, behindOrigin > 0 { parts.append("\(behindOrigin) behind origin") }
+        if dirty { parts.append("uncommitted changes") }
+        if record == nil { parts.append("not handed off from this Mac") }
+        return parts.joined(separator: " · ")
+    }
+}
+
+extension ToolStatus {
+    /// `/opt/homebrew/bin/jq (homebrew) · reachable in the sandbox`.
+    public var summary: String {
+        let place = hostPath.map { "\($0) (\(location.rawValue))" } ?? "not found on the host"
+        return "\(place) · \(reachableInSandbox ? "reachable in the sandbox" : "not reachable in the sandbox")"
+    }
+}
+
+extension MigrationEntry {
+    /// `~/.claude/settings.json -> user/.claude/settings.json (1.2 kB)`.
+    public var summary: String {
+        "\(source) -> user/\(destination) (\(Format.bytes(Int64(bytes))))" + (overwrites ? ", replaces the existing file" : "")
+    }
 }

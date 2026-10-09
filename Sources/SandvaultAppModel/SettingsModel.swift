@@ -92,6 +92,15 @@ public final class SettingsModel {
         await runAgent("Restart netd", success: "netd restarted") { try await self.agent.restart() }
     }
 
+    public var netdAgentSummary: String {
+        guard let agent = netdAgent else { return netdAgentError ?? "unknown" }
+        guard agent.installed else { return "not installed" }
+        var text = agent.loaded ? "loaded, \(agent.state ?? "state unknown")" : "installed, not loaded"
+        if let pid = agent.pid { text += ", pid \(pid)" }
+        if let code = agent.lastExitCode, !agent.loaded || agent.pid == nil { text += ", last exit \(code)" }
+        return text
+    }
+
     /// The LaunchAgent runs a different binary than the one in this app (e.g. after moving the app).
     public var netdExecutableMismatch: Bool {
         guard let installed = netdAgent?.executable, let bundled = bundled.netd else { return false }
