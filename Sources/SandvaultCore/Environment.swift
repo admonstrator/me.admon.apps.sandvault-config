@@ -4,7 +4,7 @@ import Foundation
 public enum BundleIdentity {
     public static let bundleID = "me.admon.apps.sandvault-config"
     public static let displayName = "Sandvault Config"
-    public static let version = "0.0.0"
+    public static let version = "0.1.0"
 }
 
 /// The sandvault layout as created by upstream `sv` (webcoyote/sandvault v1.32.0, `sv` lines 129-209).
