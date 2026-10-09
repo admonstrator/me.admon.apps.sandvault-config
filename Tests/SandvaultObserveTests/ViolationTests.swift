@@ -56,6 +56,7 @@ import Testing
         #expect(violations[0].operation == "system-info")
         #expect(violations[0].target == "vfs.disk-space")
         #expect(ViolationParser.parse(line: try #require(lines.last)) == nil)
+        #expect(try fixture("log-violations-none.ndjson").split(separator: "\n").compactMap { ViolationParser.parse(line: String($0)) }.isEmpty)
     }
 
     @Test func skipsNonJSONAndForeignLines() throws {

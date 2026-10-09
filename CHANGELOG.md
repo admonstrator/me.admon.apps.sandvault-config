@@ -12,11 +12,14 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   von `svctl status` auf „?“. Ohne Firewall wird die Prüfung jetzt übersprungen.
 - `scripts/verify-on-mac.sh capture` redigiert Umgebungswerte mit Leerzeichen jetzt vollständig, behält
   `SV_SESSION_ID` und schreibt die Exit-Codes von lsof und `launchctl print` mit.
+- Die Session-Zuordnung sucht den Agenten jetzt unter allen Wurzeln einer Session. macOS zeigt die Umgebung von
+  Apple-Programmen wie `zsh -i` nicht an; ohne sichtbaren Launcher zerfiel eine Session sonst in mehrere Wurzeln, und
+  als Befehl stand „Python“ statt „claude“.
 
 ### Tests
 - Fixtures für dscl, dseditgroup, `ls -led`, sudoers und das sv-Profil durch echte Ausgaben ersetzt; neue echte
   Fixtures für ps ohne Session, lsof ohne Sockets, nettop ohne Zeilen, das Unified Log und `launchctl print` ohne
-  Dienst. 390 Tests.
+  Dienst, dazu Prozesse, Umgebung, lsof und nettop einer laufenden Session. 392 Tests.
 
 ## 0.1.0 · 2026-10-09
 

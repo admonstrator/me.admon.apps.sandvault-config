@@ -106,6 +106,22 @@ import Testing
         #expect(snapshot.helpers.count == 2)  // the Chrome renderer is not a helper of its own
     }
 
+    @Test func attributesARealSessionOnMacOS27() async throws {
+        // Captured with `sv` running claude and a Python listener. Apple binaries (zsh, caffeinate) print no
+        // environment; Python and claude carry SV_SESSION_ID. The root-owned sudo launcher was not captured.
+        let fake = FakeCommandRunner()
+        fake.on(Invocations.psAll.argv, stdout: try fixture("ps-axww-session.txt"))
+        fake.on(Invocations.psEnvironment(alice).argv, stdout: try fixture("ps-environment-session.txt"))
+        let snapshot = try await ProcessMonitor(environment: alice, runner: fake, files: .fixed()).snapshot()
+        let session = "DD58E8C9-C854-4D0C-9DE3-3A2EE03CB7C6"
+        #expect(snapshot.processes.count == 12)
+        #expect(snapshot.processes.filter { $0.sessionID == session }.map(\.pid) == [86064, 86073, 86165])
+        #expect(snapshot.sessions.map(\.id) == [session])
+        // zsh -i hides its environment and its launcher is missing, so Python and claude are separate roots.
+        #expect(snapshot.sessions.first?.rootPID == 86064)
+        #expect(snapshot.sessions.first?.command == "claude")
+    }
+
     @Test func fallsBackToLauncherAncestryWithoutSudo() async throws {
         let fake = try observeRunner()
         fake.on(Invocations.psEnvironment(alice).argv, stdout: "", exitCode: 1, stderr: "sudo: a password is required\n")

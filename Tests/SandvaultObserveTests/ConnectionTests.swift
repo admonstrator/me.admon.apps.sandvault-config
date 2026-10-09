@@ -76,6 +76,17 @@ import Testing
         #expect(try await ConnectionMonitor(environment: alice, runner: fake).connections().isEmpty)
     }
 
+    @Test func parsesARealListenerAndItsTraffic() throws {
+        // macOS 27: `python3 -m http.server 8765` in a session; lsof names the process after Python.app's binary.
+        let connections = LsofParser.parse(try fixture("lsof-sandbox-listener.txt"))
+        #expect(connections == [SandboxConnection(
+            pid: 86064, process: "Python", proto: .tcp, family: .ipv6, localAddress: "*", localPort: 8765,
+            remoteAddress: nil, remotePort: nil, state: "LISTEN"
+        )])
+        // nettop run by the host user lists the sandbox user's process.
+        #expect(NettopParser.parse(try fixture("nettop-session.csv")) == [ProcessTraffic(pid: 86064, process: "Python", bytesIn: 0, bytesOut: 0)])
+    }
+
     @Test func warningsWithoutSocketsAreNotAnError() async throws {
         // macOS 27 with Xcode installed: nothing matched (exit 1), and a warning about the host's DeviceFS.
         let fake = FakeCommandRunner()

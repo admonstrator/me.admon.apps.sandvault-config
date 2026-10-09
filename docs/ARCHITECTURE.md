@@ -134,12 +134,14 @@ profile, `ps -axww` and the `log show --style ndjson` format, including `N dupli
 closing `{"count":…,"finished":1}` object. lsof exits 1 when the sandbox user has no sockets, and as that user
 it warns about file systems in the host's home (Xcode's CoreDevice DeviceFS); hence `-w`, and warnings alone are
 no error. The macOS per-user agents (`lsd`, `cfprefsd`, `secd`, `trustd`, ...) keep running for days after the
-last session and count as sandbox processes; `ps -E` prints no environment for them.
+last session and count as sandbox processes. A second capture during a session confirmed `SV_SESSION_ID` via
+`ps -E`, lsof's `-F` output for a listener, and that `nettop` run by the host user lists sandbox processes.
+`ps -E` prints no environment for Apple binaries (`zsh`, `caffeinate`, the agents above), so their session comes
+from the parent chain and sv's launcher; agent lookup walks every root of a session for that reason.
 
-**Still open, needs a running session:** `ps -E` with `SV_SESSION_ID`, lsof with real sockets, `nettop` rows for
-sandbox processes (the capture had none, so it is still unclear whether the host user sees them), `taskpolicy -b -p`
-on another user's process, lsof latency through sudo against the 200 ms budget, and whether the reporting subsystem
-duplicates kernel reports.
+**Still open:** lsof with established outbound connections, a sandbox denial in the unified log (none appeared in
+either capture), `taskpolicy -b -p` on another user's process, lsof latency through sudo against the 200 ms
+budget, and whether the reporting subsystem duplicates kernel reports.
 
 ## 5 · Enforce
 
