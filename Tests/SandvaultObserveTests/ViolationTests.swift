@@ -87,8 +87,9 @@ import Testing
 }
 
 @Suite struct ViolationMonitorTests {
-    @Test func recentViolationsAreAttributedAndDeduplicated() async throws {
-        let violations = try await ViolationMonitor(environment: alice, runner: try observeRunner()).recent()
+    @Test func streamedViolationsAreAttributedAndDeduplicated() async throws {
+        var violations: [SandboxViolation] = []
+        for try await violation in ViolationMonitor(environment: alice, runner: try observeRunner()).stream() { violations.append(violation) }
         #expect(violations.count == 11)
         #expect(violations.filter(\.attributedToSandbox).count == 9)
         #expect(Set(violations.filter { !$0.attributedToSandbox }.map(\.pid)) == [999, 4150])
@@ -98,22 +99,30 @@ import Testing
         #expect(duplicate.target == "/Users/alice/Documents/a.txt")
     }
 
-    @Test func runsLogShowWithThePredicate() async throws {
-        let fake = try observeRunner()
-        _ = try await ViolationMonitor(environment: alice, runner: fake).recent(last: "10m")
-        #expect(fake.invocations.first?.argv == [
-            "/usr/bin/log", "show", "--style", "ndjson", "--last", "10m", "--predicate",
+    @Test func runsLogStreamWithThePredicate() {
+        #expect(Invocations.logStream.argv == [
+            "/usr/bin/log", "stream", "--style", "ndjson", "--predicate",
             #"((processID == 0) AND (senderImagePath CONTAINS "/Sandbox")) OR (subsystem == "com.apple.sandbox.reporting")"#,
         ])
     }
 
-    @Test func streamYieldsAttributedViolations() async throws {
-        let fake = try observeRunner()
-        fake.on(Invocations.logStream.argv, .lines(try fixture("log-violations.ndjson").split(separator: "\n").map(String.init)))
-        var seen: [SandboxViolation] = []
-        for try await violation in ViolationMonitor(environment: alice, runner: fake).stream() { seen.append(violation) }
-        #expect(seen.count == 11)
-        #expect(seen.filter(\.attributedToSandbox).count == 9)
+    @Test func collectEndsWithTheStream() async throws {
+        final class Seen: @unchecked Sendable {
+            let lock = NSLock()
+            var pids: [Int32] = []
+            func add(_ pid: Int32) { lock.withLock { pids.append(pid) } }
+        }
+        let seen = Seen()
+        let found = try await ViolationMonitor(environment: alice, runner: try observeRunner())
+            .collect(for: .seconds(30)) { seen.add($0.pid) }
+        #expect(found.count == 11)
+        #expect(seen.lock.withLock { seen.pids } == found.map(\.pid))
+    }
+
+    @Test func collectStopsWhenTheTimeIsUp() async throws {
+        let runner = OpenStreamRunner(base: try observeRunner(), output: try fixture("log-stream-denials.ndjson").split(separator: "\n").map(String.init))
+        let found = try await ViolationMonitor(environment: alice, runner: runner).collect(for: .milliseconds(300))
+        #expect(found.map(\.pid) == [87299, 87300, 87300])
     }
 
     @Test func streamFailureExplainsTheAdminRequirement() async throws {
@@ -130,28 +139,20 @@ import Testing
         }
     }
 
-    @Test func logShowFailureForNonAdmins() async throws {
-        let fake = FakeCommandRunner()
-        fake.on(Invocations.logShow(last: "1h").argv, stdout: "", exitCode: 64, stderr: "log: Must be admin to run 'show' command\n")
-        await #expect(throws: SandvaultError.permissionDenied("reading the unified log: log: Must be admin to run 'show' command")) {
-            try await ViolationMonitor(environment: alice, runner: fake).recent(last: "1h")
-        }
+    @Test(arguments: [("30s", 30), ("10m", 600), ("2h", 7200), ("120m", 7200)])
+    func acceptsDurations(text: String, seconds: Int) throws {
+        #expect(try ViolationMonitor.duration(text) == .seconds(seconds))
     }
 
-    @Test(arguments: ["10m", "2h", "1d", "120m"])
-    func acceptsDurations(text: String) throws {
-        try ViolationMonitor.validate(duration: text)
-    }
-
-    @Test(arguments: ["", "m", "10", "0m", "10s", "1.5h", "-1m", "10 m", "١٠m"])
+    @Test(arguments: ["", "m", "10", "0m", "1d", "1.5h", "-1m", "10 m", "١٠m"])
     func rejectsDurations(text: String) {
-        #expect(throws: SandvaultError.self) { try ViolationMonitor.validate(duration: text) }
+        #expect(throws: SandvaultError.self) { try ViolationMonitor.duration(text) }
     }
 }
 
 @Suite struct RuleSuggesterTests {
     func violations(all: Bool) async throws -> [SandboxViolation] {
-        let found = try await ViolationMonitor(environment: alice, runner: try observeRunner()).recent()
+        let found = try await ViolationMonitor(environment: alice, runner: try observeRunner()).collect(for: .seconds(30))
         return all ? found : found.filter(\.attributedToSandbox)
     }
 

@@ -24,8 +24,22 @@ func observeRunner() throws -> FakeCommandRunner {
     fake.on(Invocations.psEnvironment(alice).argv, stdout: try fixture("ps-environment.txt"))
     fake.on(Invocations.lsof(alice).argv, stdout: try fixture("lsof-sandbox.txt"))
     fake.on(Invocations.nettop.argv, stdout: try fixture("nettop.csv"))
-    fake.on(Invocations.logShow(last: "10m").argv, stdout: try fixture("log-violations.ndjson"))
+    fake.on(Invocations.logStream.argv, .lines(try fixture("log-violations.ndjson").split(separator: "\n").map(String.init)))
     return fake
+}
+
+/// Delegates to `base`, except that `lines` yields the given lines and then stays open like `log stream`.
+struct OpenStreamRunner: CommandRunner {
+    let base: CommandRunner
+    let output: [String]
+
+    func run(_ invocation: CommandInvocation) async throws -> CommandResult { try await base.run(invocation) }
+
+    func lines(_ invocation: CommandInvocation) -> AsyncThrowingStream<String, Error> {
+        let (stream, continuation) = AsyncThrowingStream.makeStream(of: String.self, throwing: Error.self)
+        for line in output { continuation.yield(line) }
+        return stream
+    }
 }
 
 /// `ps -axww` output with every line of the sandbox user removed (the user is the third column).

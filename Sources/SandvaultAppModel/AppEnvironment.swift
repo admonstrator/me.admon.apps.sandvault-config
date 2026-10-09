@@ -25,7 +25,6 @@ public protocol ConnectionSource: Sendable {
 }
 
 public protocol ViolationSource: Sendable {
-    func recent(last duration: String) async throws -> [SandboxViolation]
     func stream() -> AsyncThrowingStream<SandboxViolation, Error>
 }
 

@@ -14,7 +14,7 @@ public final class RulesModel {
     public var message: UserMessage?
 
     public private(set) var isLearning = false
-    /// Violations seen while learning (and from `learnFromRecent`), oldest first.
+    /// Violations seen while learning, oldest first.
     public private(set) var observed: [SandboxViolation] = []
     public private(set) var learnError: UserMessage?
     /// Suggestions accepted or dismissed in this session.
@@ -124,16 +124,6 @@ public final class RulesModel {
         learnTask?.cancel()
         learnTask = nil
         isLearning = false
-    }
-
-    /// One-time look at the last minutes (`log show --last`).
-    public func learnFromRecent(last duration: String = "10m") async {
-        do {
-            for violation in try await violations.recent(last: duration) { record(violation) }
-            learnError = nil
-        } catch {
-            learnError = UserMessage(error: error, action: "Read sandbox violations")
-        }
     }
 
     public func accept(_ suggestion: RuleSuggestion) async {

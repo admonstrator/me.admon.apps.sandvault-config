@@ -97,7 +97,8 @@ extension SandboxViolation {
     }
 }
 
-/// Reads sandbox violations from the unified log and attributes them to the sandbox user.
+/// Follows sandbox violations in the unified log and attributes them to the sandbox user.
+/// Live only: macOS 27 does not store the kernel's sandbox reports, so `log show` would find none.
 /// `log` needs an administrator account; the kernel reports the violating pid, not the user,
 /// so attribution goes through a cache of the sandbox user's pids.
 public struct ViolationMonitor: Sendable {
@@ -107,23 +108,6 @@ public struct ViolationMonitor: Sendable {
     public init(environment: SandvaultEnvironment, runner: CommandRunner) {
         self.environment = environment
         self.runner = runner
-    }
-
-    /// Violations of the last `duration` (`10m`, `2h`, `1d`), oldest first, including unattributed ones.
-    public func recent(last duration: String = "10m") async throws -> [SandboxViolation] {
-        try Self.validate(duration: duration)
-        let invocation = Invocations.logShow(last: duration)
-        let result = try await runner.run(invocation)
-        guard result.succeeded else { throw Self.logError(invocation, result.exitCode, result.stderrString) }
-        let pids = SandboxPIDCache(monitor: ProcessMonitor(environment: environment, runner: runner))
-        var deduplicator = Deduplicator()
-        var violations: [SandboxViolation] = []
-        for line in result.stdoutString.split(separator: "\n") {
-            guard var violation = ViolationParser.parse(line: String(line)), deduplicator.isNew(violation) else { continue }
-            violation.attributedToSandbox = await pids.contains(violation.pid)
-            violations.append(violation)
-        }
-        return violations
     }
 
     /// Live violations until the consumer stops iterating (which terminates `log stream`).
@@ -153,11 +137,41 @@ public struct ViolationMonitor: Sendable {
         }
     }
 
-    /// `log show --last` accepts a number with `m`, `h` or `d`.
-    public static func validate(duration: String) throws {
-        guard let unit = duration.last, "mhd".contains(unit), duration.count > 1,
-              duration.dropLast().allSatisfy({ $0.isASCII && $0.isNumber }), Int(duration.dropLast()) ?? 0 > 0
-        else { throw SandvaultError.invalidInput("duration '\(duration)' must look like 10m, 2h or 1d") }
+    /// Violations of the next `duration`, each handed to `onEach` as it arrives. Ends early if the stream does.
+    public func collect(
+        for duration: Duration, onEach: @escaping @Sendable (SandboxViolation) -> Void = { _ in }
+    ) async throws -> [SandboxViolation] {
+        let stream = stream()
+        return try await withThrowingTaskGroup(of: [SandboxViolation]?.self) { group in
+            group.addTask {
+                var seen: [SandboxViolation] = []
+                for try await violation in stream {
+                    onEach(violation)
+                    seen.append(violation)
+                }
+                return seen
+            }
+            group.addTask {
+                try? await Task.sleep(for: duration)
+                return nil
+            }
+            // Whichever ends first cancels the other; cancelling the consumer ends the stream with what it has.
+            var collected: [SandboxViolation] = []
+            while let result = try await group.next() {
+                if let seen = result { collected = seen }
+                group.cancelAll()
+            }
+            return collected
+        }
+    }
+
+    /// `30s`, `5m` or `1h`.
+    public static func duration(_ text: String) throws -> Duration {
+        let factors: [Character: Int] = ["s": 1, "m": 60, "h": 3600]
+        guard let unit = text.last, let factor = factors[unit], text.count > 1,
+              text.dropLast().allSatisfy({ $0.isASCII && $0.isNumber }), let value = Int(text.dropLast()), value > 0
+        else { throw SandvaultError.invalidInput("duration '\(text)' must look like 30s, 5m or 1h") }
+        return .seconds(value * factor)
     }
 
     static func logError(_ invocation: CommandInvocation, _ code: Int32, _ stderr: String) -> SandvaultError {

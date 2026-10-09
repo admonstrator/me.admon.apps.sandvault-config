@@ -72,10 +72,6 @@ enum Invocations {
     static let violationPredicate =
         #"((processID == 0) AND (senderImagePath CONTAINS "/Sandbox")) OR (subsystem == "com.apple.sandbox.reporting")"#
 
-    static func logShow(last: String) -> CommandInvocation {
-        CommandInvocation("/usr/bin/log", ["show", "--style", "ndjson", "--last", last, "--predicate", violationPredicate], timeout: 300)
-    }
-
     static let logStream = CommandInvocation(
         "/usr/bin/log", ["stream", "--style", "ndjson", "--predicate", violationPredicate], timeout: nil
     )

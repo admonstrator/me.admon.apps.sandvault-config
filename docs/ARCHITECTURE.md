@@ -78,7 +78,7 @@ prints. The CLI commands refuse to run off macOS (`SandvaultError.unsupportedPla
 | Control | `ProcessController.terminate(pid:force:)`, `terminateSession(_:force:)`, `terminateAll()`, `throttle(pid:nice:background:)` -> `ControlReport` | `asSandvault(/bin/kill)`, `renice`, `taskpolicy -b`; sv's sudoers: `sudo -n /bin/launchctl bootout user/<uid>`, `sudo -n /usr/bin/pkill -9 -u <sandbox>` |
 | Sockets, traffic | `ConnectionMonitor.connections()`, `traffic(pids:)` | `asSandvault(/usr/sbin/lsof -w -nP -i -a -u <sandbox> -F pcPtnT)`, `nettop -P -L 1 -x -J bytes_in,bytes_out` |
 | netd seams | `Observe.makeProcessAttributor`, `Observe.makeLocalPortSource` | lsof cache; ps + helper logs |
-| Violations | `ViolationMonitor.recent(last:)`, `stream()`; `SandboxViolation.occurrences` | `log show` / `log stream --style ndjson --predicate <sandbox predicate>` |
+| Violations | `ViolationMonitor.stream()`, `collect(for:onEach:)`; `SandboxViolation.occurrences` | `log stream --style ndjson --predicate <sandbox predicate>` |
 | Learn mode | `RuleSuggester.suggestions(for:environment:)` -> `[RuleSuggestion]` | violations |
 | Doctor | `Observe.makeCheckProvider` (`ObserveChecks`, ids in `ObserveChecks.ids`) | dscl, dseditgroup, sudo, ls -led, files |
 | Overview | `StatusSummary.collect(environment:runner:firewallMode:checks:)` | the above |
@@ -125,8 +125,8 @@ Enforce and Net providers and exits 1 on any failure.
 
 **CLI.** `svctl status`, `doctor`, `ps [--tree] [--session <id>]`, `sessions`, `kill <pid> | --session <id> | --all
 [--force] [--yes]`, `throttle <pid> [--nice <n>] [--background]`, `net [--listening] [--traffic]`,
-`violations [--last 10m] [--follow] [--all] [--suggest]`; all take `--json` (`violations --follow --json` prints
-JSON Lines).
+`violations [--for 30s|5m|1h] [--all] [--suggest]` (live until Ctrl-C, or for the given time and then a summary;
+`--suggest` needs `--for`); all take `--json` (`violations --json` without `--for` prints JSON Lines).
 
 **Confirmed on macOS 27.0.1** (capture of 2026-10-09, no session running): the output of `dscl`, `dseditgroup`,
 `ls -led` (the mode ends in `@`, not `+`, when the workspace also has extended attributes), sv's sudoers file and
@@ -141,8 +141,8 @@ from the parent chain and sv's launcher; agent lookup walks every root of a sess
 
 Sandbox denials of the session reach `log stream` as kernel messages (`processID` 0, sender `Sandbox.kext`,
 level Error) in the parsed format. `log show`, even with `--info --debug`, does not have them a few seconds later:
-macOS 27 does not store them. Learn mode therefore relies on `--follow`/`stream()`; `--last` only finds what
-happens to be in memory.
+macOS 27 does not store them. Learn mode is therefore live only: `svctl violations` and the app's learn mode
+follow `log stream`; there is no look back.
 
 **Still open:** lsof with established outbound connections, `taskpolicy -b -p` on another user's process, lsof latency through sudo against the 200 ms
 budget, and whether the reporting subsystem duplicates kernel reports (it did not report the probe at all).

@@ -60,7 +60,7 @@ capture() {
     } > "$out/system.txt" 2>&1
 
     say "svctl views"
-    for command in "doctor" "status" "ps --tree" "sessions" "net --listening --traffic" "violations --last 30m --suggest" \
+    for command in "doctor" "status" "ps --tree" "sessions" "net --listening --traffic" "violations --for 10s --suggest" \
                    "rules status" "firewall status" "proxy status" "netd status"; do
         # shellcheck disable=SC2086 # word splitting of the subcommand is intended
         { echo "\$ svctl $command"; "$SVCTL" $command 2>&1; echo "exit $?"; } >> "$out/svctl.txt" || true
@@ -91,7 +91,9 @@ capture() {
     /usr/bin/nettop -P -L 1 -x -J bytes_in,bytes_out 2>/dev/null \
         | awk -F, -v pids="^(${pids:-none})$" 'NR == 1 { print; next } { n = split($1, a, "."); if (a[n] ~ pids) print }' \
         > "$out/nettop.csv" || true
-    /usr/bin/log show --style ndjson --last 30m --predicate "$predicate" > "$out/log-violations.ndjson" 2> "$out/log.stderr" || true
+    # macOS does not store the kernel's sandbox reports; only a live stream sees them (10 s here).
+    /usr/bin/perl -e 'alarm 10; exec @ARGV' /usr/bin/log stream --style ndjson --predicate "$predicate" \
+        > "$out/log-violations.ndjson" 2> "$out/log.stderr" || true
     /usr/bin/dscl . -read "/Users/$SANDBOX_USER" UniqueID PrimaryGroupID NFSHomeDirectory UserShell > "$out/dscl-user.txt" 2>&1 || true
     /usr/bin/dscl . -read "/Groups/$SANDBOX_USER" PrimaryGroupID > "$out/dscl-group.txt" 2>&1 || true
     /usr/bin/dscl . -read /Users/nobody-here > "$out/dscl-record-missing.txt" 2>&1 || true
@@ -143,7 +145,7 @@ guided() {
     note "Streams sandbox denials for 20 seconds while a denied write runs in the sandbox."
     if ask "Run it?"; then
         ( sleep 3; sv shell -- /usr/bin/touch "/Users/Shared/sandvault-config-probe" >/dev/null 2>&1 || true ) &
-        run /usr/bin/perl -e 'alarm 20; exec @ARGV' "$SVCTL" violations --follow --suggest
+        run "$SVCTL" violations --for 20s --suggest
         wait || true
     fi
 

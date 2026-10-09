@@ -87,11 +87,8 @@ final class FakeConnections: ConnectionSource, @unchecked Sendable {
 }
 
 final class FakeViolations: ViolationSource, @unchecked Sendable {
-    let recentResult = Locked<[SandboxViolation]>([])
     let continuation = Locked<AsyncThrowingStream<SandboxViolation, Error>.Continuation?>(nil)
     let terminated = Locked(false)
-
-    func recent(last duration: String) async throws -> [SandboxViolation] { recentResult.get() }
 
     func stream() -> AsyncThrowingStream<SandboxViolation, Error> {
         let (stream, continuation) = AsyncThrowingStream.makeStream(of: SandboxViolation.self)
