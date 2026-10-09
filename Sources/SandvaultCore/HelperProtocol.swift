@@ -23,6 +23,11 @@ public enum HelperSubcommand: String, Codable, Sendable, CaseIterable {
     case status
     /// Re-apply the last persisted state (LaunchDaemon at boot).
     case restore
+    /// Copy the helper, write its sudoers rule and the boot LaunchDaemon (plain sudo with an admin password;
+    /// the only subcommands that accept `--user` and `--source`).
+    case install
+    /// Reverse `install`: firewall off, profile block removed, files deleted.
+    case uninstall
 }
 
 /// The desired state the helper enforces; also persisted root-owned in `AppPaths.rootStateDir` for `restore`.
