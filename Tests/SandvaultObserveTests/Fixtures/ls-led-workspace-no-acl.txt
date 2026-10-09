@@ -1,0 +1,1 @@
+drwxrwxr-x  14 alice  sandvault-alice  448 Oct  9 11:58 /Users/Shared/sv-alice

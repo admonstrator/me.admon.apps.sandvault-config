@@ -1,0 +1,11 @@
+# Allow alice to run these commands as sandvault-alice without password
+alice ALL=(sandvault-alice) NOPASSWD: /bin/zsh
+alice ALL=(sandvault-alice) NOPASSWD: /usr/bin/env
+alice ALL=(sandvault-alice) NOPASSWD: /usr/bin/true
+
+# Allow alice to run /var/sandvault/buildhome-sandvault-alice to sync home directory
+alice ALL=(root) NOPASSWD: /var/sandvault/buildhome-sandvault-alice
+
+# Allow alice to kill sandvault-alice processes without password
+alice ALL=(root) NOPASSWD: /bin/launchctl bootout user/502
+alice ALL=(root) NOPASSWD: /usr/bin/pkill -9 -u sandvault-alice
