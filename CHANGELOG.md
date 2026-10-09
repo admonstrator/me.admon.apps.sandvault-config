@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-on-mac.sh capture`).
+
+### Behoben
+- `svctl status` und `svctl net` brachen ab, wenn die Sandbox keine offenen Sockets hatte: lsof endet dann mit
+  Exit 1 und warnt als Sandbox-User zusätzlich über das DeviceFS von Xcode im Host-Home. lsof läuft jetzt mit `-w`,
+  und reine Warnungen gelten nicht mehr als Fehler.
+- `svctl doctor` meldete „netd ports“ als unbekannt, auch wenn die Firewall aus ist. Damit stand das Gesamturteil
+  von `svctl status` auf „?“. Ohne Firewall wird die Prüfung jetzt übersprungen.
+- `scripts/verify-on-mac.sh capture` redigiert Umgebungswerte mit Leerzeichen jetzt vollständig, behält
+  `SV_SESSION_ID` und schreibt die Exit-Codes von lsof und `launchctl print` mit.
+- Die Session-Zuordnung sucht den Agenten jetzt unter allen Wurzeln einer Session. macOS zeigt die Umgebung von
+  Apple-Programmen wie `zsh -i` nicht an; ohne sichtbaren Launcher zerfiel eine Session sonst in mehrere Wurzeln, und
+  als Befehl stand „Python“ statt „claude“.
+- Der Lernmodus arbeitet nur noch live. macOS 27 speichert die Sandbox-Meldungen des Kernels nicht im Log, daher
+  fand `log show` nie etwas.
+  - `svctl violations` folgt dem Log bis Ctrl-C, mit `--for 2m` für eine feste Zeit samt Zusammenfassung.
+  - `--suggest` braucht `--for`.
+  - `--last` und `--follow` entfallen, ebenso „Read Last 10 Minutes“ in der App.
+  - Der geführte Gerätetest scheiterte vorher an `--follow --suggest`, das die CLI ablehnte.
+
+### Tests
+- Fixtures für dscl, dseditgroup, `ls -led`, sudoers und das sv-Profil durch echte Ausgaben ersetzt; neue echte
+  Fixtures für ps ohne Session, lsof ohne Sockets, nettop ohne Zeilen, das Unified Log und `launchctl print` ohne
+  Dienst, dazu Prozesse, Umgebung, lsof und nettop einer laufenden Session. 392 Tests.
+
 ## 0.1.0 · 2026-10-09
 
 Erste Ausbaustufe: Kernmodule, CLI, Netzwerkdienst, Root-Helper und die macOS-App. Alles ist unter Linux und auf

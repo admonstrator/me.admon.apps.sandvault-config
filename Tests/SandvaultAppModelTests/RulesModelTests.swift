@@ -63,15 +63,6 @@ import Testing
         #expect(rules.learnError?.kind == .error)
     }
 
-    @Test func learnFromRecentReadsTheLog() async {
-        let world = TestWorld()
-        defer { world.cleanUp() }
-        world.violations.recentResult.set([Self.violation("mach-lookup", "com.example.agent")])
-        let rules = world.model().rules
-        await rules.learnFromRecent()
-        #expect(rules.suggestions.map(\.id) == ["mach:com.example.agent"])
-    }
-
     @Test func editsShowDriftAndApplySendsTheConfig() async throws {
         let world = TestWorld()
         defer { world.cleanUp() }

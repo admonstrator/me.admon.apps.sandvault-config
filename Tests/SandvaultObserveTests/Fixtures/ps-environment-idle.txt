@@ -1,0 +1,9 @@
+62073 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdbulkimport -s mdworker-bundle -c MDSImporterBundleFinder -m com.apple.metadata.mdbulkimport
+62076 /usr/libexec/pkd
+62078 /usr/libexec/containermanagerd --runmode=agent --user-container-mode=current --bundle-container-mode=proxy --system-container-mode=none
+72853 /usr/sbin/distnoted agent
+72854 /usr/libexec/lsd
+72855 /usr/sbin/cfprefsd agent
+72857 /usr/libexec/secd
+72858 /usr/libexec/trustd --agent
+85188 /bin/ps -E -ww -U sandvault-alice -o pid=,command= TERM=<redacted> LS_COLORS=<redacted> SSH_AUTH_SOCK=<redacted> __CF_USER_TEXT_ENCODING=<redacted> LSCOLORS=<redacted> PATH=<redacted> LANG=<redacted> HOME=<redacted> COLORTERM=<redacted> MAIL=<redacted> LOGNAME=<redacted> USER=<redacted> SHELL=<redacted> SUDO_COMMAND=<redacted> SUDO_USER=<redacted> SUDO_UID=<redacted> SUDO_GID=<redacted> SUDO_HOME=<redacted> SUDO_TTY=<redacted>

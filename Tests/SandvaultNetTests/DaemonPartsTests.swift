@@ -62,7 +62,7 @@ import Testing
         #expect(status.loaded && status.pid == 4242)
 
         let missing = FakeCommandRunner()
-        missing.on(["/bin/launchctl", "print"], stdout: "", exitCode: 113, stderr: "Could not find service")
+        missing.on(["/bin/launchctl", "print"], stdout: "", exitCode: 113, stderr: try Fixture.text("launchctl-print-netd-missing.txt"))
         let unloaded = try await agent(missing).status()
         #expect(!unloaded.loaded && unloaded.state == nil)
     }
@@ -253,6 +253,7 @@ import Testing
         config.network.inspection.enabled = false
         let off = await checks(layout, config, socket: socket)
         #expect(state(off, "net.netd") == .skipped)
+        #expect(state(off, "net.ports") == .skipped, "an unused netd must not make doctor's verdict unknown")
         #expect(state(off, "net.ca") == .skipped)
         #expect(state(off, "net.zshenv") == .ok)
     }

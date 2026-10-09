@@ -1,0 +1,9 @@
+p86064
+cPython
+f4
+tIPv6
+PTCP
+n*:8765
+TST=LISTEN
+TQR=0
+TQS=0

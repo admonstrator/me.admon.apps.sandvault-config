@@ -13,6 +13,11 @@
 (allow file-read*
     (subpath "/Volumes/Macintosh HD"))
 
+;; Deny mounting disks
+;; diskarbitrationd -- diskutil mount, hdiutil attach, Finder disk handling
+;; NetAuthAgent     -- NetFS: 'open smb://...', Connect to Server
+;; NetAuthSysAgent
+;; appleeventsd     -- disallow osascript telling Finder to do it
 (deny file-mount file-unmount)
 (deny mach-lookup
   (global-name "com.apple.DiskArbitration.diskarbitrationd")
@@ -20,11 +25,25 @@
   (global-name "com.apple.NetAuthSysAgent")
   (global-name "com.apple.appleeventsd"))
 
+;; Block raw disk and packet-capture devices regardless of the broader
+;; /dev write allow below. Defense in depth: /dev/*disk* is already
+;; root:operator 640, but this removes reliance on POSIX perms alone.
 (deny file-read* file-write*
     (regex #"^/dev/r?disk")
     (regex #"^/private/dev/r?disk")
     (regex #"^/dev/bpf"))
 
+;; Default-deny reads under /Users, then re-allow only the sandvault
+;; user's home and its shared workspace. Catches the host user's home
+;; plus any other accounts on the machine (other users, /Users/Guest,
+;; sibling sv-* workspaces under /Users/Shared) without enumeration.
+;; Last-match-wins, so the re-allows below must follow this deny.
+;;
+;; The literal re-allows on /Users and /Users/Shared grant lookup of
+;; those directory entries themselves so that path resolution into the
+;; allowed subpaths works. Without them, mkdir -p and open() under
+;; the allowed subtrees fail because path traversal touches the denied
+;; parent components.
 (deny file-read*
     (subpath "/Users"))
 (allow file-read*
@@ -33,11 +52,21 @@
     (subpath "/Users/Shared/sv-alice")
     (subpath "/Users/sandvault-alice"))
 
+;; Deny /Library/Keychains, then re-allow only System.keychain.
+;; The other keychains there hold user and system secrets, and unlike
+;; /dev/*disk* they are not protected by restrictive file permissions
+;; (System.keychain itself is mode 644), so this deny is the only thing
+;; keeping the sandvault user out of them.
+;; System.keychain is re-allowed because it holds the CA trust anchors
+;; that tools like LightPanda need to validate TLS connections; its
+;; contents are public certificates, not secrets.
 (deny file-read*
     (subpath "/Library/Keychains"))
 (allow file-read*
     (literal "/Library/Keychains/System.keychain"))
 
+;; Allow writes to sandvault home, shared workspace, temporary directories.
+;; Allow writes to devices, which are protected by unix permissions
 (allow file-write*
     (subpath "/Users/Shared/sv-alice")
     (subpath "/Users/sandvault-alice")
@@ -47,11 +76,14 @@
     (subpath "/private/var/folders")
     (subpath "/dev"))
 
+;; allow basic process info queries
 (allow process-info*)
 (allow sysctl-read)
 
+;; allow process exec/fork (ps may require process info access)
 (allow process*)
 
+;; allow /bin/ps (setuid) to run without sandbox restrictions
 (allow process-exec
     (literal "/bin/ps")
     (with no-sandbox))

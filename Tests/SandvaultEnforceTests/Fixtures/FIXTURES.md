@@ -4,9 +4,9 @@
 
 | File | Produced on a Mac by | Status |
 |---|---|---|
-| `sandbox-sandvault-alice.sb` | `cat /var/sandvault/sandbox-sandvault-alice.sb` after `sv build` (sv v1.32.0) | **not synthetic**: sv lines 1602-1690 with `$SHARED_WORKSPACE=/Users/Shared/sv-alice`, `$SANDVAULT_USER=sandvault-alice`, trailing newline from `echo` |
-| `dscl-read-uniqueid.txt` | `dscl . -read /Users/sandvault-alice UniqueID` | synthetic |
-| `id-u.txt` | `id -u sandvault-alice` | synthetic |
+| `sandbox-sandvault-alice.sb` | `cat /var/sandvault/sandbox-sandvault-alice.sb` after `sv build` (sv v1.32.0) | **real**: sv lines 1602-1690 with `$SHARED_WORKSPACE=/Users/Shared/sv-alice`, `$SANDVAULT_USER=sandvault-alice`, trailing newline from `echo`; byte-identical to the profile captured on macOS 27.0.1 (host user renamed) |
+| `dscl-read-uniqueid.txt` | `dscl . -read /Users/sandvault-alice UniqueID` | synthetic (format and uid 601 confirmed by the capture on macOS 27.0.1) |
+| `id-u.txt` | `id -u sandvault-alice` | real (macOS 27.0.1) |
 | `pfctl-s-info-enabled.txt` | `sudo pfctl -s info` (stdout, pf enabled) | synthetic |
 | `pfctl-s-info-disabled.txt` | `sudo pfctl -s info` (stdout, pf disabled) | synthetic |
 | `pfctl-E.stderr.txt` | `sudo pfctl -E` (stderr; the token line may be on stdout on some releases, both are parsed) | synthetic |

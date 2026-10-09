@@ -174,9 +174,11 @@ public struct ProcessMonitor: Sendable {
         let roots = members.filter { !pids.contains($0.ppid) }.sorted { ($0.elapsedSeconds, $1.pid) > ($1.elapsedSeconds, $0.pid) }
         let root = roots.first ?? members.min { $0.pid < $1.pid }!
 
-        // Depth below the root decides which agent is "the" command when several match.
+        // Depth below the roots decides which agent is "the" command when several match. There can be several
+        // roots: an Apple binary (`zsh -i`) hides its environment, so without the launcher its children start
+        // their own subtrees.
         let children = Dictionary(grouping: members, by: \.ppid)
-        var queue = [root]
+        var queue = roots.isEmpty ? [root] : roots
         var command: String?
         var seen: Set<Int32> = []
         while !queue.isEmpty, command == nil {

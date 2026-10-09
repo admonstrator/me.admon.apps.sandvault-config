@@ -15,11 +15,16 @@ public struct ConnectionMonitor: Sendable {
     public func connections() async throws -> [SandboxConnection] {
         let result = try await runner.run(Invocations.lsof(environment))
         if result.sudoRefused { throw SandvaultError.sudoMissing(environment) }
-        // lsof exits 1 silently when nothing matched, and also after mere warnings while still listing sockets.
-        guard result.succeeded || !result.stdout.isEmpty || result.stderr.isEmpty else {
+        // lsof exits 1 when nothing matched, and also after mere warnings while still listing sockets.
+        guard result.succeeded || !result.stdout.isEmpty || Self.onlyWarnings(result.stderrString) else {
             throw SandvaultError.commandFailed(Invocations.lsof(environment).description, result.exitCode, result.stderrString)
         }
         return LsofParser.parse(result.stdoutString)
+    }
+
+    /// Empty, or only `lsof: WARNING: ...` lines with their indented continuation lines.
+    static func onlyWarnings(_ stderr: String) -> Bool {
+        stderr.split(separator: "\n").allSatisfy { $0.hasPrefix("lsof: WARNING") || $0.first?.isWhitespace == true }
     }
 
     /// Cumulative bytes per sandbox process from one `nettop` sample. `pids` defaults to the sandbox

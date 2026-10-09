@@ -1,0 +1,3 @@
+lsof: WARNING: can't stat() devicefs file system /Users/alice/Library/Developer/CoreDevice/DeviceFS
+      Output information may be incomplete.
+      assuming "dev=30000004" from mount table

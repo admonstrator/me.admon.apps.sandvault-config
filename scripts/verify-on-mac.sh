@@ -60,7 +60,7 @@ capture() {
     } > "$out/system.txt" 2>&1
 
     say "svctl views"
-    for command in "doctor" "status" "ps --tree" "sessions" "net --listening --traffic" "violations --last 30m --suggest" \
+    for command in "doctor" "status" "ps --tree" "sessions" "net --listening --traffic" "violations --for 10s --suggest" \
                    "rules status" "firewall status" "proxy status" "netd status"; do
         # shellcheck disable=SC2086 # word splitting of the subcommand is intended
         { echo "\$ svctl $command"; "$SVCTL" $command 2>&1; echo "exit $?"; } >> "$out/svctl.txt" || true
@@ -74,21 +74,26 @@ capture() {
     # Only the sandbox user's processes; other users' command lines stay out of the capture.
     /bin/ps -axww -o pid=,ppid=,user=,%cpu=,%mem=,rss=,etime=,state=,command= \
         | awk -v u="$SANDBOX_USER" '$3 == u' > "$out/ps-axww.txt" || true
-    # Environment values are redacted except the ones the parser reads.
+    # Environment values are redacted except the ones the parser reads. A value runs up to the next
+    # ` NAME=`, so values with spaces (an app path in PATH) are redacted completely.
     sudo -n -u "$SANDBOX_USER" /usr/bin/env /bin/ps -E -ww -U "$SANDBOX_USER" -o pid=,command= 2> "$out/ps-environment.stderr" \
-        | sed -E 's/(^| )([A-Za-z_][A-Za-z0-9_]*)=[^ ]*/\1\2=<redacted>/g; s/SV_SESSION_ID=<redacted>/SV_SESSION_ID=<kept>/g' \
+        | perl -pe 's/(?<= )(?!SV_SESSION_ID=)([A-Za-z_][A-Za-z0-9_]*)=(?!,).*?(?= [A-Za-z_][A-Za-z0-9_]*=|$)/$1=<redacted>/g' \
         > "$out/ps-environment.txt" || true
     sudo -n -u "$SANDBOX_USER" /usr/bin/env /bin/ps -E -ww -U "$SANDBOX_USER" -o pid=,command= 2>/dev/null \
         | grep -oE 'SV_SESSION_ID=[0-9A-Fa-f-]{36}' | sort | uniq -c > "$out/ps-environment-session-ids.txt" || true
+    local code=0
     # shellcheck disable=SC2024 # the capture files belong to the host user on purpose
-    sudo -n -u "$SANDBOX_USER" /usr/bin/env /usr/sbin/lsof -nP -i -a -u "$SANDBOX_USER" -F pcPtnT \
-        > "$out/lsof-sandbox.txt" 2> "$out/lsof-sandbox.stderr" || true
+    sudo -n -u "$SANDBOX_USER" /usr/bin/env /usr/sbin/lsof -w -nP -i -a -u "$SANDBOX_USER" -F pcPtnT \
+        > "$out/lsof-sandbox.txt" 2> "$out/lsof-sandbox.stderr" || code=$?
+    echo "exit $code" > "$out/lsof-sandbox.exit"
     local pids
     pids="$(awk '{print $1}' "$out/ps-axww.txt" | paste -sd'|' -)"
     /usr/bin/nettop -P -L 1 -x -J bytes_in,bytes_out 2>/dev/null \
         | awk -F, -v pids="^(${pids:-none})$" 'NR == 1 { print; next } { n = split($1, a, "."); if (a[n] ~ pids) print }' \
         > "$out/nettop.csv" || true
-    /usr/bin/log show --style ndjson --last 30m --predicate "$predicate" > "$out/log-violations.ndjson" 2> "$out/log.stderr" || true
+    # macOS does not store the kernel's sandbox reports; only a live stream sees them (10 s here).
+    /usr/bin/perl -e 'alarm 10; exec @ARGV' /usr/bin/log stream --style ndjson --predicate "$predicate" \
+        > "$out/log-violations.ndjson" 2> "$out/log.stderr" || true
     /usr/bin/dscl . -read "/Users/$SANDBOX_USER" UniqueID PrimaryGroupID NFSHomeDirectory UserShell > "$out/dscl-user.txt" 2>&1 || true
     /usr/bin/dscl . -read "/Groups/$SANDBOX_USER" PrimaryGroupID > "$out/dscl-group.txt" 2>&1 || true
     /usr/bin/dscl . -read /Users/nobody-here > "$out/dscl-record-missing.txt" 2>&1 || true
@@ -98,7 +103,9 @@ capture() {
     cat "/etc/sudoers.d/50-nopasswd-for-$SANDBOX_USER" > "$out/sudoers.txt" 2>&1 || true
     cat "/var/sandvault/sandbox-$SANDBOX_USER.sb" > "$out/sandbox-profile.sb" 2>&1 || true
     id -u "$SANDBOX_USER" > "$out/id-u.txt" 2>&1 || true
-    launchctl print "gui/$(id -u)/me.admon.apps.sandvault-config.netd" > "$out/launchctl-print-netd.txt" 2>&1 || true
+    code=0
+    launchctl print "gui/$(id -u)/me.admon.apps.sandvault-config.netd" > "$out/launchctl-print-netd.txt" 2>&1 || code=$?
+    echo "exit $code" > "$out/launchctl-print-netd.exit"
     for file in "$HOME"/.local/state/sandvault/chrome-*.log "$HOME"/.local/state/sandvault/ios-bridge-*.log; do
         [[ -f "$file" ]] && head -20 "$file" > "$out/$(basename "$file")"
     done
@@ -138,7 +145,7 @@ guided() {
     note "Streams sandbox denials for 20 seconds while a denied write runs in the sandbox."
     if ask "Run it?"; then
         ( sleep 3; sv shell -- /usr/bin/touch "/Users/Shared/sandvault-config-probe" >/dev/null 2>&1 || true ) &
-        run /usr/bin/perl -e 'alarm 20; exec @ARGV' "$SVCTL" violations --follow --suggest
+        run "$SVCTL" violations --for 20s --suggest
         wait || true
     fi
 

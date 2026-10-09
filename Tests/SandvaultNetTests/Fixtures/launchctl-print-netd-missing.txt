@@ -1,0 +1,2 @@
+Bad request.
+Could not find service "me.alice.apps.sandvault-config.netd" in domain for user gui: 501

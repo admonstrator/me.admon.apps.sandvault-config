@@ -205,7 +205,6 @@ struct LearnSection: View {
         Section("Learn mode") {
             HStack {
                 Button(learnTitle) { toggle() }
-                Button("Read Last 10 Minutes") { Task { await rules.learnFromRecent() } }
                 Toggle("Include unattributed", isOn: $rules.includeUnattributed)
                 Spacer()
                 Text(verbatim: "\(rules.observed.count) violations")

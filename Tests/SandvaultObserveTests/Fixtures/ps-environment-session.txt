@@ -1,0 +1,13 @@
+62073 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdbulkimport -s mdworker-bundle -c MDSImporterBundleFinder -m com.apple.metadata.mdbulkimport
+62076 /usr/libexec/pkd
+62078 /usr/libexec/containermanagerd --runmode=agent --user-container-mode=current --bundle-container-mode=proxy --system-container-mode=none
+72853 /usr/sbin/distnoted agent
+72854 /usr/libexec/lsd
+72855 /usr/sbin/cfprefsd agent
+72857 /usr/libexec/secd
+72858 /usr/libexec/trustd --agent
+86014 /bin/zsh -i
+86064 /opt/homebrew/Cellar/python@3.14/3.14.8_1/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python -m http.server 8765 HOME=<redacted> USER=<redacted> SHELL=<redacted> TERM=<redacted> INITIAL_DIR=<redacted> SHARED_WORKSPACE=<redacted> SV_SESSION_ID=DD58E8C9-C854-4D0C-9DE3-3A2EE03CB7C6 SV_VERBOSE=<redacted> VERBOSE=<redacted> PATH=<redacted> GIT_CONFIG_COUNT=<redacted> GIT_CONFIG_KEY_0=<redacted> GIT_CONFIG_VALUE_0=<redacted> COLORTERM=<redacted> LOGNAME=<redacted> SHLVL=<redacted> PWD=<redacted> OLDPWD=<redacted> http_proxy=<redacted> https_proxy=<redacted> HTTP_PROXY=<redacted> HTTPS_PROXY=<redacted> no_proxy=<redacted> NO_PROXY=<redacted> NODE_EXTRA_CA_CERTS=<redacted> TMPDIR=<redacted> HOMEBREW_PREFIX=<redacted> HOMEBREW_CELLAR=<redacted> HOMEBREW_REPOSITORY=<redacted> FPATH=<redacted> INFOPATH=<redacted> _=<redacted> __CF_USER_TEXT_ENCODING=<redacted> __PYVENV_LAUNCHER__=<redacted>
+86073 /opt/homebrew/bin/claude --dangerously-skip-permissions TERM=<redacted> SHELL=<redacted> HOMEBREW_REPOSITORY=<redacted> TMPDIR=<redacted> GIT_CONFIG_VALUE_0=<redacted> FPATH=<redacted> NO_PROXY=<redacted> http_proxy=<redacted> USER=<redacted> PATH=<redacted> GIT_CONFIG_KEY_0=<redacted> INITIAL_DIR=<redacted> PWD=<redacted> VERBOSE=<redacted> GIT_CONFIG_COUNT=<redacted> HTTPS_PROXY=<redacted> https_proxy=<redacted> SV_VERBOSE=<redacted> SHLVL=<redacted> HOME=<redacted> HOMEBREW_PREFIX=<redacted> no_proxy=<redacted> HTTP_PROXY=<redacted> LOGNAME=<redacted> SV_SESSION_ID=DD58E8C9-C854-4D0C-9DE3-3A2EE03CB7C6 INFOPATH=<redacted> HOMEBREW_CELLAR=<redacted> SHARED_WORKSPACE=<redacted> NODE_EXTRA_CA_CERTS=<redacted> COLORTERM=<redacted>
+86165 caffeinate -i -t 300
+86436 /bin/ps -E -ww -U sandvault-alice -o pid=,command= TERM=<redacted> LS_COLORS=<redacted> SSH_AUTH_SOCK=<redacted> __CF_USER_TEXT_ENCODING=<redacted> LSCOLORS=<redacted> PATH=<redacted> LANG=<redacted> HOME=<redacted> COLORTERM=<redacted> MAIL=<redacted> LOGNAME=<redacted> USER=<redacted> SHELL=<redacted> SUDO_COMMAND=<redacted> SUDO_USER=<redacted> SUDO_UID=<redacted> SUDO_GID=<redacted> SUDO_HOME=<redacted> SUDO_TTY=<redacted>

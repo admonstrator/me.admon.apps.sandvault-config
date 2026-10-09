@@ -20,6 +20,17 @@ import Testing
         #expect(chrome.command.hasPrefix("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless"))
     }
 
+    @Test func parsesAnIdleSandboxOnMacOS27() throws {
+        let processes = ProcessParser.parse(try fixture("ps-axww-idle.txt"))
+        #expect(processes.count == 8)
+        #expect(processes.allSatisfy { $0.user == "sandvault-alice" && $0.ppid == 1 })
+        let trustd = try #require(processes.first { $0.pid == 72858 })
+        #expect(trustd.elapsedSeconds == 86_400 + 5 * 3600 + 11 * 60 + 27)
+        #expect(trustd.command == "/usr/libexec/trustd --agent")
+        // Without a running session, no process carries SV_SESSION_ID; system agents print no environment.
+        #expect(ProcessParser.sessionIDs(try fixture("ps-environment-idle.txt")).isEmpty)
+    }
+
     @Test func skipsMalformedLines() {
         #expect(ProcessParser.parse("garbage\n  12 1 root 0.0\n\n").isEmpty)
     }
@@ -93,6 +104,22 @@ import Testing
         #expect(second.command == "codex")
         #expect(second.helpers == [HostHelperProcess(pid: 5210, kind: .iosBridge, port: 52400, sessionID: secondSession)])
         #expect(snapshot.helpers.count == 2)  // the Chrome renderer is not a helper of its own
+    }
+
+    @Test func attributesARealSessionOnMacOS27() async throws {
+        // Captured with `sv` running claude and a Python listener. Apple binaries (zsh, caffeinate) print no
+        // environment; Python and claude carry SV_SESSION_ID. The root-owned sudo launcher was not captured.
+        let fake = FakeCommandRunner()
+        fake.on(Invocations.psAll.argv, stdout: try fixture("ps-axww-session.txt"))
+        fake.on(Invocations.psEnvironment(alice).argv, stdout: try fixture("ps-environment-session.txt"))
+        let snapshot = try await ProcessMonitor(environment: alice, runner: fake, files: .fixed()).snapshot()
+        let session = "DD58E8C9-C854-4D0C-9DE3-3A2EE03CB7C6"
+        #expect(snapshot.processes.count == 12)
+        #expect(snapshot.processes.filter { $0.sessionID == session }.map(\.pid) == [86064, 86073, 86165])
+        #expect(snapshot.sessions.map(\.id) == [session])
+        // zsh -i hides its environment and its launcher is missing, so Python and claude are separate roots.
+        #expect(snapshot.sessions.first?.rootPID == 86064)
+        #expect(snapshot.sessions.first?.command == "claude")
     }
 
     @Test func fallsBackToLauncherAncestryWithoutSudo() async throws {

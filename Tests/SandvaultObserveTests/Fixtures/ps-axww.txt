@@ -16,5 +16,5 @@
  5221  5220 sandvault-alice    0.0  0.0   4000       09:56 S+   /bin/zsh /Users/sandvault-alice/bin/codex
  5222  5221 sandvault-alice    0.3  0.6  90000       09:55 S+   node /opt/homebrew/bin/codex
  5223  5222 sandvault-alice    3.1  1.9 300000       09:55 S+   /opt/homebrew/lib/node_modules/@openai/codex/vendor/aarch64-apple-darwin/codex/codex
- 6000   612 root               0.0  0.0   5000       00:00 S    /usr/bin/sudo -n -u sandvault-alice /usr/bin/env /usr/sbin/lsof -nP -i -a -u sandvault-alice -F pcPtnT
- 6001  6000 sandvault-alice    0.0  0.0   2000       00:00 R    /usr/sbin/lsof -nP -i -a -u sandvault-alice -F pcPtnT
+ 6000   612 root               0.0  0.0   5000       00:00 S    /usr/bin/sudo -n -u sandvault-alice /usr/bin/env /usr/sbin/lsof -w -nP -i -a -u sandvault-alice -F pcPtnT
+ 6001  6000 sandvault-alice    0.0  0.0   2000       00:00 R    /usr/sbin/lsof -w -nP -i -a -u sandvault-alice -F pcPtnT

@@ -6,34 +6,35 @@ import SandvaultObserve
 struct ViolationsCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "violations",
-        abstract: "Show sandbox denials from the unified log and suggest rules for them (learn mode).",
+        abstract: "Watch sandbox denials in the unified log and suggest rules for them (learn mode).",
         discussion: """
-        Reads `log show` (or `log stream` with --follow), which needs an administrator account. Only denials of \
-        processes known to belong to the sandbox user are shown unless --all is given; short-lived processes can \
-        exit before they are seen and then count as unattributed.
+        Follows `log stream`, which needs an administrator account. Live only: macOS does not keep the kernel's \
+        sandbox reports in the log store, so there is no look back. Runs until interrupted, or for the time given \
+        with --for and then prints a summary. Only denials of processes known to belong to the sandbox user are \
+        shown unless --all is given; short-lived processes can exit before they are seen and then count as \
+        unattributed.
         """
     )
 
     @OptionGroup var global: GlobalOptions
 
-    @Option(name: .long, help: "Time window for `log show`: a number with m, h or d.")
-    var last = "10m"
-
-    @Flag(name: .long, help: "Stream new violations until interrupted.")
-    var follow = false
+    @Option(name: .customLong("for"), help: "Stop after this time (30s, 5m, 1h).")
+    var duration: String?
 
     @Flag(name: .long, help: "Include violations that cannot be attributed to the sandbox user.")
     var all = false
 
-    @Flag(name: .long, help: "Propose allow rules for the violations shown.")
+    @Flag(name: .long, help: "Propose allow rules for the violations seen (needs --for).")
     var suggest = false
 
     func validate() throws {
-        if follow && suggest { throw ValidationError("--suggest works on a finished window; use --last instead of --follow") }
-        do {
-            try ViolationMonitor.validate(duration: last)
-        } catch {
-            throw ValidationError("\(error)")
+        if suggest && duration == nil { throw ValidationError("--suggest needs a finished window; add --for, e.g. --for 2m") }
+        if let duration {
+            do {
+                _ = try ViolationMonitor.duration(duration)
+            } catch {
+                throw ValidationError("\(error)")
+            }
         }
     }
 
@@ -45,28 +46,31 @@ struct ViolationsCommand: AsyncParsableCommand {
     func run() async throws {
         try ObservePlatform.require("violations")
         let monitor = ViolationMonitor(environment: global.environment, runner: global.runner)
-        if follow {
-            if !global.json { Output.line("watching for sandbox violations (Ctrl-C to stop)") }
+        let all = all, json = global.json
+        let printLive: @Sendable (SandboxViolation) -> Void = { violation in
+            guard all || violation.attributedToSandbox, !json else { return }
+            Output.line(Self.row(violation).joined(separator: "  "))
+        }
+
+        guard let duration else {
+            if !json { Output.line("watching for sandbox violations (Ctrl-C to stop)") }
             for try await violation in monitor.stream() where all || violation.attributedToSandbox {
-                if global.json {
+                if json {
                     FileHandle.standardOutput.write(try ControlCodec.encode(violation))
                 } else {
-                    Output.line(Self.row(violation).joined(separator: "  "))
+                    printLive(violation)
                 }
             }
             return
         }
 
-        let found = try await monitor.recent(last: last)
+        if !json { Output.line("watching for sandbox violations for \(duration)") }
+        let found = try await monitor.collect(for: try ViolationMonitor.duration(duration), onEach: printLive)
         let shown = all ? found : found.filter(\.attributedToSandbox)
         let suggestions = suggest ? RuleSuggester.suggestions(for: shown, environment: global.environment) : nil
-        if global.json { return try Output.json(ViolationsOutput(violations: shown, suggestions: suggestions)) }
+        if json { return try Output.json(ViolationsOutput(violations: shown, suggestions: suggestions)) }
 
-        if shown.isEmpty {
-            Output.line("no sandbox violations in the last \(last)")
-        } else {
-            Output.table(["TIME", "PID", "PROCESS", "COUNT", "OPERATION", "TARGET"], shown.map(Self.row))
-        }
+        if shown.isEmpty { Output.line("no sandbox violations in \(duration)") }
         let hidden = found.count - shown.count
         if hidden > 0 { Output.line("\(hidden) more from processes not attributed to the sandbox user (--all shows them)") }
 

@@ -7,4 +7,5 @@
 | `dns-response-www.github.com.hex` | synthetic | wire bytes (hex) of an answer to `dig www.github.com A` with a CNAME and compression pointers; on a Mac capture one with `sudo tcpdump -i en0 -w dns.pcap udp port 53` while running `dig www.github.com` |
 | `launchctl-print-netd-running.txt` | synthetic | `launchctl print gui/$(id -u)/me.admon.apps.sandvault-config.netd` while the agent runs |
 | `launchctl-print-netd-exited.txt` | synthetic | the same command after the agent exited with status 1 |
+| `launchctl-print-netd-missing.txt` | real (macOS 27.0.1, host uid 501) | the same command while the agent is not installed (stdout and stderr; exit code not captured, the test assumes 113) |
 | `root-bundle.pem` | synthetic | stands in for `security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain` (two self-signed test certificates) |
