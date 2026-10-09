@@ -347,6 +347,20 @@ final class FakeWorkflow: HandoffService, RepoService, ToolService, MigrationSer
     }
 }
 
+final class FakeSandbox: SandboxService, @unchecked Sendable {
+    let current = Locked(SandboxState(installed: true, profile: true, home: true, workspace: true))
+    let runs = Locked<[(command: SandboxCommand, terminal: TerminalApp, svOptions: [String], followUp: [[String]])]>([])
+    let failure = Locked<Error?>(nil)
+
+    func state() async -> SandboxState { current.get() }
+
+    func run(_ command: SandboxCommand, terminal: TerminalApp, svOptions: [String], followUp: [[String]]) async throws -> SandboxLaunch {
+        if let failure = failure.get() { throw failure }
+        runs.mutate { $0.append((command, terminal, svOptions, followUp)) }
+        return SandboxLaunch(command: "sv", launched: true)
+    }
+}
+
 final class MemoryPreferences: PreferencesStore, @unchecked Sendable {
     let stored = Locked(AppPreferences())
     func load() -> AppPreferences { stored.get() }
@@ -369,6 +383,7 @@ struct TestWorld {
     let agent = FakeAgent()
     let ca = FakeCA()
     let workflow = FakeWorkflow()
+    let sandbox = FakeSandbox()
     let preferences = MemoryPreferences()
     var checks: [Check] = []
 
@@ -391,7 +406,7 @@ struct TestWorld {
             policy: policy, profiles: ProfileInspector(profilePath: profilePath, recordPath: directory.appendingPathComponent("record.json").path),
             sandboxUID: FakeUID(), localPorts: FakePorts(), helperSetup: helperSetup,
             netd: netd, netdAgent: agent, ca: ca,
-            handoff: workflow, repos: workflow, tools: workflow, migration: workflow, keys: workflow
+            handoff: workflow, repos: workflow, tools: workflow, migration: workflow, keys: workflow, sandbox: sandbox
         )
     }
 

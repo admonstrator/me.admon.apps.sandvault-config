@@ -108,6 +108,7 @@ struct AppSection: View {
 
     var body: some View {
         Section("App") {
+            Toggle("Show in Dock", isOn: showInDock)
             Toggle("Expert mode", isOn: expertMode)
             Text("Shows processes, sockets, firewall details, sandbox rules, tools and migration in the sidebar.")
                 .font(.callout)
@@ -124,6 +125,13 @@ struct AppSection: View {
                     .textSelection(.enabled)
             }
         }
+    }
+
+    private var showInDock: Binding<Bool> {
+        Binding<Bool>(get: { settings.preferences.showInDock }, set: { on in
+            settings.setShowInDock(on)
+            DockPresence.apply(on)
+        })
     }
 
     private var expertMode: Binding<Bool> {

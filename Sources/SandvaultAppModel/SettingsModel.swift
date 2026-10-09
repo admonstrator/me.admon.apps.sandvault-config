@@ -117,6 +117,11 @@ public final class SettingsModel {
         await editHandoff("Set the terminal") { $0.terminal = terminal }
     }
 
+    public func setShowInDock(_ on: Bool) {
+        preferences.showInDock = on
+        store.save(preferences)
+    }
+
     public func setExpertMode(_ on: Bool) {
         preferences.expertMode = on
         store.save(preferences)

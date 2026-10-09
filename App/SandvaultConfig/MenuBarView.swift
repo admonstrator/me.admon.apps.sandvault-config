@@ -61,6 +61,7 @@ struct MenuBarView: View {
                 .pickerStyle(.menu)
                 .disabled(model.firewall.isBusy)
             }
+            StartSessionRow(sandbox: model.sandbox, defaultAgent: model.editor.config.handoff.defaultAgent)
             HStack {
                 Button("Hand Off a Repository…") { chooseAndHandOff() }
                 Spacer()
@@ -85,7 +86,7 @@ struct MenuBarView: View {
                     }
                 }
             }
-            if let message = model.network.message ?? model.firewall.message {
+            if let message = model.sandbox.message ?? model.network.message ?? model.firewall.message {
                 Text(message.title)
                     .font(.caption)
                     .foregroundStyle(message.kind.tint.color)
@@ -102,6 +103,7 @@ struct MenuBarView: View {
         }
         .padding(14)
         .frame(width: 340)
+        .background(WindowOpenerRegistration())
         .onAppear { model.setVisible(.menu, true) }
         .onDisappear { model.setVisible(.menu, false) }
         .dropDestination(for: URL.self) { urls, _ in
@@ -144,6 +146,23 @@ struct MenuBarView: View {
         if let screen { model.select(screen) }
         openWindow(id: MainWindow.id)
         NSApplication.shared.activate()
+    }
+}
+
+/// Shell and the default agent in one click; sv itself builds a missing sandbox on first use.
+struct StartSessionRow: View {
+    let sandbox: SandboxModel
+    let defaultAgent: AgentKind
+
+    var body: some View {
+        HStack {
+            Button("Open Shell") { Task { await sandbox.open(.shell) } }
+            if defaultAgent != .shell {
+                Button("Start \(defaultAgent.displayName)") { Task { await sandbox.open(defaultAgent) } }
+            }
+            Spacer()
+        }
+        .disabled(sandbox.isBusy)
     }
 }
 

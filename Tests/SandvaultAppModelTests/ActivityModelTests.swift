@@ -114,7 +114,7 @@ import Testing
         let world = TestWorld()
         defer { world.cleanUp() }
         let model = world.model()
-        #expect(model.screens == [.overview, .activity, .handoff, .settings])
+        #expect(model.screens == [.overview, .sandbox, .activity, .handoff, .settings])
         model.select(.firewall)
         #expect(model.selection == .overview)
 
@@ -130,6 +130,6 @@ import Testing
 
     @Test func olderPreferencesKeepTheirInterval() throws {
         let decoded = try JSONDecoder().decode(AppPreferences.self, from: Data(#"{"refreshInterval":5}"#.utf8))
-        #expect(decoded == AppPreferences(refreshInterval: 5, expertMode: false))
+        #expect(decoded == AppPreferences(refreshInterval: 5, expertMode: false, showInDock: true))
     }
 }

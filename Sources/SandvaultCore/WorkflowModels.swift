@@ -256,3 +256,56 @@ public protocol KeyService: Sendable {
     func add(name: String, publicKey: String) async throws -> AuthorizedKey
     func remove(name: String) async throws
 }
+
+// MARK: - The sandbox itself (sv build, sv uninstall, sessions)
+
+/// What `sv` is asked to do in a terminal window.
+public enum SandboxCommand: Sendable, Equatable {
+    /// `sv <agent> [directory]`; `shell` opens a login shell.
+    case open(AgentKind, directory: String?)
+    /// `sv build`: creates the sandbox account, profile and shared workspace (asks for the password in the terminal).
+    case build
+    /// `sv --rebuild build`: rewrites sv's configuration and permissions, which drops the managed rules block.
+    case rebuild
+    /// `sv uninstall`: removes the account and sv's files, keeps `$SHARED_WORKSPACE/user` and the repositories.
+    case uninstall
+}
+
+/// Whether sv's sandbox exists, from the files sv writes (no sudo, no dscl).
+public struct SandboxState: Codable, Sendable, Equatable {
+    /// sv's install marker, written last by `sv build` and removed first by `sv uninstall`.
+    public var installed: Bool
+    /// `/var/sandvault/sandbox-<user>.sb`.
+    public var profile: Bool
+    /// `/Users/<sandvault user>`.
+    public var home: Bool
+    /// `/Users/Shared/sv-<user>`.
+    public var workspace: Bool
+
+    public init(installed: Bool, profile: Bool, home: Bool, workspace: Bool) {
+        self.installed = installed
+        self.profile = profile
+        self.home = home
+        self.workspace = workspace
+    }
+
+    /// Something of an earlier sandbox is left, but sv's marker says it is not complete.
+    public var incomplete: Bool { !installed && (profile || home) }
+}
+
+/// The line a terminal window was asked to run.
+public struct SandboxLaunch: Codable, Sendable, Equatable {
+    public var command: String
+    public var launched: Bool
+
+    public init(command: String, launched: Bool) {
+        self.command = command
+        self.launched = launched
+    }
+}
+
+public protocol SandboxService: Sendable {
+    func state() async -> SandboxState
+    /// Opens a terminal window with `sv`; each `followUp` argv runs after it, only when everything before succeeded.
+    func run(_ command: SandboxCommand, terminal: TerminalApp, svOptions: [String], followUp: [[String]]) async throws -> SandboxLaunch
+}

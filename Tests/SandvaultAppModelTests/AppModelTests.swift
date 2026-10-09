@@ -115,7 +115,7 @@ import Testing
 
     @Test func screensHaveTitlesInSidebarOrder() {
         #expect(Screen.allCases.map(\.title) == [
-            "Overview", "Activity", "Processes", "Network", "Firewall & Proxy", "Sandbox Rules & Learn", "Tools", "Repos & Hand-off",
+            "Overview", "Sandbox", "Activity", "Processes", "Network", "Firewall & Proxy", "Sandbox Rules & Learn", "Tools", "Repos & Hand-off",
             "Migration", "Settings",
         ])
     }

@@ -12,6 +12,7 @@ struct MainWindow: View {
         } detail: {
             ScreenView(model: model)
         }
+        .background(WindowOpenerRegistration())
         .onAppear { model.setVisible(.window, true) }
         .onDisappear { model.setVisible(.window, false) }
     }
@@ -55,6 +56,7 @@ struct ScreenView: View {
     var body: some View {
         switch model.selection {
         case .overview: OverviewView(model: model)
+        case .sandbox: SandboxView(model: model)
         case .activity: ActivityView(activity: model.activity)
         case .processes: ProcessesView(processes: model.processes)
         case .network: NetworkView(network: model.network, netd: model.netd)

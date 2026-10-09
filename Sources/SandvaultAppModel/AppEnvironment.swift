@@ -157,12 +157,15 @@ public struct AppClock: Sendable {
 public struct AppPreferences: Codable, Sendable, Equatable {
     /// Seconds between process and socket snapshots while a window or the menu is open.
     public var refreshInterval: Double
-    /// Shows every screen; off, the window has only Overview, Activity, Repos & Hand-off and Settings.
+    /// Shows every screen; off, the window has only Overview, Sandbox, Activity, Repos & Hand-off and Settings.
     public var expertMode: Bool
+    /// An icon in the Dock (with a menu to start sessions) besides the menu bar item.
+    public var showInDock: Bool
 
-    public init(refreshInterval: Double = AppModelInfo.refreshInterval, expertMode: Bool = false) {
+    public init(refreshInterval: Double = AppModelInfo.refreshInterval, expertMode: Bool = false, showInDock: Bool = true) {
         self.refreshInterval = refreshInterval
         self.expertMode = expertMode
+        self.showInDock = showInDock
     }
 
     /// Missing keys keep their defaults, so preferences saved by an older version survive.
@@ -170,6 +173,7 @@ public struct AppPreferences: Codable, Sendable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         refreshInterval = try container.decodeIfPresent(Double.self, forKey: .refreshInterval) ?? AppModelInfo.refreshInterval
         expertMode = try container.decodeIfPresent(Bool.self, forKey: .expertMode) ?? false
+        showInDock = try container.decodeIfPresent(Bool.self, forKey: .showInDock) ?? true
     }
 
     public static let refreshRange: ClosedRange<Double> = 1...30
@@ -233,6 +237,7 @@ public struct AppEnvironment: Sendable {
     public var tools: ToolService
     public var migration: MigrationService
     public var keys: KeyService
+    public var sandbox: SandboxService
 
     public init(
         environment: SandvaultEnvironment, paths: AppPaths, runner: CommandRunner, configStore: ConfigStore,
@@ -241,7 +246,8 @@ public struct AppEnvironment: Sendable {
         violations: ViolationSource, doctor: DoctorSource, status: StatusSource,
         policy: PolicyControl, profiles: ProfileSource, sandboxUID: SandboxUIDSource, localPorts: LocalPortSource,
         helperSetup: HelperInstalling, netd: NetdConnector, netdAgent: NetdAgentControl, ca: CAControl,
-        handoff: HandoffService, repos: RepoService, tools: ToolService, migration: MigrationService, keys: KeyService
+        handoff: HandoffService, repos: RepoService, tools: ToolService, migration: MigrationService, keys: KeyService,
+        sandbox: SandboxService
     ) {
         self.environment = environment
         self.paths = paths
@@ -269,6 +275,7 @@ public struct AppEnvironment: Sendable {
         self.tools = tools
         self.migration = migration
         self.keys = keys
+        self.sandbox = sandbox
     }
 
     /// The real thing: the factories of Observe, Enforce, Net and Workflow over one `ProcessCommandRunner`.
@@ -301,7 +308,8 @@ public struct AppEnvironment: Sendable {
             repos: Workflow.makeRepoService(environment: environment, runner: runner, configStore: store),
             tools: Workflow.makeToolService(environment: environment, runner: runner, configStore: store),
             migration: Workflow.makeMigrationService(environment: environment, runner: runner),
-            keys: Workflow.makeKeyService(environment: environment, runner: runner)
+            keys: Workflow.makeKeyService(environment: environment, runner: runner),
+            sandbox: Workflow.makeSandboxService(environment: environment, runner: runner)
         )
     }
 }

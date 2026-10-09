@@ -23,6 +23,11 @@ public enum Workflow {
         ConfigMigration(environment: environment, runner: runner)
     }
 
+    /// Sessions (`sv <agent>`) and the sandbox's life cycle (`sv build`, `sv uninstall`) in a terminal window.
+    public static func makeSandboxService(environment: SandvaultEnvironment, runner: CommandRunner) -> SandboxService {
+        SandboxLifecycle(environment: environment, runner: runner)
+    }
+
     /// Public keys in sv's `authorized_keys.d`.
     public static func makeKeyService(environment: SandvaultEnvironment, runner: CommandRunner) -> KeyService {
         AuthorizedKeyStore(environment: environment, runner: runner)

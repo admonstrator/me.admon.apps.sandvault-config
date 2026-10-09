@@ -5,16 +5,17 @@ import SandvaultObserve
 
 /// Pages of the main window, in sidebar order.
 public enum Screen: String, CaseIterable, Identifiable, Hashable, Sendable {
-    case overview, activity, processes, network, firewall, rules, tools, handoff, migration, settings
+    case overview, sandbox, activity, processes, network, firewall, rules, tools, handoff, migration, settings
 
     /// The window without expert mode.
-    public static let simple: [Screen] = [.overview, .activity, .handoff, .settings]
+    public static let simple: [Screen] = [.overview, .sandbox, .activity, .handoff, .settings]
 
     public var id: String { rawValue }
 
     public var title: String {
         switch self {
         case .overview: "Overview"
+        case .sandbox: "Sandbox"
         case .activity: "Activity"
         case .processes: "Processes"
         case .network: "Network"
@@ -30,6 +31,7 @@ public enum Screen: String, CaseIterable, Identifiable, Hashable, Sendable {
     public var symbolName: String {
         switch self {
         case .overview: "gauge.with.dots.needle.33percent"
+        case .sandbox: "shippingbox"
         case .activity: "dot.radiowaves.left.and.right"
         case .processes: "list.bullet.indent"
         case .network: "network"
@@ -66,6 +68,7 @@ public final class AppModel {
     public let migration: MigrationModel
     public let keys: KeysModel
     public let settings: SettingsModel
+    public let sandbox: SandboxModel
 
     public private(set) var selection: Screen = .overview
     public private(set) var visibleSurfaces: Set<Surface> = []
@@ -107,6 +110,11 @@ public final class AppModel {
             bundled: environment.bundled, environment: environment.environment
         )
 
+        sandbox = SandboxModel(
+            service: environment.sandbox, editor: editor, helperSetup: environment.helperSetup, bundled: environment.bundled,
+            environment: environment.environment
+        )
+
         handoff.onHandedOff = { [weak self] in await self?.repos.refresh() }
         settings.onSetupChanged = { [weak self] in await self?.setupChanged() }
     }
@@ -120,6 +128,7 @@ public final class AppModel {
             await settings.refresh()
             await firewall.refreshStatus()
             await overview.refresh()
+            await sandbox.refresh()
         }
     }
 
@@ -144,6 +153,10 @@ public final class AppModel {
         let target = screens.contains(screen) ? screen : .overview
         selection = target
         Task { await refreshOnShow(target) }
+    }
+
+    public func setShowInDock(_ on: Bool) {
+        settings.setShowInDock(on)
     }
 
     public func setExpertMode(_ on: Bool) {
@@ -185,6 +198,7 @@ public final class AppModel {
         case .network: await network.refreshSockets()
         case .activity: await activity.refresh()
         case .overview: await overview.refreshIfStale()
+        case .sandbox: await sandbox.refresh()
         default: break
         }
     }
@@ -193,6 +207,9 @@ public final class AppModel {
         editor.reloadIfChanged()
         switch screen {
         case .overview: await overview.refreshIfStale()
+        case .sandbox:
+            await sandbox.refresh()
+            await repos.refresh()
         case .activity: await activity.refresh()
         case .processes: await processes.refresh()
         case .network: await network.refreshSockets()

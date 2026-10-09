@@ -544,7 +544,7 @@ when the connection ends it forgets the asks, waits 0.5 s doubling to 15 s, reco
 `retryNow()` skips the wait after a netd install or restart.
 
 **Simple and expert window.** Without expert mode (`AppPreferences.expertMode`, off by default, a toggle in Settings)
-the sidebar has Overview, Activity, Repos & Hand-off and Settings (`Screen.simple`, `AppModel.screens`); a hidden
+the sidebar has Overview, Sandbox, Activity, Repos & Hand-off and Settings (`Screen.simple`, `AppModel.screens`); a hidden
 page asked for (the next step's firewall link) opens the overview instead. The overview then shows the protection
 level, the next step only while setup is incomplete, sessions and the newest five activity lines; the doctor sections
 and the raw firewall state only in expert mode. `ProtectionLevel` maps four choices onto the policy: Off (`off`),
@@ -555,6 +555,7 @@ Watch (`watch`), Ask (`proxyOnly` with default action `ask`), Block All (`blocke
 | Screen | Model | What it does |
 |---|---|---|
 | Overview | `OverviewModel` | doctor sections of Observe, Enforce, Net; `StatusSummary`; sessions; `SetupState.nextStep` (install sv, create the sandbox, install the helper, end a panic, start netd, turn on the firewall, apply it, ready) |
+| Sandbox | `SandboxModel` | state from the files sv writes (install marker, profile, sandbox home, shared workspace; `incomplete` when parts of an earlier one are left); Open Shell, Start <default agent> and the other agents as `sv <options> <agent> <directory>` in the configured terminal, starting in the shared workspace or a clone from `repos/`; without a sandbox, a preset (`SandboxSetup`: Everyday = standard rules and Watch, Careful = hardened and Ask, Offline = hardened and Block All, Unrestricted = standard and Off) is saved, then `sv build` runs, followed by `svctl rules apply --yes` and `svctl firewall apply --yes` when the helper is installed and they have something to do; Rebuild runs `sv --rebuild build` with the same follow-ups; Delete (after a confirmation) runs `sv uninstall`. sv asks for the administrator password in the terminal (`SandboxLifecycle`, D36) |
 | Activity | `ActivityModel` | one list: running ICMP tools (from the process snapshot), hosts netd saw (`HostGroup`, Allow = `*.<registrable domain>`, Block = the host), then direct connections from lsof grouped by address (loopback left out; 80/443/53 left out while pf hands them to netd); a summary line and a hint when host names cannot be seen (Off, Open, netd down) |
 | Processes | `ProcessesModel` | snapshot, tree rows, session groups; terminate, kill, throttle, end session, end all with the `ControlReport` as a message |
 | Network | `NetworkModel` | lsof sockets and nettop traffic (polled on this page only); netd records grouped by host (`HostGroup`: allowed, denied, ports, processes, bytes, last decision); Allow Host, Allow Domain (`*.<registrable domain>`), Deny via `upsertDomainRule` and reload |
@@ -564,7 +565,7 @@ Watch (`watch`), Ask (`proxyOnly` with default action `ask`), Block All (`blocke
 | Tools | `ToolsModel` | `ToolService.status`, grant by method, grants from the config |
 | Repos & Hand-off | `HandoffModel`, `ReposModel` | readiness first; the button stays disabled with a reason until a repository is chosen, checked and free of blockers; agent, task, uncommitted changes, deploy key, terminal from the settings; repositories with Fetch Back |
 | Migration | `MigrationModel`, `KeysModel` | item selection, plan preview with blocked entries and reasons, copy; keys in `authorized_keys.d` |
-| Settings | `SettingsModel` | helper install and uninstall, netd LaunchAgent install, restart, uninstall, default agent, terminal, refresh interval, the svctl symlink command |
+| Settings | `SettingsModel` | helper install and uninstall, netd LaunchAgent install, restart, uninstall, default agent, terminal, Show in Dock, expert mode, refresh interval, the svctl symlink command |
 
 Errors become `UserMessage` values (kind, title, detail, suggested command taken from the error text). A workflow
 service that throws `notImplemented` turns its screen into "not available yet" (`Availability`), not an error.
@@ -579,7 +580,14 @@ records, so the icon is not redrawn per record): blocked or panic `xmark.shield.
 `exclamationmark.shield.fill`, watch or proxy-only without netd `exclamationmark.triangle`, off `shield.slash`, open
 `shield.lefthalf.filled`, watch `eye`, proxy-only `checkmark.shield.fill`. The window shows sessions, processes, denials of the last
 hour, the firewall mode (choosing one saves it and opens the Firewall page with the rules to confirm), Hand Off a
-Repository (folder picker), Open Window, a two-step Panic, Firewall Off, and the last five denied hosts with Allow.
+Repository (folder picker), Open Shell and Start <default agent>, Open Window, a two-step Panic, Firewall Off, and the
+last five denied hosts with Allow.
+
+**Dock.** The bundle is an agent app (`LSUIElement`), so it starts as a menu bar item; with `AppPreferences.showInDock`
+(on by default) the delegate switches to the regular activation policy at launch, and the Settings toggle switches at
+once. Clicking the Dock icon opens the window; the Dock menu offers Open Shell, Start <default agent>, Sandbox and
+Activity. The window is opened through SwiftUI's `openWindow`, which views hand to `AppRuntime` on appearance. The icon
+is drawn by `scripts/make-app-icon.py` into `Assets.xcassets/AppIcon.appiconset`.
 
 **Asks.** `AskPanelController` observes `AsksModel.pending` (`withObservationTracking`) and opens one floating
 non-activating `NSPanel` per ask (host, process, port, countdown, host or domain scope, Allow Once, Allow Always, Deny

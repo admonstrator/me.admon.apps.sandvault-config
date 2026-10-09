@@ -11,6 +11,13 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   Regelvorschau.
 - **Firewall-Modus `watch`:** Alles bleibt erlaubt, aber Web und DNS laufen über netd. Damit erscheint jeder Host,
   mit dem die Sandbox spricht. netd weist nur ab, was eine Deny-Regel nennt. `svctl firewall mode watch`.
+- **Sandbox-Seite:** Shell oder Agent (Claude, Codex und die übrigen) mit einem Klick in einer neuen Sandbox-Sitzung
+  starten, wahlweise im Shared Workspace oder in einem Klon. Ohne Sandbox legt „Create Sandbox“ sie mit einem Preset
+  an (Everyday, Careful, Offline, Unrestricted): Regeln und Schutzstufe werden gespeichert, `sv build` läuft im
+  Terminal, danach werden Regeln und Firewall angewendet. „Rebuild“ und „Delete Sandbox…“ rufen `sv --rebuild build`
+  und `sv uninstall` auf. Pro macOS-Benutzer gibt es weiterhin genau eine Sandbox, so wie sv sie anlegt.
+- **Dock:** Die App hat ein Symbol und erscheint standardmäßig im Dock (abschaltbar in den Einstellungen). Das
+  Dock-Menü und das Menüleisten-Fenster starten Shell und Standard-Agent direkt.
 - **Aktivität:** eine Liste mit Hosts (Allow, Block), direkten Verbindungen ohne Hostnamen und laufenden
   ping/traceroute.
 
@@ -48,7 +55,7 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   Fixtures für ps ohne Session, lsof ohne Sockets, nettop ohne Zeilen, das Unified Log und `launchctl print` ohne
   Dienst, dazu Prozesse, Umgebung, lsof und nettop einer laufenden Session.
 - ps liest zusätzlich `ruser=`; in den echten ps-Fixtures wurde die Spalte nachträglich mit dem Benutzerwert ergänzt.
-  410 Tests.
+  421 Tests.
 
 ## 0.1.0 · 2026-10-09
 

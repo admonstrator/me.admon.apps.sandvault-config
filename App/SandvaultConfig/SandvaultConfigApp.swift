@@ -12,6 +12,7 @@ struct SandvaultConfigApp: App {
             MenuBarView(model: AppRuntime.model)
         } label: {
             MenuBarLabel(model: AppRuntime.model)
+                .background(WindowOpenerRegistration())
         }
         .menuBarExtraStyle(.window)
 
@@ -26,6 +27,38 @@ struct SandvaultConfigApp: App {
 @MainActor
 enum AppRuntime {
     static let model = AppModel(environment: .live(bundled: .inMainBundle()))
+    /// Opens the main window; registered by a view, because only SwiftUI can open a `Window` scene.
+    static var openMainWindow: (() -> Void)?
+
+    static func showMainWindow(_ screen: Screen? = nil) {
+        if let screen { model.select(screen) }
+        if let openMainWindow {
+            openMainWindow()
+        } else {
+            NSApplication.shared.windows.first { $0.title == BundleIdentity.displayName }?.makeKeyAndOrderFront(nil)
+        }
+        NSApplication.shared.activate()
+    }
+}
+
+/// Hands SwiftUI's `openWindow` to the AppKit side (Dock icon click and Dock menu).
+struct WindowOpenerRegistration: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Color.clear
+            .onAppear { AppRuntime.openMainWindow = { openWindow(id: MainWindow.id) } }
+    }
+}
+
+/// Dock icon on or off; the bundle starts as an agent app (LSUIElement), so the menu bar item alone is the default
+/// until this runs.
+@MainActor
+enum DockPresence {
+    static func apply(_ show: Bool) {
+        NSApplication.shared.setActivationPolicy(show ? .regular : .accessory)
+        if show { NSApplication.shared.activate() }
+    }
 }
 
 @MainActor
@@ -36,6 +69,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let model = AppRuntime.model
         askPanels = AskPanelController(asks: model.asks, notifier: AskNotifier(asks: model.asks))
         model.start()
+        if model.settings.preferences.showInDock { DockPresence.apply(true) }
+    }
+
+    /// Clicking the Dock icon opens the window when none is visible.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { AppRuntime.showMainWindow() }
+        return true
+    }
+
+    /// The menu bar item keeps running when the window closes.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        let agent = AppRuntime.model.editor.config.handoff.defaultAgent
+        menu.addItem(item("Open Shell", #selector(openShell)))
+        if agent != .shell { menu.addItem(item("Start \(agent.displayName)", #selector(startDefaultAgent))) }
+        menu.addItem(.separator())
+        menu.addItem(item("Sandbox…", #selector(showSandbox)))
+        menu.addItem(item("Activity…", #selector(showActivity)))
+        return menu
+    }
+
+    private func item(_ title: String, _ action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        return item
+    }
+
+    @objc private func openShell() {
+        Task { await AppRuntime.model.sandbox.open(.shell) }
+    }
+
+    @objc private func startDefaultAgent() {
+        let model = AppRuntime.model
+        Task { await model.sandbox.open(model.editor.config.handoff.defaultAgent) }
+    }
+
+    @objc private func showSandbox() {
+        AppRuntime.showMainWindow(.sandbox)
+    }
+
+    @objc private func showActivity() {
+        AppRuntime.showMainWindow(.activity)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
