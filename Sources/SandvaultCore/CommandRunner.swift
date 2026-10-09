@@ -104,14 +104,16 @@ public struct ProcessCommandRunner: CommandRunner {
     public init() {}
 
     public func run(_ invocation: CommandInvocation) async throws -> CommandResult {
+        // Blocking waits run on dedicated threads, never on GCD workers or the cooperative pool:
+        // a few slow commands must not delay unrelated tasks.
         try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global().async {
+            Thread {
                 do {
                     continuation.resume(returning: try Self.runBlocking(invocation))
                 } catch {
                     continuation.resume(throwing: error)
                 }
-            }
+            }.start()
         }
     }
 
@@ -181,25 +183,25 @@ public struct ProcessCommandRunner: CommandRunner {
         }
 
         if let stdin = invocation.stdin {
-            DispatchQueue.global().async {
+            Thread {
                 input.fileHandleForWriting.write(stdin)
                 try? input.fileHandleForWriting.close()
-            }
+            }.start()
         }
 
         // Drain both pipes concurrently so a chatty process never blocks on a full pipe.
         let group = DispatchGroup()
         let collected = Collected()
         group.enter()
-        DispatchQueue.global().async {
+        Thread {
             collected.setStdout(out.fileHandleForReading.readDataToEndOfFile())
             group.leave()
-        }
+        }.start()
         group.enter()
-        DispatchQueue.global().async {
+        Thread {
             collected.setStderr(err.fileHandleForReading.readDataToEndOfFile())
             group.leave()
-        }
+        }.start()
 
         var timedOut = false
         if let timeout = invocation.timeout {
