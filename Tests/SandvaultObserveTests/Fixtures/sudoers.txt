@@ -7,5 +7,5 @@ alice ALL=(sandvault-alice) NOPASSWD: /usr/bin/true
 alice ALL=(root) NOPASSWD: /var/sandvault/buildhome-sandvault-alice
 
 # Allow alice to kill sandvault-alice processes without password
-alice ALL=(root) NOPASSWD: /bin/launchctl bootout user/502
+alice ALL=(root) NOPASSWD: /bin/launchctl bootout user/601
 alice ALL=(root) NOPASSWD: /usr/bin/pkill -9 -u sandvault-alice

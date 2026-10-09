@@ -15,8 +15,10 @@ enum Invocations {
         .asSandvault(environment, "/bin/ps", ["-E", "-ww", "-U", environment.sandvaultUser, "-o", "pid=,command="], timeout: 10)
     }
 
+    /// `-w`: no warnings. As the sandbox user lsof cannot stat file systems in the host's home (Xcode's
+    /// CoreDevice DeviceFS) and says so on every run.
     static func lsof(_ environment: SandvaultEnvironment) -> CommandInvocation {
-        .asSandvault(environment, "/usr/sbin/lsof", ["-nP", "-i", "-a", "-u", environment.sandvaultUser, "-F", "pcPtnT"], timeout: 10)
+        .asSandvault(environment, "/usr/sbin/lsof", ["-w", "-nP", "-i", "-a", "-u", environment.sandvaultUser, "-F", "pcPtnT"], timeout: 10)
     }
 
     static let nettop = CommandInvocation("/usr/bin/nettop", ["-P", "-L", "1", "-x", "-J", "bytes_in,bytes_out"], timeout: 15)

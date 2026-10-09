@@ -52,6 +52,7 @@ import Testing
     }
 
     @Test func parsesNettopWithTimeColumn() throws {
+        #expect(NettopParser.parse(try fixture("nettop-header-only.csv")).isEmpty)
         let traffic = NettopParser.parse(try fixture("nettop-time.csv"))
         #expect(traffic.map(\.pid) == [389, 4121])
         #expect(traffic[1].bytesIn == 5_234_112)
@@ -65,13 +66,20 @@ import Testing
         #expect(connections.count == 9)
         #expect(fake.invocations.map(\.argv) == [[
             "/usr/bin/sudo", "-n", "-u", "sandvault-alice", "/usr/bin/env",
-            "/usr/sbin/lsof", "-nP", "-i", "-a", "-u", "sandvault-alice", "-F", "pcPtnT",
+            "/usr/sbin/lsof", "-w", "-nP", "-i", "-a", "-u", "sandvault-alice", "-F", "pcPtnT",
         ]])
     }
 
     @Test func noSocketsIsNotAnError() async throws {
         let fake = FakeCommandRunner()
         fake.on(Invocations.lsof(alice).argv, stdout: "", exitCode: 1)
+        #expect(try await ConnectionMonitor(environment: alice, runner: fake).connections().isEmpty)
+    }
+
+    @Test func warningsWithoutSocketsAreNotAnError() async throws {
+        // macOS 27 with Xcode installed: nothing matched (exit 1), and a warning about the host's DeviceFS.
+        let fake = FakeCommandRunner()
+        fake.on(Invocations.lsof(alice).argv, stdout: "", exitCode: 1, stderr: try fixture("lsof-sandbox-warning.stderr.txt"))
         #expect(try await ConnectionMonitor(environment: alice, runner: fake).connections().isEmpty)
     }
 

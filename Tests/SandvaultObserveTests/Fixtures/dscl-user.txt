@@ -1,4 +1,4 @@
 NFSHomeDirectory: /Users/sandvault-alice
-PrimaryGroupID: 502
-UniqueID: 502
+PrimaryGroupID: 600
+UniqueID: 601
 UserShell: /bin/zsh

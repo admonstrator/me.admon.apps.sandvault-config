@@ -20,6 +20,17 @@ import Testing
         #expect(chrome.command.hasPrefix("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless"))
     }
 
+    @Test func parsesAnIdleSandboxOnMacOS27() throws {
+        let processes = ProcessParser.parse(try fixture("ps-axww-idle.txt"))
+        #expect(processes.count == 8)
+        #expect(processes.allSatisfy { $0.user == "sandvault-alice" && $0.ppid == 1 })
+        let trustd = try #require(processes.first { $0.pid == 72858 })
+        #expect(trustd.elapsedSeconds == 86_400 + 5 * 3600 + 11 * 60 + 27)
+        #expect(trustd.command == "/usr/libexec/trustd --agent")
+        // Without a running session, no process carries SV_SESSION_ID; system agents print no environment.
+        #expect(ProcessParser.sessionIDs(try fixture("ps-environment-idle.txt")).isEmpty)
+    }
+
     @Test func skipsMalformedLines() {
         #expect(ProcessParser.parse("garbage\n  12 1 root 0.0\n\n").isEmpty)
     }

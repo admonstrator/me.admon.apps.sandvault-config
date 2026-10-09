@@ -47,6 +47,17 @@ import Testing
         #expect(ViolationParser.parseTimestamp("yesterday") == nil)
     }
 
+    @Test func parsesMacOS27Output() throws {
+        // `log show` on macOS 27 ends with a summary object and reports duplicates of host processes.
+        let lines = try fixture("log-violations-host-only.ndjson").split(separator: "\n").map(String.init)
+        let violations = lines.compactMap(ViolationParser.parse(line:))
+        #expect(violations.map(\.process) == ["duetexpertd", "logd_helper"])
+        #expect(violations.map(\.occurrences) == [301, 1])
+        #expect(violations[0].operation == "system-info")
+        #expect(violations[0].target == "vfs.disk-space")
+        #expect(ViolationParser.parse(line: try #require(lines.last)) == nil)
+    }
+
     @Test func skipsNonJSONAndForeignLines() throws {
         let lines = try fixture("log-violations.ndjson").split(separator: "\n").map(String.init)
         #expect(ViolationParser.parse(line: lines[0]) == nil)  // "Filtering the log data using ..."

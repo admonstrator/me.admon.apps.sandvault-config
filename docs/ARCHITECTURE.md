@@ -76,7 +76,7 @@ prints. The CLI commands refuse to run off macOS (`SandvaultError.unsupportedPla
 |---|---|---|
 | Processes, sessions | `ProcessMonitor.snapshot()` -> `ProcessSnapshot` (`processes`, `sessions`, `helpers`, `environmentReadable`, `tree()`, `session(matching:)`); `sandboxProcesses()`, `helpers()` | `ps -axww -o pid=,ppid=,user=,%cpu=,%mem=,rss=,etime=,state=,command=`, then `asSandvault(/bin/ps -E -ww -U <sandbox> -o pid=,command=)` |
 | Control | `ProcessController.terminate(pid:force:)`, `terminateSession(_:force:)`, `terminateAll()`, `throttle(pid:nice:background:)` -> `ControlReport` | `asSandvault(/bin/kill)`, `renice`, `taskpolicy -b`; sv's sudoers: `sudo -n /bin/launchctl bootout user/<uid>`, `sudo -n /usr/bin/pkill -9 -u <sandbox>` |
-| Sockets, traffic | `ConnectionMonitor.connections()`, `traffic(pids:)` | `asSandvault(/usr/sbin/lsof -nP -i -a -u <sandbox> -F pcPtnT)`, `nettop -P -L 1 -x -J bytes_in,bytes_out` |
+| Sockets, traffic | `ConnectionMonitor.connections()`, `traffic(pids:)` | `asSandvault(/usr/sbin/lsof -w -nP -i -a -u <sandbox> -F pcPtnT)`, `nettop -P -L 1 -x -J bytes_in,bytes_out` |
 | netd seams | `Observe.makeProcessAttributor`, `Observe.makeLocalPortSource` | lsof cache; ps + helper logs |
 | Violations | `ViolationMonitor.recent(last:)`, `stream()`; `SandboxViolation.occurrences` | `log show` / `log stream --style ndjson --predicate <sandbox predicate>` |
 | Learn mode | `RuleSuggester.suggestions(for:environment:)` -> `[RuleSuggestion]` | violations |
@@ -128,10 +128,18 @@ Enforce and Net providers and exits 1 on any failure.
 `violations [--last 10m] [--follow] [--all] [--suggest]`; all take `--json` (`violations --follow --json` prints
 JSON Lines).
 
-**Only a Mac can confirm:** the exact output of every fixture in `Tests/SandvaultObserveTests/Fixtures`
-(all synthetic), whether `nettop` run by the host user sees the sandbox user's processes, whether `taskpolicy -b -p`
-works on another user's process, lsof latency through sudo against the 200 ms budget, whether sandbox denials
-arrive at default log level and whether the reporting subsystem duplicates kernel reports.
+**Confirmed on macOS 27.0.1** (capture of 2026-10-09, no session running): the output of `dscl`, `dseditgroup`,
+`ls -led` (the mode ends in `@`, not `+`, when the workspace also has extended attributes), sv's sudoers file and
+profile, `ps -axww` and the `log show --style ndjson` format, including `N duplicate reports for Sandbox:` and the
+closing `{"count":…,"finished":1}` object. lsof exits 1 when the sandbox user has no sockets, and as that user
+it warns about file systems in the host's home (Xcode's CoreDevice DeviceFS); hence `-w`, and warnings alone are
+no error. The macOS per-user agents (`lsd`, `cfprefsd`, `secd`, `trustd`, ...) keep running for days after the
+last session and count as sandbox processes; `ps -E` prints no environment for them.
+
+**Still open, needs a running session:** `ps -E` with `SV_SESSION_ID`, lsof with real sockets, `nettop` rows for
+sandbox processes (the capture had none, so it is still unclear whether the host user sees them), `taskpolicy -b -p`
+on another user's process, lsof latency through sudo against the 200 ms budget, and whether the reporting subsystem
+duplicates kernel reports.
 
 ## 5 · Enforce
 

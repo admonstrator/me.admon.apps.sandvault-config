@@ -54,7 +54,7 @@ public struct NetChecks: CheckProvider {
                 id: "net.netd", title: "sandvault-netd", state: needed ? .failure : .skipped,
                 detail: "not reachable at \(socketPath)", fix: "svctl netd install"
             ))
-            result.append(Check(id: "net.ports", title: "netd ports", state: .unknown, detail: "netd is not running"))
+            result.append(Check(id: "net.ports", title: "netd ports", state: needed ? .unknown : .skipped, detail: "netd is not running"))
         }
 
         if launchAgent.platformSupported {

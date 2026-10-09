@@ -1,3 +1,3 @@
-drwxrwx---+ 14 alice  sandvault-alice  448 Oct  9 11:58 /Users/Shared/sv-alice
+drwxrwx---@ 5 alice  sandvault-alice  160 Oct  4 16:48 /Users/Shared/sv-alice
  0: group:sandvault-alice allow list,add_file,search,delete,add_subdirectory,delete_child,readattr,writeattr,readextattr,writeextattr,readsecurity,writesecurity,chown,directory_inherit
  1: group:sandvault-alice allow list,add_file,delete,add_subdirectory,readattr,writeattr,readextattr,writeextattr,readsecurity,writesecurity,chown,file_inherit,directory_inherit,only_inherit

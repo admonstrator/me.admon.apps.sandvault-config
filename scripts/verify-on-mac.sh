@@ -74,15 +74,18 @@ capture() {
     # Only the sandbox user's processes; other users' command lines stay out of the capture.
     /bin/ps -axww -o pid=,ppid=,user=,%cpu=,%mem=,rss=,etime=,state=,command= \
         | awk -v u="$SANDBOX_USER" '$3 == u' > "$out/ps-axww.txt" || true
-    # Environment values are redacted except the ones the parser reads.
+    # Environment values are redacted except the ones the parser reads. A value runs up to the next
+    # ` NAME=`, so values with spaces (an app path in PATH) are redacted completely.
     sudo -n -u "$SANDBOX_USER" /usr/bin/env /bin/ps -E -ww -U "$SANDBOX_USER" -o pid=,command= 2> "$out/ps-environment.stderr" \
-        | sed -E 's/(^| )([A-Za-z_][A-Za-z0-9_]*)=[^ ]*/\1\2=<redacted>/g; s/SV_SESSION_ID=<redacted>/SV_SESSION_ID=<kept>/g' \
+        | perl -pe 's/(?<= )(?!SV_SESSION_ID=)([A-Za-z_][A-Za-z0-9_]*)=(?!,).*?(?= [A-Za-z_][A-Za-z0-9_]*=|$)/$1=<redacted>/g' \
         > "$out/ps-environment.txt" || true
     sudo -n -u "$SANDBOX_USER" /usr/bin/env /bin/ps -E -ww -U "$SANDBOX_USER" -o pid=,command= 2>/dev/null \
         | grep -oE 'SV_SESSION_ID=[0-9A-Fa-f-]{36}' | sort | uniq -c > "$out/ps-environment-session-ids.txt" || true
+    local code=0
     # shellcheck disable=SC2024 # the capture files belong to the host user on purpose
-    sudo -n -u "$SANDBOX_USER" /usr/bin/env /usr/sbin/lsof -nP -i -a -u "$SANDBOX_USER" -F pcPtnT \
-        > "$out/lsof-sandbox.txt" 2> "$out/lsof-sandbox.stderr" || true
+    sudo -n -u "$SANDBOX_USER" /usr/bin/env /usr/sbin/lsof -w -nP -i -a -u "$SANDBOX_USER" -F pcPtnT \
+        > "$out/lsof-sandbox.txt" 2> "$out/lsof-sandbox.stderr" || code=$?
+    echo "exit $code" > "$out/lsof-sandbox.exit"
     local pids
     pids="$(awk '{print $1}' "$out/ps-axww.txt" | paste -sd'|' -)"
     /usr/bin/nettop -P -L 1 -x -J bytes_in,bytes_out 2>/dev/null \
@@ -98,7 +101,9 @@ capture() {
     cat "/etc/sudoers.d/50-nopasswd-for-$SANDBOX_USER" > "$out/sudoers.txt" 2>&1 || true
     cat "/var/sandvault/sandbox-$SANDBOX_USER.sb" > "$out/sandbox-profile.sb" 2>&1 || true
     id -u "$SANDBOX_USER" > "$out/id-u.txt" 2>&1 || true
-    launchctl print "gui/$(id -u)/me.admon.apps.sandvault-config.netd" > "$out/launchctl-print-netd.txt" 2>&1 || true
+    code=0
+    launchctl print "gui/$(id -u)/me.admon.apps.sandvault-config.netd" > "$out/launchctl-print-netd.txt" 2>&1 || code=$?
+    echo "exit $code" > "$out/launchctl-print-netd.exit"
     for file in "$HOME"/.local/state/sandvault/chrome-*.log "$HOME"/.local/state/sandvault/ios-bridge-*.log; do
         [[ -f "$file" ]] && head -20 "$file" > "$out/$(basename "$file")"
     done

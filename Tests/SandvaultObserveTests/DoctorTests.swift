@@ -53,7 +53,7 @@ struct DoctorSetup {
         let notOK = checks.filter { $0.state != .ok }.map { "\($0.id)=\($0.state)" }
         #expect(notOK == ["profile.managed-block=skipped", "ssh.remote-login=skipped"])
         #expect(checks.first { $0.id == "sv.installed" }?.detail == "sv 1.32.0 at /opt/homebrew/bin/sv")
-        #expect(checks.first { $0.id == "account.user" }?.detail == "uid 502, gid 502, home /Users/sandvault-alice, shell /bin/zsh")
+        #expect(checks.first { $0.id == "account.user" }?.detail == "uid 601, gid 600, home /Users/sandvault-alice, shell /bin/zsh")
         #expect(CheckReport(checks: checks).worst == .skipped)
     }
 
@@ -178,7 +178,7 @@ struct DoctorSetup {
         #expect(await wrongOwner.check("workspace.permissions")?.state == .failure)
 
         let open = try DoctorSetup()
-        open.runner.on(DoctorSetup.ls, stdout: try fixture("ls-led-workspace.txt").replacingOccurrences(of: "drwxrwx---+", with: "drwxrwxr-x+"))
+        open.runner.on(DoctorSetup.ls, stdout: try fixture("ls-led-workspace.txt").replacingOccurrences(of: "drwxrwx---@", with: "drwxrwxr-x@"))
         let check = await open.check("workspace.permissions")
         #expect(check?.state == .warning)
         #expect(check?.detail.contains("775") == true)
