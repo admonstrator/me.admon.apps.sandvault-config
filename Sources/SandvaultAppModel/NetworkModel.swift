@@ -100,6 +100,8 @@ public struct HostGroup: Identifiable, Sendable, Equatable {
     public var bytesIn: Int64
     public var bytesOut: Int64
     public var inspected: Bool
+    /// Why the newest connection failed, if it did.
+    public var lastError: String?
 
     public var id: String { host }
 
@@ -109,13 +111,14 @@ public struct HostGroup: Identifiable, Sendable, Equatable {
         for record in records where filter.matches(record) {
             var group = groups[record.host] ?? HostGroup(
                 host: record.host, ports: [], allowed: 0, denied: 0, lastSeen: record.timestamp, lastDecision: record.decision,
-                processes: [], bytesIn: 0, bytesOut: 0, inspected: false
+                processes: [], bytesIn: 0, bytesOut: 0, inspected: false, lastError: record.error
             )
             if let port = record.port, !group.ports.contains(port) { group.ports.append(port) }
             if record.decision.blocked { group.denied += 1 } else { group.allowed += 1 }
             if record.timestamp >= group.lastSeen {
                 group.lastSeen = record.timestamp
                 group.lastDecision = record.decision
+                group.lastError = record.error
             }
             if let process = record.process, !group.processes.contains(process) { group.processes.append(process) }
             group.bytesIn += record.bytesIn

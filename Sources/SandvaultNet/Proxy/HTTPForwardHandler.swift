@@ -326,6 +326,7 @@ final class HTTPForwardHandler: ChannelInboundHandler, RemovableChannelHandler {
     /// Answers with a plain-text error and closes the client connection.
     private func fail(_ status: HTTPResponseStatus, _ message: String, context: ChannelHandlerContext) {
         exchange?.summary.status = Int(status.code)
+        if status == .badGateway { exchange?.tracker?.fail(message.trimmingCharacters(in: .whitespacesAndNewlines)) }
         let (head, body) = HTTPRewrite.errorResponse(status, body: message)
         context.write(wrapOutboundOut(.head(head)), promise: nil)
         context.write(wrapOutboundOut(.body(.byteBuffer(context.channel.allocator.buffer(string: body)))), promise: nil)

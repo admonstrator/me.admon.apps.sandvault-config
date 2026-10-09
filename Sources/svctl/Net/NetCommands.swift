@@ -86,6 +86,7 @@ enum NetCLI {
             parts.append("in \(bytes(record.bytesIn)) out \(bytes(record.bytesOut)) \(record.durationMs) ms")
         }
         if record.inspected { parts.append("inspected") }
+        if let error = record.error { parts.append("FAILED: \(error)") }
         for summary in record.http {
             parts.append("\(summary.method) \(summary.url) \(summary.status.map(String.init) ?? "-")")
         }

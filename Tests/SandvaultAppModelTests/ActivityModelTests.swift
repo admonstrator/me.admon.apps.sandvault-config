@@ -50,6 +50,25 @@ import Testing
         #expect(model.activity.items.map(\.title) == ["api.github.com"])
     }
 
+    @Test func hostsWhoseNewestConnectionFailedShowWhy() async throws {
+        let world = TestWorld()
+        defer { world.cleanUp() }
+        try world.store.save(AppConfig(network: NetworkPolicy(mode: .watch)))
+        let now = world.clock.current.get()
+        var failed = record("admon.me", .askedAllowed, at: now, process: "curl")
+        failed.error = "the server closed the connection before answering"
+        world.netd.queue.set([.client(FakeNetdClient(recent: [record("admon.me", .allowed, at: now.addingTimeInterval(-60)), failed]))])
+        let model = world.model()
+        model.netd.start()
+        defer { model.netd.stop() }
+        #expect(await eventually { model.netd.records.count == 2 })
+
+        let item = try #require(model.activity.items.first)
+        #expect(item.status == "Failed" && item.tint == .orange && !item.blocked)
+        #expect(item.detail.hasSuffix("the server closed the connection before answering"))
+        #expect(model.activity.summary == "1 host · 1 failed")
+    }
+
     @Test func withoutNetdInTheLoopOnlyAddressesShow() async throws {
         let world = TestWorld()
         defer { world.cleanUp() }

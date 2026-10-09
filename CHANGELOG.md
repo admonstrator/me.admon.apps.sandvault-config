@@ -18,9 +18,13 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
 - `ping` und `traceroute` fehlten überall. Sie laufen setuid als root, daher zeigte ps root als Benutzer. Prozesse
   zählen jetzt auch über den realen Benutzer zur Sandbox; die App markiert sie als `ping (root)`. `svctl net` und die
   Aktivitätsseite listen sie mit ihrem Ziel. Filtern kann pf ICMP nicht, das geht nur über eine Ausführungsregel.
-- HTTPS direkt auf eine IP-Adresse (`curl https://1.1.1.1`) scheiterte in Watch, Ask und Proxy only auch nach einer
-  Freigabe. Ohne SNI wusste netd nicht, wohin die Verbindung sollte. netd nimmt jetzt die Zieladresse, die lsof für den
-  Socket der Sandbox meldet, und entscheidet nach ihr wie bei jedem anderen Host.
+- HTTPS direkt auf eine IP-Adresse über den transparenten Weg (Programme, die `HTTPS_PROXY` ignorieren) wurde in
+  Watch, Ask und Proxy only abgewiesen. Ohne SNI wusste netd nicht, wohin die Verbindung sollte. netd nimmt jetzt die
+  Zieladresse, die lsof für den Socket der Sandbox meldet, und entscheidet nach ihr wie bei jedem anderen Host.
+- Erlaubte Verbindungen, die trotzdem scheiterten, standen im Log als „erlaubt“ da. netd hält jetzt den Grund fest:
+  nicht auflösbar, keine Verbindung, oder die Gegenseite schließt, bevor sie ein Byte schickt. Letzteres verursacht
+  auf dem Mac typischerweise ein Netzwerkfilter wie Little Snitch oder AdGuard, der netd nicht kennt. Die Aktivität
+  zeigt solche Hosts als „Failed“ mit Grund, `svctl netlog` als `FAILED: ...`, und netd.log nennt sie ebenfalls.
 - `svctl kill --all` beendet übrig gebliebene setuid-Programme jetzt als Sandbox-Benutzer; `pkill -u` erfasst sie nicht.
 - `svctl status` und `svctl net` brachen ab, wenn die Sandbox keine offenen Sockets hatte: lsof endet dann mit
   Exit 1 und warnt als Sandbox-User zusätzlich über das DeviceFS von Xcode im Host-Home. lsof läuft jetzt mit `-w`,
@@ -44,7 +48,7 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   Fixtures für ps ohne Session, lsof ohne Sockets, nettop ohne Zeilen, das Unified Log und `launchctl print` ohne
   Dienst, dazu Prozesse, Umgebung, lsof und nettop einer laufenden Session.
 - ps liest zusätzlich `ruser=`; in den echten ps-Fixtures wurde die Spalte nachträglich mit dem Benutzerwert ergänzt.
-  407 Tests.
+  410 Tests.
 
 ## 0.1.0 · 2026-10-09
 

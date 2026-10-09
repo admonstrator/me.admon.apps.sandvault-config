@@ -52,7 +52,7 @@ struct ActivityRow: View {
                 Text(item.detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(3)
             }
             Spacer()
             Text(item.status)

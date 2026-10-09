@@ -62,7 +62,7 @@ final class SNIRouter: ChannelInboundHandler, RemovableChannelHandler {
             let addresses = result.addresses.map { (try? $0.withPort(upstreamPort)) ?? $0 }
             switch result.verdict {
             case .deny, .fail:
-                if result.verdict == .fail { runtime.logger("transparent TLS \(host): \(result.reason)") }
+                if result.verdict == .fail { tracker.fail(result.reason) }
                 tracker.finish(bytesIn: 0, bytesOut: Int64(self.buffer?.readableBytes ?? 0))
                 self.state = .done
                 context.close(promise: nil)
@@ -100,7 +100,7 @@ final class SNIRouter: ChannelInboundHandler, RemovableChannelHandler {
                 self.state = .done
                 switch outcome {
                 case .failure(let error):
-                    self.runtime.logger("transparent TLS \(host):\(port): \(error)")
+                    tracker.fail("cannot connect: \(error)")
                     tracker.finish(bytesIn: 0, bytesOut: 0)
                     context.close(promise: nil)
                 case .success(let upstream):
@@ -112,7 +112,7 @@ final class SNIRouter: ChannelInboundHandler, RemovableChannelHandler {
                     self.buffer = nil
                     upstream.writeAndFlush(hello, promise: nil)
                     do {
-                        try Tunnel.glue(client: context.channel, upstream: upstream)
+                        try Tunnel.glue(client: context.channel, upstream: upstream, tracker: tracker)
                         Tunnel.finish(tracker, counter: self.counter, client: context.channel, upstream: upstream)
                         _ = context.pipeline.syncOperations.removeHandler(context: context)
                     } catch {

@@ -25,6 +25,37 @@ import Testing
         }
     }
 
+    @Test(arguments: [false, true]) func connectRecordsAServerThatHangsUpWithoutAnswering(reset: Bool) async throws {
+        // What Little Snitch or AdGuard do to a flow they drop: the connect succeeds, the first bytes end it.
+        let origin = try await SilentOrigin.start(reset: reset)
+        let netd = try await TestNetd.start(.testing([("127.0.0.1", .allow)]))
+        try await withCleanup({ await origin.stop(); await netd.stop() }) {
+            let response = try await RawClient.exchange(
+                port: Int(netd.ports.explicitProxy),
+                "CONNECT 127.0.0.1:\(origin.port) HTTP/1.1\r\nHost: 127.0.0.1:\(origin.port)\r\n\r\nhello"
+            )
+            #expect(response.hasPrefix("HTTP/1.1 200 Connection established\r\n\r\n"))
+            let record = try await netd.record { $0.kind == .explicitProxy && $0.host == "127.0.0.1" }
+            #expect(record.decision == .allowed)
+            #expect(record.error?.contains("before answering") == true)
+            #expect(record.error?.contains("Little Snitch") == true)
+            #expect(netd.messages.all.contains { $0.hasPrefix("explicitProxy 127.0.0.1:\(origin.port): the server") })
+        }
+    }
+
+    @Test func connectRecordsWhyTheOriginWasUnreachable() async throws {
+        let origin = try await SilentOrigin.start(reset: false)
+        let port = origin.port
+        await origin.stop()
+        let netd = try await TestNetd.start(.testing([("127.0.0.1", .allow)]))
+        try await withCleanup({ await netd.stop() }) {
+            let response = try await RawClient.exchange(port: Int(netd.ports.explicitProxy), "CONNECT 127.0.0.1:\(port) HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+            #expect(response.hasPrefix("HTTP/1.1 502 Bad Gateway\r\n"))
+            let record = try await netd.record { $0.host == "127.0.0.1" }
+            #expect(record.error?.hasPrefix("cannot connect: ") == true)
+        }
+    }
+
     @Test func connectDeniedAnswers403WithTheAllowCommand() async throws {
         let netd = try await TestNetd.start(.testing([("*.blocked.test", .deny)]))
         try await withCleanup({ await netd.stop() }) {

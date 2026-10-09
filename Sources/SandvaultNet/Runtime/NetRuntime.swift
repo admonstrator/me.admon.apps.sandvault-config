@@ -146,6 +146,9 @@ final class NetRuntime: Sendable {
     }
 
     func record(_ record: ConnectionRecord) {
+        if let error = record.error {
+            logger("\(record.kind.rawValue) \(record.host)\(record.port.map { ":\($0)" } ?? ""): \(error)")
+        }
         counters.count(record.decision)
         log.append(record)
         if let error = log.takeError() { logger("connection log: \(error)") }

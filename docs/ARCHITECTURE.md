@@ -340,7 +340,11 @@ through `SharedFiles` (proxy variables, `NO_PROXY`, CA variables with inspection
 netd syncs it on start and on every reload; `svctl proxy env apply|remove` does it by hand.
 
 **Records**: every decision yields a `ConnectionRecord` (raw bytes on the client socket, duration, process from the
-client's source port). `ConnectionLog` appends JSON Lines to `AppPaths.connectionLog` (rotation at 10 MB, three old
+client's source port). An allowed connection that did not work carries `error`: the resolution or connect failure
+behind a 502, or, in a tunnel, an upstream that closes or resets before its first byte while the client is still
+connected (`SilentUpstreamWatch`; on a Mac that is typically a network filter such as Little Snitch or AdGuard dropping
+netd's flow). netd also writes these to its log; `svctl netlog` prints `FAILED: ...`, the Activity screen "Failed".
+`ConnectionLog` appends JSON Lines to `AppPaths.connectionLog` (rotation at 10 MB, three old
 files) and keeps the last 1000 for `.recent`; records are also pushed to `.connections` subscribers. Every 5 s netd
 pushes `.status` and, in `open`/`proxyOnly` with `localhost == .sandboxAndHelpers`, `LocalPortRefresher` calls
 `applyFirewall` when the allowed loopback ports changed (errors logged once per kind).

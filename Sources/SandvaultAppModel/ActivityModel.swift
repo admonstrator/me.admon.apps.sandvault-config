@@ -44,6 +44,8 @@ public final class ActivityModel {
         var parts = [Format.count(hosts.count, "host")]
         let blocked = hosts.filter(\.blocked).count
         if blocked > 0 { parts.append("\(blocked) blocked") }
+        let failed = hosts.filter { $0.status == "Failed" }.count
+        if failed > 0 { parts.append("\(failed) failed") }
         let direct = items.filter { $0.kind == .direct }.count
         if direct > 0 { parts.append(Format.count(direct, "direct connection")) }
         let icmp = items.filter { $0.kind == .icmp }.count
@@ -122,9 +124,12 @@ public struct ActivityItem: Identifiable, Sendable, Equatable {
         parts.append(Format.count(count, "request"))
         if group.bytesIn + group.bytesOut > 0 { parts.append("\(Format.bytes(group.bytesIn)) in, \(Format.bytes(group.bytesOut)) out") }
         let blocked = group.lastDecision.blocked
+        let failed = !blocked && group.lastError != nil
+        if failed, let error = group.lastError { parts.append(error) }
         self.init(
-            kind: .host, title: group.host, detail: parts.joined(separator: " · "), status: blocked ? "Blocked" : "Allowed",
-            tint: blocked ? .red : .green, host: group.host, blocked: blocked, lastSeen: group.lastSeen
+            kind: .host, title: group.host, detail: parts.joined(separator: " · "),
+            status: blocked ? "Blocked" : failed ? "Failed" : "Allowed",
+            tint: blocked ? .red : failed ? .orange : .green, host: group.host, blocked: blocked, lastSeen: group.lastSeen
         )
     }
 

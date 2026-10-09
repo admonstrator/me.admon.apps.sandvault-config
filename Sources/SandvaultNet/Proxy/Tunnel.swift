@@ -17,9 +17,11 @@ enum Tunnel {
     }
 
     /// Adds a matched glue pair (client side at the end of its pipeline) and resumes reading on both channels.
-    static func glue(client: Channel, upstream: Channel) throws {
+    /// When the upstream ends before sending a byte, `tracker` gets the reason.
+    static func glue(client: Channel, upstream: Channel, tracker: ConnectionTracker) throws {
         let (local, remote) = GlueHandler.matchedPair()
         try client.pipeline.syncOperations.addHandler(local)
+        try upstream.pipeline.syncOperations.addHandler(SilentUpstreamWatch(client: client, tracker: tracker))
         try upstream.pipeline.syncOperations.addHandler(remote)
         try client.syncOptions?.setOption(ChannelOptions.allowRemoteHalfClosure, value: true)
         try client.syncOptions?.setOption(ChannelOptions.autoRead, value: true)
@@ -51,5 +53,51 @@ enum Tunnel {
             let totals = counter.totals
             tracker.finish(bytesIn: totals.sent, bytesOut: totals.received)
         }
+    }
+}
+
+/// Notices an upstream that closes or resets before sending anything while the client is still connected:
+/// a server refusing the TLS hello, or a network filter on this Mac dropping netd's connection.
+final class SilentUpstreamWatch: ChannelInboundHandler, RemovableChannelHandler {
+    typealias InboundIn = NIOAny
+
+    static let filterHint = "a network filter on this Mac (Little Snitch, AdGuard, a VPN) may block sandvault-netd"
+
+    private let client: Channel
+    private let tracker: ConnectionTracker
+    private var answered = false
+
+    init(client: Channel, tracker: ConnectionTracker) {
+        self.client = client
+        self.tracker = tracker
+    }
+
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+        answered = true
+        context.fireChannelRead(data)
+    }
+
+    // The glue closes the client on an error, so a reset is judged here, before that happens.
+    func errorCaught(context: ChannelHandlerContext, error: Error) {
+        report("the server ended the connection before answering (\(error))")
+        context.fireErrorCaught(error)
+    }
+
+    func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        if let event = event as? ChannelEvent, case .inputClosed = event {
+            report("the server closed the connection before answering")
+        }
+        context.fireUserInboundEventTriggered(event)
+    }
+
+    func channelInactive(context: ChannelHandlerContext) {
+        report("the server closed the connection before answering")
+        context.fireChannelInactive()
+    }
+
+    private func report(_ what: String) {
+        guard !answered, client.isActive else { return }
+        answered = true
+        tracker.fail("\(what); \(Self.filterHint)")
     }
 }

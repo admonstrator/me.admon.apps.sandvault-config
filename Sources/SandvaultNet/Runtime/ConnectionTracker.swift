@@ -54,6 +54,11 @@ final class ConnectionTracker: @unchecked Sendable {
 
     func setInspected() { lock.withLock { record.inspected = true } }
 
+    /// Keeps the first reason an allowed connection failed.
+    func fail(_ reason: String) {
+        lock.withLock { if record.error == nil { record.error = reason } }
+    }
+
     func add(_ summary: HTTPSummary) {
         lock.withLock {
             if record.http.count < Self.maxHTTPSummaries { record.http.append(summary) }

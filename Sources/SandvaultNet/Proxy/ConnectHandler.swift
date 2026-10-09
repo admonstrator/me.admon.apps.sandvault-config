@@ -57,6 +57,7 @@ final class ConnectHandler: ChannelInboundHandler, RemovableChannelHandler {
             case .deny:
                 self.respond(.forbidden, NetRuntime.denialMessage(result), context: context, finishing: tracker)
             case .fail:
+                tracker.fail(result.reason)
                 self.respond(.badGateway, "sandvault-config could not reach \(host):\(port): \(result.reason)\n", context: context, finishing: tracker)
             case .allow where result.inspect:
                 self.inspect(host: host, port: port, result: result, tracker: tracker, context: context)
@@ -72,6 +73,7 @@ final class ConnectHandler: ChannelInboundHandler, RemovableChannelHandler {
             .whenComplete { outcome in
                 switch outcome {
                 case .failure(let error):
+                    tracker.fail("cannot connect: \(error)")
                     self.respond(
                         .badGateway, "sandvault-config could not connect to \(host):\(port): \(error)\n", context: context, finishing: tracker
                     )
@@ -83,7 +85,7 @@ final class ConnectHandler: ChannelInboundHandler, RemovableChannelHandler {
                     }
                     do {
                         try self.becomeRaw(context: context)
-                        try Tunnel.glue(client: context.channel, upstream: upstream)
+                        try Tunnel.glue(client: context.channel, upstream: upstream, tracker: tracker)
                         Tunnel.finish(tracker, counter: self.counter, client: context.channel, upstream: upstream)
                         try self.removeHTTPDecoder(context: context)
                     } catch {

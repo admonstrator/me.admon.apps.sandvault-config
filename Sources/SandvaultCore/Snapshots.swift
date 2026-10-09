@@ -218,12 +218,14 @@ public struct ConnectionRecord: Codable, Sendable, Equatable, Hashable, Identifi
     public var http: [HTTPSummary]
     /// DNS answers (addresses) for `.dns` records.
     public var dnsAnswers: [String]
+    /// Why an allowed connection did not work (resolution, connect, or the other side closing before any answer).
+    public var error: String?
 
     public init(
         id: UUID = UUID(), timestamp: Date = Date(), kind: ConnectionKind, host: String, port: UInt16? = nil,
         decision: ConnectionDecision, ruleID: UUID? = nil, pid: Int32? = nil, process: String? = nil,
         bytesIn: Int64 = 0, bytesOut: Int64 = 0, durationMs: Int = 0, inspected: Bool = false,
-        http: [HTTPSummary] = [], dnsAnswers: [String] = []
+        http: [HTTPSummary] = [], dnsAnswers: [String] = [], error: String? = nil
     ) {
         self.id = id
         self.timestamp = timestamp
@@ -240,6 +242,7 @@ public struct ConnectionRecord: Codable, Sendable, Equatable, Hashable, Identifi
         self.inspected = inspected
         self.http = http
         self.dnsAnswers = dnsAnswers
+        self.error = error
     }
 }
 

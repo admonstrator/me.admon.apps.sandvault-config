@@ -40,6 +40,44 @@ struct TestOrigin {
     }
 }
 
+/// Accepts on 127.0.0.1 and closes every connection at once without a byte: with `reset`, by an RST (SO_LINGER 0),
+/// as a network filter does that drops a flow.
+struct SilentOrigin {
+    let channel: Channel
+    let port: Int
+
+    static func start(reset: Bool) async throws -> SilentOrigin {
+        let channel = try await ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)
+            .childChannelInitializer { channel in
+                channel.eventLoop.makeCompletedFuture {
+                    try channel.pipeline.syncOperations.addHandler(HangUpHandler(reset: reset))
+                }
+            }
+            .bind(host: "127.0.0.1", port: 0)
+            .get()
+        return SilentOrigin(channel: channel, port: channel.localAddress!.port!)
+    }
+
+    func stop() async {
+        try? await channel.close()
+    }
+}
+
+private final class HangUpHandler: ChannelInboundHandler {
+    typealias InboundIn = ByteBuffer
+
+    let reset: Bool
+
+    init(reset: Bool) {
+        self.reset = reset
+    }
+
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+        guard reset, let provider = context.channel as? SocketOptionProvider else { return context.close(promise: nil) }
+        provider.setSoLinger(linger(l_onoff: 1, l_linger: 0)).assumeIsolated().whenComplete { _ in context.close(promise: nil) }
+    }
+}
+
 private final class OriginHandler: ChannelInboundHandler {
     typealias InboundIn = ByteBuffer
     typealias OutboundOut = ByteBuffer
