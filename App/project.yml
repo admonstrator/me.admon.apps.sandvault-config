@@ -1,0 +1,151 @@
+# XcodeGen spec of SandvaultConfig.app (`xcodegen generate` here; the .xcodeproj is not committed, D2).
+# The app links the package's library products; svctl, svctl-helper and sandvault-netd are built from the
+# package sources as tool targets (named Bundled*, so no target or module name clashes with the package's own
+# executables) and copied into Contents/MacOS, where the app finds them with Bundle.main.url(forAuxiliaryExecutable:).
+name: SandvaultConfig
+
+options:
+  bundleIdPrefix: me.admon.apps
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+packages:
+  SandvaultConfig:
+    path: ..
+  # Same package and requirement as Package.swift: the tool targets compile the package's executable sources,
+  # which import ArgumentParser. Xcode resolves both references to one checkout.
+  swift-argument-parser:
+    url: https://github.com/apple/swift-argument-parser.git
+    from: 1.5.0
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Local builds: ad-hoc signature, no hardened runtime, no App Sandbox (the app runs sudo, launchctl, osascript).
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    ENABLE_HARDENED_RUNTIME: NO
+    ENABLE_APP_SANDBOX: NO
+
+targets:
+  SandvaultConfig:
+    type: application
+    platform: macOS
+    sources:
+      - path: SandvaultConfig
+    settings:
+      base:
+        PRODUCT_NAME: SandvaultConfig
+        PRODUCT_BUNDLE_IDENTIFIER: me.admon.apps.sandvault-config
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Sandvault Config
+        INFOPLIST_KEY_LSUIElement: YES
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+    dependencies:
+      - package: SandvaultConfig
+        product: SandvaultAppModel
+      - package: SandvaultConfig
+        product: SandvaultCore
+      - package: SandvaultConfig
+        product: SandvaultObserve
+      - package: SandvaultConfig
+        product: SandvaultEnforce
+      - package: SandvaultConfig
+        product: SandvaultNet
+      - target: BundledSvctl
+        embed: true
+        link: false
+        copy:
+          destination: executables
+      - target: BundledHelper
+        embed: true
+        link: false
+        copy:
+          destination: executables
+      - target: BundledNetd
+        embed: true
+        link: false
+        copy:
+          destination: executables
+
+  BundledSvctl:
+    productName: svctl
+    type: tool
+    platform: macOS
+    sources:
+      - path: ../Sources/svctl
+    settings:
+      base:
+        PRODUCT_NAME: svctl
+        PRODUCT_MODULE_NAME: BundledSvctl
+        SKIP_INSTALL: YES
+    dependencies:
+      - package: SandvaultConfig
+        product: SandvaultCore
+      - package: SandvaultConfig
+        product: SandvaultObserve
+      - package: SandvaultConfig
+        product: SandvaultEnforce
+      - package: SandvaultConfig
+        product: SandvaultNet
+      - package: SandvaultConfig
+        product: SandvaultWorkflow
+      - package: swift-argument-parser
+        product: ArgumentParser
+
+  BundledHelper:
+    productName: svctl-helper
+    type: tool
+    platform: macOS
+    sources:
+      - path: ../Sources/svctl-helper
+    settings:
+      base:
+        PRODUCT_NAME: svctl-helper
+        PRODUCT_MODULE_NAME: BundledHelper
+        SKIP_INSTALL: YES
+    dependencies:
+      - package: SandvaultConfig
+        product: SandvaultCore
+      - package: SandvaultConfig
+        product: SandvaultEnforce
+      - package: swift-argument-parser
+        product: ArgumentParser
+
+  BundledNetd:
+    productName: sandvault-netd
+    type: tool
+    platform: macOS
+    sources:
+      - path: ../Sources/sandvault-netd
+    settings:
+      base:
+        PRODUCT_NAME: sandvault-netd
+        PRODUCT_MODULE_NAME: BundledNetd
+        SKIP_INSTALL: YES
+    dependencies:
+      - package: SandvaultConfig
+        product: SandvaultCore
+      - package: SandvaultConfig
+        product: SandvaultObserve
+      - package: SandvaultConfig
+        product: SandvaultEnforce
+      - package: SandvaultConfig
+        product: SandvaultNet
+      - package: swift-argument-parser
+        product: ArgumentParser
+
+schemes:
+  SandvaultConfig:
+    build:
+      targets:
+        SandvaultConfig: all
+    run:
+      config: Debug
+    archive:
+      config: Release

@@ -1,0 +1,28 @@
+{
+  "formulae": [
+    {
+      "name": "jq",
+      "full_name": "jq",
+      "tap": "homebrew/core",
+      "oldnames": [],
+      "aliases": [],
+      "versioned_formulae": [],
+      "desc": "Lightweight and flexible command-line JSON processor",
+      "license": "MIT",
+      "homepage": "https://jqlang.github.io/jq/",
+      "versions": {
+        "stable": "1.7.1",
+        "head": "HEAD",
+        "bottle": true
+      },
+      "dependencies": [
+        "oniguruma"
+      ],
+      "installed": [],
+      "linked_keg": null,
+      "deprecated": false,
+      "disabled": false
+    }
+  ],
+  "casks": []
+}

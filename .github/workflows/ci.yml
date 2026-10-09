@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container: swift:6.2-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: swift build --build-tests
+      - name: Test
+        run: swift test
+
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: swift --version && xcodebuild -version
+      - name: Build
+        run: swift build --build-tests
+      - name: Test
+        run: swift test
+
+  app:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: XcodeGen
+        if: ${{ hashFiles('App/project.yml') != '' }}
+        run: brew install xcodegen && cd App && xcodegen generate
+      - name: Build app
+        if: ${{ hashFiles('App/project.yml') != '' }}
+        run: |
+          xcodebuild -project App/SandvaultConfig.xcodeproj -scheme SandvaultConfig \
+            -configuration Debug -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO build

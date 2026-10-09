@@ -1,0 +1,1 @@
+Error: No available formula or cask with the name "rg".

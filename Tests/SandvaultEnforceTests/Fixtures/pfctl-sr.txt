@@ -1,0 +1,2 @@
+block return out log quick proto tcp from any to any user = 601
+block return out log quick proto udp from any to any user = 601

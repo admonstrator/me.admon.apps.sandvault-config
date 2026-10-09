@@ -1,0 +1,8 @@
+  320 /usr/sbin/cfprefsd agent __CF_USER_TEXT_ENCODING=0x1F6:0x0:0x0
+ 4121 claude HOME=/Users/sandvault-alice USER=sandvault-alice SHELL=/bin/zsh TERM=xterm-256color INITIAL_DIR=/Users/Shared/sv-alice/repos/app SHARED_WORKSPACE=/Users/Shared/sv-alice SV_SESSION_ID=3F2504E0-4F89-11D3-9A0C-0305E82C3301 SV_VERBOSE=0 VERBOSE= PATH=/usr/bin:/bin:/usr/sbin:/sbin SV_BROWSER_ENDPOINT=http://127.0.0.1:52341 TMPDIR=/var/folders/q1/abc/T/tmp.Xy12
+ 4130 node /Users/sandvault-alice/.npm-global/bin/vite --port 5173 HOME=/Users/sandvault-alice USER=sandvault-alice SV_SESSION_ID=3F2504E0-4F89-11D3-9A0C-0305E82C3301 PATH=/Users/sandvault-alice/.npm-global/bin:/usr/bin:/bin
+ 4140 /bin/zsh -c npm test HOME=/Users/sandvault-alice USER=sandvault-alice PATH=/usr/bin:/bin
+ 5221 /bin/zsh /Users/sandvault-alice/bin/codex HOME=/Users/sandvault-alice USER=sandvault-alice SV_SESSION_ID=7B1E0C52-0D8A-4C55-9B4E-2E8A1F6C9D10 SV_IOS_SIMULATOR_ENDPOINT=http://127.0.0.1:52400
+ 5222 node /opt/homebrew/bin/codex HOME=/Users/sandvault-alice USER=sandvault-alice SV_SESSION_ID=7B1E0C52-0D8A-4C55-9B4E-2E8A1F6C9D10
+ 5223 /opt/homebrew/lib/node_modules/@openai/codex/vendor/aarch64-apple-darwin/codex/codex HOME=/Users/sandvault-alice USER=sandvault-alice SV_SESSION_ID=7B1E0C52-0D8A-4C55-9B4E-2E8A1F6C9D10
+ 7001 /bin/ps -E -ww -U sandvault-alice -o pid=,command= HOME=/Users/sandvault-alice USER=sandvault-alice SUDO_USER=alice
