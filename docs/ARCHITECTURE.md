@@ -333,4 +333,102 @@ _Agent D fills this section (phase 2)._
 
 ## 8 · App
 
-_Agent E fills this section (phase 2)._
+`SandvaultConfig.app` (macOS 14, `LSUIElement`, bundle id `me.admon.apps.sandvault-config`) is two layers (D24):
+`SandvaultAppModel`, a package library with every piece of logic, `@MainActor @Observable` and free of SwiftUI and
+AppKit, so it builds and tests on Linux; and `App/SandvaultConfig/`, SwiftUI views plus a little AppKit glue that only
+place what the models expose. Views never run commands or read files; titles, summaries and formats come from the
+models.
+
+```
+AppEnvironment.live ─▶ AppModel ─┬▶ ConfigEditor ──▶ config.json (fresh read, change, save) ─▶ reloadConfig
+  (every service behind          ├▶ NetdLink ──────▶ control socket: subscribe status, connections, asks
+   a protocol)                   └▶ one model per screen ─▶ Observe / Enforce / Net / Workflow
+```
+
+**Composition root.** `AppEnvironment` holds `SandvaultEnvironment`, `AppPaths`, the `CommandRunner`, `ConfigStore`,
+`BundledTools`, an `AppClock` (now, sleep), `PreferencesStore` and one protocol per service: `ProcessSource`,
+`ProcessControlling`, `ConnectionSource`, `ViolationSource` (Observe's structs conform directly), `DoctorSource`
+(the three `CheckProvider`s per config), `StatusSource` (`StatusSummary.collect`), `PolicyControl`
+(`HelperPolicyApplier`), `ProfileSource` (`ProfileInspector`), `SandboxUIDSource`, `LocalPortSource`,
+`HelperInstalling`, `NetdConnector` / `NetdClient` (`ControlClient`: status, subscribe, answer, pendingAsks, recent,
+reloadConfig, events), `NetdAgentControl` (`NetdLaunchAgent`), `CAControl` (`CAStore`, `CAPublisher`,
+`SandboxEnvironmentBlock`) and the five workflow services. `AppEnvironment.live(bundled:)` wires the real factories;
+the tests build the same struct from fakes.
+
+**ConfigEditor** is the app's only writer of config.json. `edit(reloadNetd:_:)` re-reads the file, applies one change,
+saves, and sends `reloadConfig` over a one-shot connection when netd runs, so an edit never overwrites what svctl or netd
+(ask answers) saved in the meantime; a damaged file makes the edit fail instead of being replaced. `reloadIfChanged()`
+re-reads on modification time while the app polls.
+
+**NetdLink** keeps one subscription to `.status`, `.connections` and `.asks` for as long as the app runs (netd raises asks
+only while someone listens, D22). It holds the latest `NetdStatus`, the last 1000 records and the pending asks;
+when the connection ends it forgets the asks, waits 0.5 s doubling to 15 s, reconnects and subscribes again.
+`retryNow()` skips the wait after a netd install or restart.
+
+| Screen | Model | What it does |
+|---|---|---|
+| Overview | `OverviewModel` | doctor sections of Observe, Enforce, Net; `StatusSummary`; sessions; `SetupState.nextStep` (install sv, create the sandbox, install the helper, end a panic, start netd, turn on the firewall, apply it, ready) |
+| Processes | `ProcessesModel` | snapshot, tree rows, session groups; terminate, kill, throttle, end session, end all with the `ControlReport` as a message |
+| Network | `NetworkModel` | lsof sockets and nettop traffic (polled on this page only); netd records grouped by host (`HostGroup`: allowed, denied, ports, processes, bytes, last decision); Allow Host, Allow Domain (`*.<registrable domain>`), Deny via `upsertDomainRule` and reload |
+| Firewall & Proxy | `FirewallModel` | mode, LAN guard, localhost, port exceptions (pf, take effect on apply); default action, ask fallback and timeout, domain rules, DNS overrides, private destinations (netd, reloaded at once); inspection with CA create and publish and the `.zshenv` sync; `prepareApply` builds the `AppliedState` and the anchor text (`Enforce.firewallPreview`), `confirmApply` sends it with `releasingPanic: true`; panic saves `blocked` first, then calls the helper; Turn Off saves `off` and flushes |
+| Sandbox Rules & Learn | `RulesModel` | preset, auto re-apply, file, mach and exec rules (`SandboxSettings.add`); profile plan with drift and diff; apply and reset; learn mode follows `ViolationMonitor.stream()` (or the last 10 minutes), `RuleSuggester` suggestions, accept adds the proposal, dismiss hides it for the session |
+| (panels) | `AsksModel` | pending asks oldest first, countdown, host or domain scope, answers through `NetdLink` |
+| Tools | `ToolsModel` | `ToolService.status`, grant by method, grants from the config |
+| Repos & Hand-off | `HandoffModel`, `ReposModel` | readiness first; the button stays disabled with a reason until a repository is chosen, checked and free of blockers; agent, task, uncommitted changes, deploy key, terminal from the settings; repositories with Fetch Back |
+| Migration | `MigrationModel`, `KeysModel` | item selection, plan preview with blocked entries and reasons, copy; keys in `authorized_keys.d` |
+| Settings | `SettingsModel` | helper install and uninstall, netd LaunchAgent install, restart, uninstall, default agent, terminal, refresh interval, the svctl symlink command |
+
+Errors become `UserMessage` values (kind, title, detail, suggested command taken from the error text). A workflow
+service that throws `notImplemented` turns its screen into "not available yet" (`Availability`), not an error.
+
+**Polling.** `AppModel.setVisible(_:_:)` tracks the main window and the menu bar window. While either is visible, one
+task re-reads config.json if it changed and takes a process snapshot every `refreshInterval` (default 2 s); with the
+window open it also reads sockets on the Network page and refreshes the overview checks at most every 30 s. When both
+are closed nothing polls; only the netd subscription stays (asks, menu bar state).
+
+**Menu bar.** `MenuBarSummary.state` picks the symbol (`AppModel.menuBarSymbol`, which does not read the connection
+records, so the icon is not redrawn per record): blocked or panic `xmark.shield.fill`, pending asks
+`exclamationmark.shield.fill`, proxy-only without netd `exclamationmark.triangle`, off `shield.slash`, open
+`shield.lefthalf.filled`, proxy-only `checkmark.shield.fill`. The window shows sessions, processes, denials of the last
+hour, the firewall mode (choosing one saves it and opens the Firewall page with the rules to confirm), Hand Off a
+Repository (folder picker), Open Window, a two-step Panic, Firewall Off, and the last five denied hosts with Allow.
+
+**Asks.** `AskPanelController` observes `AsksModel.pending` (`withObservationTracking`) and opens one floating
+non-activating `NSPanel` per ask (host, process, port, countdown, host or domain scope, Allow Once, Allow Always, Deny
+Once, Deny Always); a panel closes when netd resolves its ask. While the app is not active, `AskNotifier` also posts a
+user notification whose actions carry the same four answers (`AskDecision` raw values).
+
+**Hand-off by drop.** Folders dropped on the Repos & Hand-off page or on the menu bar window go to
+`AppModel.handOff(paths:)`, which takes the first directory, opens the page and runs the readiness check.
+
+**Helper and netd installation.** The helper is installed with the bundled binary (D27):
+`osascript -e 'do shell script "<helper> install --source <helper> --user <name> --json" with administrator privileges'`.
+`AdministratorScript` single-quotes every argument for the shell, then escapes backslash and double quote for the
+AppleScript string; osascript receives the script as one argv element. The helper's JSON line is read back from
+osascript's output; a cancelled password dialog (-128) is reported as cancelled. Uninstall runs the installed helper
+(or the bundled one) with `uninstall --user <name> --json`. netd is installed through `NetdLaunchAgent` with the bundled
+`sandvault-netd`: the same LaunchAgent `svctl netd install` writes, so the app and the CLI never disagree about it
+(`SMAppService` is not used).
+
+**Bundle and project.** `App/project.yml` (XcodeGen; the `.xcodeproj` is generated, D2): the local package
+(`packages: SandvaultConfig: path: ..`), scheme `SandvaultConfig`, Swift 6, macOS 14, ad-hoc signing (`-`), no hardened
+runtime, no App Sandbox. `svctl`, `svctl-helper` and `sandvault-netd` are XcodeGen `tool` targets (`BundledSvctl`,
+`BundledHelper`, `BundledNetd`: target and module names differ from the package's executable targets; `productName`
+and `PRODUCT_NAME` give the product names, since XcodeGen names the product reference after `productName`) whose
+sources are `../Sources/<name>` and which link the package's library products; the app embeds them with a copy-files
+phase into
+`Contents/MacOS` (`copy: destination: executables`) and finds them with `Bundle.main.url(forAuxiliaryExecutable:)`.
+The executables import ArgumentParser, which the package uses but does not export, so `project.yml` references
+`swift-argument-parser` with the same URL and requirement as `Package.swift`; Xcode resolves both to one checkout.
+The bundled svctl finds the helper and netd next to itself, as it does in a SwiftPM build.
+
+**Verified off the Mac:** `xcodegen generate` (XcodeGen 2.44.1, built on Linux) accepts the spec and produces the
+scheme, the three tool targets with their product names and an "Embed Dependencies" copy phase to Executables; the
+SwiftUI layer type-checks in Swift 6 mode against stub SwiftUI, AppKit and UserNotifications modules with macOS 14
+signatures (a scratch harness, not in the repository).
+
+**Only a Mac can confirm:** that `xcodebuild` compiles the app against the real SDK (CI), the tools landing in
+`Contents/MacOS`, the `osascript` password dialog and the helper's JSON passing through `do shell script`, floating ask
+panels over full-screen apps, notification actions from an ad-hoc signed `LSUIElement` app (macOS may not deliver them
+without a signature), `MenuBarExtra` window `onAppear`/`onDisappear` as the polling trigger, and drag and drop of Finder
+folders onto the menu bar window.
