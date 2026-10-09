@@ -61,7 +61,6 @@ import Testing
         try await TestGit.repository(at: repo)
         let runner = MixedRunner()
         runner.fake.on(["/usr/bin/osascript"], stdout: "")
-        runner.fake.on(["/usr/bin/open"], stdout: "")
 
         let result = try await service(sandbox, runner, macOS: true).handOff(
             HandoffRequest(source: repo, agent: .gemini, task: "Go", terminal: terminal, svOptions: ["--browser"], deployKey: .readWrite)

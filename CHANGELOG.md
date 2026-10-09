@@ -22,9 +22,9 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   ping/traceroute.
 
 ### Behoben
-- Ghostty öffnete beim Start aus der App (Sitzung, Rebuild, Hand-off) nur die gespeicherten Fenster mit der
-  normalen Shell, ohne sv. Die App startet Ghostty jetzt mit `--window-save-state=never`, damit das neue Fenster den
-  Befehl ausführt, und mit `--quit-after-last-window-closed=true`, damit keine leeren Instanzen liegen bleiben.
+- Ghostty öffnete beim Start aus der App (Sitzung, Rebuild, Hand-off) nur die normale Shell oder ein leeres Fenster,
+  ohne sv. Die App öffnet Ghostty jetzt wie Terminal per AppleScript (ab Ghostty 1.3): neues Fenster, Befehl eintippen,
+  Enter. macOS fragt beim ersten Mal nach der Erlaubnis, Ghostty zu steuern.
 - `ping` und `traceroute` fehlten überall. Sie laufen setuid als root, daher zeigte ps root als Benutzer. Prozesse
   zählen jetzt auch über den realen Benutzer zur Sandbox; die App markiert sie als `ping (root)`. `svctl net` und die
   Aktivitätsseite listen sie mit ihrem Ziel. Filtern kann pf ICMP nicht, das geht nur über eine Ausführungsregel.

@@ -190,15 +190,17 @@ public enum TerminalLaunch {
                 "end tell", "end run",
             ], command)
         case .ghostty:
-            // Ghostty runs a `--command` string through a shell, so the zsh invocation is quoted once more.
-            // Without `--window-save-state=never` the new instance restores the saved windows, which run the
-            // default shell, instead of opening one window with the command.
-            let keepOpen = command + "; exec \"$SHELL\" -l"
-            return CommandInvocation("/usr/bin/open", [
-                "-na", "Ghostty.app", "--args",
-                "--window-save-state=never", "--quit-after-last-window-closed=true",
-                "--command=/bin/zsh -lc " + ShellQuoting.quote(keepOpen),
-            ], timeout: 30)
+            // Ghostty 1.3's AppleScript, like Terminal: the user's shell gets the line typed in, so the window stays.
+            // `open -na Ghostty --args --command=…` restored saved windows or opened an empty one on macOS 27.
+            return osascript([
+                "on run argv", "tell application \"Ghostty\"", "activate",
+                "set cfg to new surface configuration",
+                "set win to new window with configuration cfg",
+                "set term to focused terminal of selected tab of win",
+                "input text (item 1 of argv) to term",
+                "send key \"enter\" to term",
+                "end tell", "end run",
+            ], command)
         }
     }
 

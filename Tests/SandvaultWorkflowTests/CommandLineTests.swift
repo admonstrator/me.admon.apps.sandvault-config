@@ -103,16 +103,13 @@ func shellWords(_ line: String, shell: String = "/bin/sh") async throws -> [Stri
         #expect(!invocation.arguments.dropLast().contains { $0.contains("sv-clone") })
     }
 
-    @Test func ghosttyRunsZshThatKeepsTheWindowOpen() async throws {
+    @Test func ghosttyTypesTheCommandIntoANewWindow() {
         let invocation = TerminalLaunch.invocation(.ghostty, command: command)
-        #expect(invocation.argv.prefix(6) == [
-            "/usr/bin/open", "-na", "Ghostty.app", "--args", "--window-save-state=never", "--quit-after-last-window-closed=true",
-        ])
-        let value = try #require(invocation.arguments.last?.split(separator: "=", maxSplits: 1).last.map(String.init))
-        #expect(invocation.arguments.last?.hasPrefix("--command=") == true)
-        // Ghostty hands the value to a shell; that shell must see zsh -lc '<command>; exec "$SHELL" -l'.
-        let words = try await shellWords(value)
-        #expect(words == ["/bin/zsh", "-lc", command + "; exec \"$SHELL\" -l"])
-        #expect(try await shellWords(command) == ["sv-clone", "/Users/alice/my app", "--", "claude", "--", "Read \"x\" and it's $HOME"])
+        #expect(invocation.executable == "/usr/bin/osascript")
+        #expect(invocation.arguments.last == command)
+        #expect(invocation.arguments.contains("set win to new window with configuration cfg"))
+        #expect(invocation.arguments.contains("input text (item 1 of argv) to term"))
+        #expect(invocation.arguments.contains("send key \"enter\" to term"))
+        #expect(!invocation.arguments.dropLast().contains { $0.contains("sv-clone") })
     }
 }
