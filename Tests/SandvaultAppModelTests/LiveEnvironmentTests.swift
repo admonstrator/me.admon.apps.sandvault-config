@@ -7,7 +7,7 @@ import Testing
 /// The real composition root off macOS: everything that needs the Mac fails with a message, nothing crashes or hangs.
 /// Linux only, so CI on macOS never reaches osascript, launchctl or sudo.
 @MainActor
-@Suite struct LiveEnvironmentTests {
+@Suite(.timeLimit(.minutes(1))) struct LiveEnvironmentTests {
     @Test func liveServicesFailCleanlyOffMacOS() async throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent("appmodel-live-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: home) }

@@ -41,6 +41,14 @@ macOS in der CI gebaut und getestet (387 Tests). Auf einem echten Mac ausgeführ
 - Schreiben in den Shared Workspace folgt nie einem Symlink, den die Sandbox gelegt hat.
 - Code, den die Sandbox schreiben kann, läuft nur sandboxed. Ein Beispiel ist die Prüfung, ob ein Befehl verfügbar ist.
 
+### Behoben
+- **Proxy ohne Root-Rechte:** netd setzte auf jeder angenommenen Verbindung `SO_DEBUG` statt `TCP_NODELAY`.
+  `ChannelOptions.socketOption(.tcp_nodelay)` landet auf der Ebene `SOL_SOCKET`, wo dieselbe Nummer `SO_DEBUG`
+  bedeutet. Unter Linux ohne `CAP_NET_ADMIN` schloss das jede Proxy-Verbindung sofort; aufgefallen ist es im
+  CI-Container. Jetzt `ChannelOptions.tcpOption(.tcp_nodelay)`.
+- **Hänger in der CI:** Alle Integrationstests haben ein Zeitlimit von einer Minute, und jeder CI-Job hat ein
+  eigenes Timeout. Ein Fehler wird damit rot, statt stundenlang zu warten.
+
 ### Bekannte Grenzen
 - **Nicht auf echter Hardware geprüft:** pf (`user`, `route-to`, `rdr`), die Regeln der Vorlage „Gehärtet“,
   `log stream`, `nettop` für fremde Prozesse und die App zur Laufzeit. Das klärt `scripts/verify-on-mac.sh`.

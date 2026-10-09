@@ -11,7 +11,9 @@ enum ProxyListeners {
         try await ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.backlog, value: 256)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-            .childChannelOption(ChannelOptions.socketOption(.tcp_nodelay), value: 1)
+            // tcpOption, not socketOption: at SOL_SOCKET level the same number means SO_DEBUG, which needs
+            // CAP_NET_ADMIN on Linux and made every accepted connection fail without it.
+            .childChannelOption(ChannelOptions.tcpOption(.tcp_nodelay), value: 1)
             .childChannelInitializer { channel in
                 channel.eventLoop.makeCompletedFuture {
                     let counter = ByteCounter()

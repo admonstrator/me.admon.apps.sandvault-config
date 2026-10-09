@@ -5,7 +5,7 @@ import SandvaultCore
 import Testing
 @testable import SandvaultNet
 
-@Suite struct ProxyIntegrationTests {
+@Suite(.timeLimit(.minutes(1))) struct ProxyIntegrationTests {
     @Test func connectTunnelReachesTheOrigin() async throws {
         let origin = try await TestOrigin.start(name: "origin")
         let netd = try await TestNetd.start(.testing([("127.0.0.1", .allow)]))
@@ -171,7 +171,7 @@ import Testing
     }
 }
 
-@Suite struct AskIntegrationTests {
+@Suite(.timeLimit(.minutes(1))) struct AskIntegrationTests {
     /// Sends a request through the transparent HTTP listener in the background.
     func request(_ netd: TestNetd, host: String) -> Task<String, Error> {
         let port = Int(netd.ports.transparentHTTP)
@@ -252,7 +252,7 @@ import Testing
     }
 }
 
-@Suite(.enabled(if: Curl.available, "needs /usr/bin/curl")) struct InspectionIntegrationTests {
+@Suite(.enabled(if: Curl.available, "needs /usr/bin/curl"), .timeLimit(.minutes(1))) struct InspectionIntegrationTests {
     @Test func curlThroughTheProxyIsDecryptedAndLogged() async throws {
         let tls = try OriginTLS()
         let origin = try await TestOrigin.start(name: "secure", tls: try tls.serverContext(for: "secure.test"))
@@ -308,7 +308,7 @@ import Testing
     }
 }
 
-@Suite struct DNSIntegrationTests {
+@Suite(.timeLimit(.minutes(1))) struct DNSIntegrationTests {
     @Test func deniesOverridesAndForwards() async throws {
         let resolver = try await FakeResolver.start()
         let config = AppConfig.testing([("*.blocked.test", .deny), ("*.allowed.test", .allow)], overrides: ["db.allowed.test": "10.1.2.3"])

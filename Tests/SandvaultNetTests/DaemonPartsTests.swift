@@ -145,7 +145,7 @@ import Testing
     }
 }
 
-@Suite struct AskCoordinatorTests {
+@Suite(.timeLimit(.minutes(1))) struct AskCoordinatorTests {
     final class Saved: @unchecked Sendable {
         let lock = NSLock()
         var rules: [(String, DomainAction)] = []
@@ -227,7 +227,7 @@ import Testing
     }
 }
 
-@Suite struct NetChecksTests {
+@Suite(.timeLimit(.minutes(1))) struct NetChecksTests {
     func state(_ checks: [Check], _ id: String) -> CheckState? { checks.first { $0.id == id }?.state }
 
     func checks(_ layout: TempLayout, _ config: AppConfig, socket: String) async -> [Check] {
