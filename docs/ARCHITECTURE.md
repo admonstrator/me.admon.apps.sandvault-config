@@ -329,7 +329,130 @@ back-pressured; inspection covers HTTP/1.1 only (clients negotiating `h2` fall b
 
 ## 7 · Workflow
 
-_Agent D fills this section (phase 2)._
+Moving work into the sandbox and back. Every service is a `Sendable` struct over `SandvaultEnvironment`, a
+`CommandRunner` and, where it records something, the `ConfigStore`. Everything inside the shared workspace goes through
+`SharedFiles`, rooted at a `SharedLayout` (tests pass a temporary root). The factories in `Workflow` return the
+protocols of `WorkflowModels.swift`; the concrete types are public for callers that need more.
+
+| Protocol | Type | Runs |
+|---|---|---|
+| `HandoffService` | `RepositoryHandoff` (`readiness(of:)`, `handOff(_:)`, `handOff(_:launch:)`) | plain git on the host repository; `osascript`, `open -na Ghostty` |
+| `RepoService` | `SandboxRepositories` (`repositories()`, `fetchBack(_:)`) | `GitSafe` in `repos/<name>`; `git fetch --no-tags --no-recurse-submodules sandvault` in the host repository |
+| `ToolService` | `ToolAccess` (`status(of:)`, `grant(_:method:)`, `sandboxLookupInvocation`) | `/bin/zsh -lc 'command -v'`, `otool -L`, `brew info --json=v2`, `brew install`, the sandbox lookup |
+| `MigrationService` | `ConfigMigration` (`plan`, `apply`, `location(of:)`), `SecretScan` | `git config --global --get user.name` and `user.email` |
+| `KeyService` | `AuthorizedKeyStore` (`keys`, `add`, `remove`, `parse`) | `ssh-keygen -l -f` |
+| (none) | `SandvaultDefaults` (`read`, `set`, `clear`), `SvOptions.validate` | nothing |
+
+**Readiness.** A source is local when it is a directory (as sv-clone decides); otherwise it must look like a remote URL
+(`https`, `ssh`, `git`, scp-like; `file://` and `<transport>::` are refused). Nothing is contacted, and the host
+repository is trusted (plain git through the runner). Severities follow what happens in the sandbox:
+
+| Finding | Severity | Why |
+|---|---|---|
+| not a git working tree, not its root, inside the shared workspace or the sandbox home, no `origin` remote | blocker (`notGitRepository`) | git clone or sv-clone v1.32 fails (sv-clone line 156 needs `origin`); the sandbox's own files are never treated as a trusted repository |
+| no commits | blocker | nothing to clone |
+| uncommitted changes | warning | they stay behind unless `includeUncommitted` |
+| tracked symlink to `/Users/…` or `/Volumes/…` (outside the workspace and sandbox home), into the checkout itself, or relative and leaving the repository | warning | it dangles in the clone; links to system paths pass |
+| tracked `.env*` (templates such as `.env.example` pass) | warning | secrets in git and in the clone |
+| submodule with a local URL (relative URLs count when `origin` is local) | warning | sv-clone does not check out submodules, and `git submodule update` in the sandbox cannot read the path |
+| `repos/<name>` exists but is not a clone | warning | git clone fails unless it is empty |
+| untracked files (count); untracked or ignored `.env*` and `.envrc`; tracked `.envrc`; `.venv`/`venv` whose `pyvenv.cfg` `home` is outside; `.git` as a file; `count-objects` above 1 GB; an existing clone | info | not copied, recreate it, `direnv allow` needed, sv-clone fetches into the clone and leaves its working tree alone |
+
+One group shows at most 20 findings, then one that counts the rest.
+
+**Hand-off.** `handOff` re-runs the check and refuses blockers, sv options outside `SvOptions` and `includeUncommitted`
+for a URL. With a task or uncommitted changes it writes `$SHARED_WORKSPACE/tmp/handoff-<repo>.md` (0640: source,
+branch, clone path, task, and the instruction to `git apply` `handoff-<repo>.patch`, made with `git diff --binary
+--no-ext-diff --no-textconv HEAD` and fixed `a/` `b/` prefixes; untracked files are not in it; a stale patch is
+removed). The command is `sv-clone [-k|-w] <resolved source> -- <sv options> <agent> [-- <prompt>]` with the prompt
+`Read <briefing> and continue the task described there.`, passed the way each agent keeps a first prompt interactive:
+positional for claude, codex and pi, `--prompt-interactive` for gemini, `--prompt` for opencode, none for muse and
+shell (after `sv shell --` the words are a command). `ShellQuoting` builds the line: POSIX single quotes with `'\''`;
+only `[A-Za-z0-9_./:,+@-]` stays bare, so zsh's `=cmd`, `~` and globs never expand. It is round-trip tested through
+`/bin/sh` and bash.
+
+| Terminal | Invocation |
+|---|---|
+| Terminal | `osascript -e 'on run argv' -e 'tell application "Terminal"' -e activate -e 'do script (item 1 of argv)' -e 'end tell' -e 'end run' <command>` |
+| iTerm2 | the same with `set newWindow to (create window with default profile)` and `tell current session of newWindow to write text (item 1 of argv)`; the user's shell runs it, so the window stays (as upstream's launcher does) |
+| Ghostty | `open -na Ghostty --args --command=/bin/zsh -lc '<command>; exec "$SHELL" -l'` (Ghostty runs `--command` through a shell, as upstream's launcher relies on) |
+
+The command reaches AppleScript as an `argv` item, never inside a string literal. A failed launch (for example a
+missing Automation permission) throws and records nothing; otherwise a `HandoffRecord` replaces the one of the same
+repository. Off macOS, and with `launch: false` (`svctl handoff --print`), the briefing and record are written and the
+command comes back with `launched: false`.
+
+**Way back.** `repositories()` lists the real directories in `repos/` (no symlinks, hidden names or control
+characters) and asks git only where `.git` is a directory, so git neither searches upward nor follows a gitfile the
+sandbox wrote. Per clone, through `GitSafe`: `symbolic-ref` (the branch is validated before it goes into a ref),
+`log -1 --format='%H %ct'` with `log.showSignature=false`, `rev-list --left-right --count @{upstream}...HEAD`, and
+`--no-optional-locks status --porcelain=v1 -z --ignore-submodules=all` with every filter driver the clone's config
+names emptied through `GIT_CONFIG_COUNT` (which, unlike `-c`, takes driver names containing `=`). `GitSafe`'s list does
+not cover these: git runs a `clean` filter whenever it re-hashes a file, and `gpg.program` for `log.showSignature`. A
+test plants a filter, `core.fsmonitor` and `gpg.program`, shows that plain git runs them and that the status does not.
+Unfetched commits are `rev-list --count <host's sandvault/<branch>>..HEAD` in the clone, before the first fetch counted
+from the host's own branch. `fetchBack` checks the `sandvault` remote and runs `git fetch --no-tags
+--no-recurse-submodules sandvault` with the hardening (git's upload-pack for the clone inherits it), so the sandbox
+cannot plant tags in the host repository.
+
+**Tools.** `status` validates the name (`[A-Za-z0-9._+-]{1,64}`), resolves it with `/bin/zsh -lc 'command -v -- <name>'`
+and classifies location (`sharedUser`, `sandboxHome`, `hostHome`, Homebrew prefixes including `/usr/local/Cellar`,
+else `system`) and kind: Mach-O by magic, copyable when `otool -L` lists only `/usr/lib` and `/System` libraries;
+scripts by `#!`, copyable when the interpreter is a system, Homebrew or shared path, or `/usr/bin/env <x>` with `<x>`
+found in the sandbox. Reachability runs as the sandbox user with sv's session environment **inside sv's profile**:
+
+```
+sudo -n -u sandvault-$USER /usr/bin/env -i HOME=… USER=… SHELL=/bin/zsh SHARED_WORKSPACE=… PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+  /usr/bin/sandbox-exec -f /var/sandvault/sandbox-sandvault-$USER.sb \
+  /bin/zsh -c 'source ~/.zshenv; source ~/.zprofile; print -r -- sandvault-config:lookup; command -v -- <name>'
+```
+
+The sandbox can write its shell files, so they never run outside sandbox-exec; the marker line separates "not found"
+from "could not check". Options: `available`, else `brew` (formula from a Cellar path or `brew info --json=v2`, which
+runs only for a missing tool and not for one already in Homebrew) before `copy`. `grant` installs or copies
+(`user/bin/<name>`, 0750, through `SharedFiles`; sv's `.zprofile` puts that directory first on the PATH), checks again
+and records a `ToolGrant` only when the sandbox now finds the tool.
+
+**Migration.** `~/.claude/settings.json`, `CLAUDE.md`, `commands|agents|skills/**` (at most 500 files, depth 8), a
+generated `.gitconfig` with the `[user]` name and email (quoted; control characters refused), `~/.zshrc`, `.zprofile`
+and `.zshenv` go to the same relative paths under `$SHARED_WORKSPACE/user`, which sv's `configure` rsyncs into the
+sandbox home each session (zsh files are sourced from there). Blocked, with a reason: missing, symlinks (never
+followed), non-regular files, files over 1 MB, credential names (`.credentials.json`, `*.pem|key|p12|pfx`, `id_*` but
+not `.pub`, `.netrc`, `.env*`), `.npmrc` with `_authToken`, and `SecretScan.patterns`: `sk-ant-`, `ghp_`,
+`github_pat_`, `gho_` (each followed by 16+ token characters, so prose mentioning a prefix passes), `xox[abp]-`,
+`AKIA[0-9A-Z]{16}`, private key headers, JSON keys containing `api key|token|secret` with a non-path value of 12+
+characters, and shell assignments to `*API_KEY|TOKEN|SECRET|PASSWORD*` with a literal value of 12+ characters. A
+reason names the pattern and line, never the match. `.zshenv` loses our `defaults` block and keeps the network block
+netd maintains in the shared copy. `apply` re-reads and re-checks every file and writes only entries the plan approved
+(0640, 0750 for executable sources).
+
+**Keys.** `authorized_keys.d` is host-only (`AtomicFile`, files 0600, directory 0700). `add` takes exactly one plain key
+line of a known type (`ssh-ed25519`, `ssh-rsa`, `ecdsa-sha2-nistp256|384|521`, `sk-…@openssh.com`) whose base64 blob
+names the same type, without options and without `PRIVATE KEY`, then checks it with `ssh-keygen -l -f` and removes it
+again on failure. `keys` shows what sv will do: a private key makes sv abort, a file ssh-keygen rejects is ignored. sv
+applies the directory on its next run (`AuthorizedKeyStore.appliedNote`).
+
+**Defaults.** `SandvaultDefaults` keeps `export SANDVAULT_ARGS='…'` in `ManagedBlock(name: "defaults", commentPrefix:
+"#")` of the host's `~/.zshenv` (`AtomicFile`, mode kept; a symlinked `~/.zshenv` is edited at its target) and reports
+an assignment outside the block. `SvOptions` allows the session options that take no value (`-s/--ssh`, `-v`, `-vv`,
+`-vvv`, `-n/--no-build`, `-b/--browser`, `--chrome`, `--lightpanda`, `-i/--ios`, `-I/--ios-gui`,
+`-N/--native-install`) and refuses `-x/--no-sandbox`, `-r/--rebuild` (it drops the managed rules block) and the options
+that exit or work only standalone; hand-offs use the same list.
+
+**CLI.** `svctl handoff <path|url> [--agent <name>] [--task <text> | --task-file <file|->] [--include-uncommitted]
+[--terminal terminal|iterm2|ghostty] [--deploy-key none|ro|rw] [--sv-option=<opt>]… [--check-only] [--print]`
+(defaults from `HandoffSettings`; exit 1 on a blocker), `svctl repos [list] | fetch <name>`, `svctl tools check <name> |
+grant <name> [--method brew|copy|available] | list`, `svctl migrate plan <items…> | apply <items…> [--yes]` (items
+`all`, `claude-settings`, `claude-memory`, `claude-commands`, `claude-agents`, `claude-skills`, `git-identity`, `zshrc`,
+`zprofile`, `zshenv`), `svctl keys list | add <name> <file|-> | remove <name>`, `svctl defaults show | set -- <options…> |
+clear`; all take `--json`. Off macOS, `handoff --check-only`, `migrate plan`, `keys`, `defaults` and `tools list` work;
+opening a terminal and `tools check|grant` refuse with "unsupported on this platform"; commands that need the shared
+workspace say that it is missing.
+
+**Only a Mac can confirm:** every synthetic fixture in `Tests/SandvaultWorkflowTests/Fixtures`; the Automation prompt
+for Terminal and iTerm2 on the first hand-off; Ghostty's handling of `--command`; the first-prompt flags of gemini,
+opencode and pi; that `sandbox-exec` started through `sudo -u <sandbox> /usr/bin/env -i` reads sv's profile and finds
+Homebrew tools after `.zprofile`; how `otool` behaves without the Command Line Tools (reported as "libraries unknown").
 
 ## 8 · App
 
