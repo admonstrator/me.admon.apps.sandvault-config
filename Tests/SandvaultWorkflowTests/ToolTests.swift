@@ -42,8 +42,12 @@ import Testing
         #expect(status.location == .homebrew)
         #expect(status.options == [.available])
         #expect(status.reason == "the sandbox finds it at /opt/homebrew/bin/jq")
-        // No brew call when nothing is needed.
+        // No brew call when nothing is needed, and only offered methods are accepted.
         #expect(!fake.invocations.contains { $0.executable == brew })
+        await #expect(throws: SandvaultError.self) { try await service(sandbox, fake).grant("jq", method: .brew) }
+        let grant = try await service(sandbox, fake).grant("jq", method: .available)
+        #expect(grant.method == .available && grant.source == "/opt/homebrew/bin/jq")
+        #expect(try sandbox.configStore.load().tools.map(\.name) == ["jq"])
     }
 
     @Test func selfContainedBinaryInTheHomeCanBeCopied() async throws {

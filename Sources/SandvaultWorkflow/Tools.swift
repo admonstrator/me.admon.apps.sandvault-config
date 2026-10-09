@@ -73,24 +73,22 @@ public struct ToolAccess: ToolService {
 
     public func grant(_ name: String, method: ToolGrantMethod) async throws -> ToolGrant {
         let before = try await status(of: name)
+        guard before.options.contains(method) else {
+            let offered = before.options.isEmpty ? "none" : before.options.map(\.rawValue).joined(separator: ", ")
+            throw SandvaultError.invalidInput("\(method.rawValue) is not an option for \(name) (options: \(offered)); \(before.reason)")
+        }
         let source: String
         switch method {
         case .available:
-            guard before.reachableInSandbox else { throw SandvaultError.invalidInput("\(name) is not available in the sandbox: \(before.reason)") }
             source = before.hostPath ?? name
         case .brew:
-            guard let formula = before.formula, let brewPath else {
-                throw SandvaultError.invalidInput("no Homebrew formula is known for \(name)")
-            }
-            guard Text.matches(formula, "^[A-Za-z0-9@._+-]+(/[A-Za-z0-9@._+-]+)*$") else {
-                throw SandvaultError.invalidInput("unexpected formula name '\(formula)'")
-            }
+            guard let formula = before.formula, let brewPath,
+                  Text.matches(formula, "^[A-Za-z0-9@._+-]+(/[A-Za-z0-9@._+-]+)*$")
+            else { throw SandvaultError.invalidInput("no usable Homebrew formula for \(name)") }
             _ = try await runner.checked(CommandInvocation(brewPath, ["install", formula], timeout: 1800))
             source = formula
         case .copy:
-            guard before.options.contains(.copy), let hostPath = before.hostPath else {
-                throw SandvaultError.invalidInput("\(name) cannot be copied: \(before.kind ?? before.reason)")
-            }
+            guard let hostPath = before.hostPath else { throw SandvaultError.invalidInput("\(name) has no host path to copy") }
             let real = HostPath.resolved(hostPath) ?? hostPath
             guard let size = FileKind.size(real), size <= Self.maxCopyBytes else {
                 throw SandvaultError.invalidInput("\(real) is not a regular file of at most \(Self.maxCopyBytes >> 20) MB")
