@@ -337,7 +337,7 @@ protocols of `WorkflowModels.swift`; the concrete types are public for callers t
 | Protocol | Type | Runs |
 |---|---|---|
 | `HandoffService` | `RepositoryHandoff` (`readiness(of:)`, `handOff(_:)`, `handOff(_:launch:)`) | plain git on the host repository; `osascript`, `open -na Ghostty` |
-| `RepoService` | `SandboxRepositories` (`repositories()`, `fetchBack(_:)`) | `GitSafe` in `repos/<name>`; `git fetch --no-tags --no-recurse-submodules sandvault` in the host repository |
+| `RepoService` | `SandboxRepositories` (`repositories()`, `fetchBack(_:)`) | `SandboxedCommand.git` in `repos/<name>` (sandbox user, sv's profile); `git fetch --no-tags --no-recurse-submodules sandvault` in the host repository |
 | `ToolService` | `ToolAccess` (`status(of:)`, `grant(_:method:)`, `sandboxLookupInvocation`) | `/bin/zsh -lc 'command -v'`, `otool -L`, `brew info --json=v2`, `brew install`, the sandbox lookup |
 | `MigrationService` | `ConfigMigration` (`plan`, `apply`, `location(of:)`), `SecretScan` | `git config --global --get user.name` and `user.email` |
 | `KeyService` | `AuthorizedKeyStore` (`keys`, `add`, `remove`, `parse`) | `ssh-keygen -l -f` |
@@ -382,18 +382,33 @@ missing Automation permission) throws and records nothing; otherwise a `HandoffR
 repository. Off macOS, and with `launch: false` (`svctl handoff --print`), the briefing and record are written and the
 command comes back with `launched: false`.
 
-**Way back.** `repositories()` lists the real directories in `repos/` (no symlinks, hidden names or control
-characters) and asks git only where `.git` is a directory, so git neither searches upward nor follows a gitfile the
-sandbox wrote. Per clone, through `GitSafe`: `symbolic-ref` (the branch is validated before it goes into a ref),
-`log -1 --format='%H %ct'` with `log.showSignature=false`, `rev-list --left-right --count @{upstream}...HEAD`, and
-`--no-optional-locks status --porcelain=v1 -z --ignore-submodules=all` with every filter driver the clone's config
-names emptied through `GIT_CONFIG_COUNT` (which, unlike `-c`, takes driver names containing `=`). `GitSafe`'s list does
-not cover these: git runs a `clean` filter whenever it re-hashes a file, and `gpg.program` for `log.showSignature`. A
-test plants a filter, `core.fsmonitor` and `gpg.program`, shows that plain git runs them and that the status does not.
-Unfetched commits are `rev-list --count <host's sandvault/<branch>>..HEAD` in the clone, before the first fetch counted
-from the host's own branch. `fetchBack` checks the `sandvault` remote and runs `git fetch --no-tags
---no-recurse-submodules sandvault` with the hardening (git's upload-pack for the clone inherits it), so the sandbox
-cannot plant tags in the host repository.
+**Way back.** The host never runs git inside a clone. `GitSafe`'s overrides do not cover everything git executes from a
+repository's config: `status` runs a `clean` filter whenever it re-hashes a file, `log` runs `gpg.program` under
+`log.showSignature`, and reading the config first to neutralize it would race with a sandbox that rewrites it in a loop.
+So every git call on a clone goes through `SandboxedCommand.git`, the same wrapper the tool lookup uses:
+
+```
+sudo -n -u sandvault-$USER /usr/bin/env -i HOME=/Users/sandvault-$USER USER=sandvault-$USER PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+  /usr/bin/sandbox-exec -f /var/sandvault/sandbox-sandvault-$USER.sb \
+  /usr/bin/git <GitSafe hardening> -c safe.directory=* -C <clone> <arguments>
+```
+
+Whatever the clone's config makes git run then stays as confined as the agent. `safe.directory=*` is needed because
+the host owns the clone. `repositories()` lists the real directories in `repos/` (no symlinks, hidden names or control
+characters) and asks git only where `.git` is a directory. Per clone: `symbolic-ref` (the branch is validated before it
+goes into a host ref), `log -1 --format='%H %ct'` with `log.showSignature=false` (signature output would precede the
+line), `rev-list --left-right --count @{upstream}...HEAD`, and `--no-optional-locks status --porcelain=v1 -z
+--ignore-submodules=all` (dirty when it prints anything). The output is untrusted: one line within a byte limit (256,
+128, 64, 32), no control characters, strict number and hash formats, otherwise unknown. Unfetched commits combine the
+trusted host side (`rev-parse` of `sandvault/<branch>`, before the first fetch the host's own branch) with a sandboxed
+`rev-list --count <commit>..HEAD` in the clone. Off macOS the sandboxed git cannot run: branch, head, date, counts and
+unfetched stay `nil` and `dirty` stays `false` (the contract has no unknown for it); the deploy key
+(`_sandvault/.ssh/deploy_<name>` exists) is still reported. `fetchBack` stays host-side in the host repository: it
+checks the `sandvault` remote and runs `git fetch --no-tags --no-recurse-submodules sandvault` with the hardening.
+upload-pack serves the clone's objects without worktree filters, fsmonitor or signatures, and without tags the sandbox
+cannot plant any in the host repository. A test plants a filter, `core.fsmonitor` and `gpg.program` in a clone, runs
+`repositories()` and `fetchBack` with the sandboxed path disabled and checks that nothing fired and no host git call
+named the clone; plain git in the clone fires them.
 
 **Tools.** `status` validates the name (`[A-Za-z0-9._+-]{1,64}`), resolves it with `/bin/zsh -lc 'command -v -- <name>'`
 and classifies location (`sharedUser`, `sandboxHome`, `hostHome`, Homebrew prefixes including `/usr/local/Cellar`,
@@ -452,7 +467,9 @@ workspace say that it is missing.
 **Only a Mac can confirm:** every synthetic fixture in `Tests/SandvaultWorkflowTests/Fixtures`; the Automation prompt
 for Terminal and iTerm2 on the first hand-off; Ghostty's handling of `--command`; the first-prompt flags of gemini,
 opencode and pi; that `sandbox-exec` started through `sudo -u <sandbox> /usr/bin/env -i` reads sv's profile and finds
-Homebrew tools after `.zprofile`; how `otool` behaves without the Command Line Tools (reported as "libraries unknown").
+Homebrew tools after `.zprofile`; that `/usr/bin/git` (the Command Line Tools shim) runs as the sandbox user inside the
+profile and accepts the host-owned clone with `safe.directory=*`; how `otool` behaves without the Command Line Tools
+(reported as "libraries unknown").
 
 ## 8 · App
 

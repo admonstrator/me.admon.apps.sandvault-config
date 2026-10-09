@@ -123,6 +123,50 @@ final class MixedRunner: CommandRunner, @unchecked Sendable {
     }
 }
 
+/// Records every call. `SandboxedCommand` invocations run as the current user without sudo and sandbox-exec
+/// (Linux has neither) or, with `runsSandboxed: false`, fail; everything else runs for real.
+final class SandboxEmulator: CommandRunner, @unchecked Sendable {
+    let environment: SandvaultEnvironment
+    let runsSandboxed: Bool
+    private let real = ProcessCommandRunner()
+    private let lock = NSLock()
+    private var recorded: [CommandInvocation] = []
+
+    init(environment: SandvaultEnvironment, runsSandboxed: Bool = true) {
+        self.environment = environment
+        self.runsSandboxed = runsSandboxed
+    }
+
+    var invocations: [CommandInvocation] { lock.withLock { recorded } }
+
+    /// The variables and command inside a `SandboxedCommand` invocation, `nil` for anything else.
+    func unwrap(_ invocation: CommandInvocation) -> (variables: [String: String], argv: [String])? {
+        let prefix = ["/usr/bin/sudo", "-n", "-u", environment.sandvaultUser, "/usr/bin/env", "-i"]
+        guard invocation.argv.starts(with: prefix) else { return nil }
+        var rest = invocation.argv.dropFirst(prefix.count)
+        var variables: [String: String] = [:]
+        while let word = rest.first, !word.hasPrefix("/"), let equals = word.firstIndex(of: "=") {
+            variables[String(word[..<equals])] = String(word[word.index(after: equals)...])
+            rest = rest.dropFirst()
+        }
+        guard rest.starts(with: ["/usr/bin/sandbox-exec", "-f", environment.sandboxProfilePath]) else { return nil }
+        return (variables, Array(rest.dropFirst(3)))
+    }
+
+    func run(_ invocation: CommandInvocation) async throws -> CommandResult {
+        lock.withLock { recorded.append(invocation) }
+        guard let sandboxed = unwrap(invocation) else { return try await real.run(invocation) }
+        guard runsSandboxed else { return CommandResult(exitCode: 1, stdout: "", stderr: "sandbox not available") }
+        return try await real.run(CommandInvocation(
+            sandboxed.argv[0], Array(sandboxed.argv.dropFirst()), environment: sandboxed.variables, timeout: invocation.timeout
+        ))
+    }
+
+    func lines(_ invocation: CommandInvocation) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { $0.finish(throwing: SandvaultError.commandNotRunnable(invocation.description, "not streamed")) }
+    }
+}
+
 /// An ssh public key line with a well-formed blob for `type`.
 func publicKey(_ type: String = "ssh-ed25519", comment: String? = "alice@laptop") -> String {
     func field(_ bytes: [UInt8]) -> [UInt8] {

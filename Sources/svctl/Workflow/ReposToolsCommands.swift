@@ -23,6 +23,7 @@ struct ReposCommand: AsyncParsableCommand {
             let repos = try await ReposCommand.service(global).repositories()
             if global.json { return try Output.json(repos) }
             guard !repos.isEmpty else { return Output.line("no clones in \(global.environment.sharedReposDir)") }
+            if !WorkflowPlatform.isMacOS { Output.line("note: git in the clones runs as the sandbox user on the Mac; those columns stay unknown here") }
             Output.table(["NAME", "BRANCH", "HEAD", "LAST COMMIT", "DIRTY", "AHEAD/BEHIND", "UNFETCHED", "DEPLOY KEY", "HOST"], repos.map {
                 [
                     $0.name, $0.branch ?? "-", $0.headCommit.map { String($0.prefix(8)) } ?? "-", WorkflowCLI.date($0.lastCommitDate),

@@ -124,11 +124,9 @@ public struct ToolAccess: ToolService {
     /// sandbox put into its shell files runs sandboxed, as it does in a session.
     public static func sandboxLookupInvocation(_ environment: SandvaultEnvironment, name: String) -> CommandInvocation {
         let script = "source ~/.zshenv; source ~/.zprofile; print -r -- \(marker); command -v -- \(ShellQuoting.quote(name))"
-        return CommandInvocation.asSandvault(environment, "-i", [
-            "HOME=\(environment.sandvaultHome)", "USER=\(environment.sandvaultUser)", "SHELL=/bin/zsh",
-            "SHARED_WORKSPACE=\(environment.sharedWorkspace)", "PATH=/usr/bin:/bin:/usr/sbin:/sbin",
-            "/usr/bin/sandbox-exec", "-f", environment.sandboxProfilePath, "/bin/zsh", "-c", script,
-        ], timeout: 20)
+        return SandboxedCommand.invocation(
+            environment, variables: ["SHELL=/bin/zsh", "SHARED_WORKSPACE=\(environment.sharedWorkspace)"], ["/bin/zsh", "-c", script], timeout: 20
+        )
     }
 
     func sandboxLookup(_ name: String) async throws -> SandboxLookup {

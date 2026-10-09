@@ -54,6 +54,29 @@ public struct SharedLayout: Sendable {
     }
 }
 
+/// Commands that read or execute what the sandbox controls run the way sv starts a session: as the sandbox user
+/// with a clean environment, inside sv's profile. Whatever they trigger (shell files, git filters, fsmonitor,
+/// gpg) is then confined like the agent itself.
+public enum SandboxedCommand {
+    public static let path = "/usr/bin:/bin:/usr/sbin:/sbin"
+
+    /// `sudo -n -u <sandbox> /usr/bin/env -i HOME=… USER=… [variables] PATH=… /usr/bin/sandbox-exec -f <profile> <command…>`
+    public static func invocation(
+        _ environment: SandvaultEnvironment, variables: [String] = [], _ command: [String], timeout: Double = 15
+    ) -> CommandInvocation {
+        CommandInvocation.asSandvault(environment, "-i", [
+            "HOME=\(environment.sandvaultHome)", "USER=\(environment.sandvaultUser)",
+        ] + variables + ["PATH=\(path)", "/usr/bin/sandbox-exec", "-f", environment.sandboxProfilePath] + command, timeout: timeout)
+    }
+
+    /// git in a sandbox clone. `safe.directory=*` is needed because the host owns the clone; trusting its config is
+    /// fine here, since anything that config makes git run stays inside the profile.
+    public static func git(_ environment: SandvaultEnvironment, clone: String, _ arguments: [String], timeout: Double = 15) -> CommandInvocation {
+        invocation(environment, [GitSafe.gitPath] + GitSafe.hardeningArguments + ["-c", "safe.directory=*", "-C", clone] + arguments,
+                   timeout: timeout)
+    }
+}
+
 /// `lstat` without following symlinks.
 public enum FileKind: Sendable, Equatable {
     case missing, regular, directory, symlink, other

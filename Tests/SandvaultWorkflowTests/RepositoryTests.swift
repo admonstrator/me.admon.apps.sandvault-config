@@ -4,6 +4,20 @@ import Testing
 @testable import SandvaultWorkflow
 
 @Suite struct RepositoryStatusTests {
+    @Test func gitInACloneRunsAsTheSandboxUserInsideTheProfile() {
+        let environment = SandvaultEnvironment(hostUser: "alice", hostHome: "/Users/alice")
+        let invocation = SandboxedCommand.git(environment, clone: "/Users/Shared/sv-alice/repos/app", ["symbolic-ref", "--quiet", "--short", "HEAD"])
+        #expect(invocation.argv == [
+            "/usr/bin/sudo", "-n", "-u", "sandvault-alice", "/usr/bin/env", "-i",
+            "HOME=/Users/sandvault-alice", "USER=sandvault-alice", "PATH=/usr/bin:/bin:/usr/sbin:/sbin",
+            "/usr/bin/sandbox-exec", "-f", "/var/sandvault/sandbox-sandvault-alice.sb",
+            "/usr/bin/git", "-c", "core.fsmonitor=", "-c", "core.sshCommand=", "-c", "core.hooksPath=/dev/null", "-c", "core.pager=cat",
+            "-c", "protocol.ext.allow=never", "-c", "safe.directory=*", "-C", "/Users/Shared/sv-alice/repos/app",
+            "symbolic-ref", "--quiet", "--short", "HEAD",
+        ])
+        #expect(invocation.timeout == 15)
+    }
+
     @Test func statusFromGitOutputFixtures() async throws {
         let sandbox = try Sandbox()
         defer { sandbox.cleanup() }
@@ -12,17 +26,16 @@ import Testing
         try sandbox.write("key", to: sandbox.workspace + "/_sandvault/.ssh/deploy_app")
         let fake = FakeCommandRunner()
         func on(_ arguments: [String], _ data: Data) {
-            fake.on(GitSafe.invocation(repository: clone, arguments).argv, .result(CommandResult(exitCode: 0, stdout: data)))
+            fake.on(SandboxedCommand.git(sandbox.environment, clone: clone, arguments).argv, .result(CommandResult(exitCode: 0, stdout: data)))
         }
         on(["symbolic-ref", "--quiet", "--short", "HEAD"], try fixtureData("git-symbolic-ref.txt"))
         on(["-c", "log.showSignature=false", "log", "-1", "--no-color", "--format=%H %ct", "HEAD"], try fixtureData("git-log-head.txt"))
         on(["rev-list", "--left-right", "--count", "@{upstream}...HEAD"], try fixtureData("git-rev-list-left-right.txt"))
-        on(["config", "-z", "--name-only", "--get-regexp", "^filter\\."], try fixtureData("git-config-filters.bin"))
         on(["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=normal", "--ignore-submodules=all", "--no-renames"],
            try fixtureData("git-status-dirty.bin"))
 
-        let repos = try await SandboxRepositories(environment: sandbox.environment, runner: fake, configStore: sandbox.configStore, shared: sandbox.shared)
-            .repositories()
+        let repos = try await SandboxRepositories(environment: sandbox.environment, runner: fake, configStore: sandbox.configStore,
+                                                  shared: sandbox.shared, isMacOS: true).repositories()
         let status = try #require(repos.first)
         #expect(repos.count == 1)
         #expect(status.name == "app" && status.sandboxPath == clone)
@@ -33,24 +46,47 @@ import Testing
         #expect(status.behindOrigin == 1 && status.aheadOfOrigin == 2)
         #expect(status.unfetchedCommits == nil && status.record == nil)
         #expect(status.deployKey == sandbox.workspace + "/_sandvault/.ssh/deploy_app")
+        #expect(fake.invocations.count == 4)
+        #expect(fake.invocations.allSatisfy { $0.executable == "/usr/bin/sudo" && $0.arguments.contains("/usr/bin/sandbox-exec") })
+    }
 
-        // Every filter driver the clone's config names is emptied for `status`.
-        let statusCall = try #require(fake.invocations.first { $0.arguments.contains("status") })
-        let environment = statusCall.environment ?? [:]
-        #expect(environment["GIT_CONFIG_COUNT"] == "8")
-        let keys = (0..<8).compactMap { environment["GIT_CONFIG_KEY_\($0)"] }
-        #expect(keys.contains("filter.lfs.clean") && keys.contains("filter.my.driver.process") && keys.contains("filter.my.driver.required"))
-        #expect(statusCall.arguments.starts(with: GitSafe.hardeningArguments))
+    @Test func untrustedOutputIsParsedStrictly() async throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.cleanup() }
+        let clone = sandbox.workspace + "/repos/app"
+        try FileManager.default.createDirectory(atPath: clone + "/.git", withIntermediateDirectories: true)
+        let fake = FakeCommandRunner()
+        fake.on(SandboxedCommand.git(sandbox.environment, clone: clone, ["symbolic-ref"]).argv, stdout: "main\n\u{1B}]0;pwned\u{7}\n")
+        fake.on(SandboxedCommand.git(sandbox.environment, clone: clone, ["-c"]).argv, stdout: String(repeating: "a", count: 4096))
+        fake.on(SandboxedCommand.git(sandbox.environment, clone: clone, ["rev-list"]).argv, stdout: "-1\t2\n")
+        fake.on(SandboxedCommand.git(sandbox.environment, clone: clone, ["--no-optional-locks"]).argv, stdout: "", exitCode: 128)
+        let status = try #require(try await SandboxRepositories(environment: sandbox.environment, runner: fake, configStore: sandbox.configStore,
+                                                                 shared: sandbox.shared, isMacOS: true).repositories().first)
+        #expect(status.branch == nil && status.headCommit == nil && status.behindOrigin == nil && !status.dirty)
+    }
+
+    @Test func offMacOSCloneFieldsStayUnknown() async throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.cleanup() }
+        try FileManager.default.createDirectory(atPath: sandbox.workspace + "/repos/app/.git", withIntermediateDirectories: true)
+        try sandbox.write("key", to: sandbox.workspace + "/_sandvault/.ssh/deploy_app")
+        let fake = FakeCommandRunner()
+        let status = try #require(try await SandboxRepositories(environment: sandbox.environment, runner: fake, configStore: sandbox.configStore,
+                                                                 shared: sandbox.shared, isMacOS: false).repositories().first)
+        #expect(status.branch == nil && status.headCommit == nil && status.lastCommitDate == nil && status.unfetchedCommits == nil)
+        #expect(status.aheadOfOrigin == nil && status.behindOrigin == nil && !status.dirty)
+        #expect(status.deployKey != nil)
+        #expect(fake.invocations.isEmpty)
     }
 
     @Test func parsers() {
-        #expect(SandboxRepositories.filterDrivers(["filter.lfs.clean", "filter.lfs.smudge", "filter.a.b.process", "filter.we=ird.clean", "core.x"])
-            == ["lfs", "a.b", "we=ird"])
-        #expect(SandboxRepositories.neutralizing([]).isEmpty)
         #expect(SandboxRepositories.parseHead("abc 12") == nil)
+        #expect(SandboxRepositories.parseHead("c5e22242579d73f94faadaf10a31dfabf48d12d1 -5") == nil)
+        #expect(SandboxRepositories.parseHead("c5e22242579d73f94faadaf10a31dfabf48d12d1  1") == nil)
         let counts = SandboxRepositories.parseCounts("3\t0")
         #expect(counts?.behind == 3 && counts?.ahead == 0)
-        #expect(SandboxRepositories.parseCounts("x") == nil)
+        #expect(SandboxRepositories.parseCounts("x") == nil && SandboxRepositories.parseCounts("3 0") == nil)
+        #expect(SandboxRepositories.parseCounts("99999999999\t0") == nil)
         #expect(Text.isSafeBranch("feature/login-2") && Text.isSafeBranch("main"))
         for bad in ["-x", "a..b", "a b", "a:b", "@{u}", "a~1", "x.lock", "", ".hidden", "a\u{1B}"] {
             #expect(!Text.isSafeBranch(bad), "\(bad)")
@@ -59,13 +95,18 @@ import Testing
 }
 
 /// The way back against real repositories: a host repository, its sv-clone style clone, sandbox commits and traps.
+/// `SandboxEmulator` stands in for sudo and sandbox-exec, which this platform lacks.
 @Suite struct RepositoryWayBackTests {
     struct Setup {
         let sandbox: Sandbox
         let host: String
         let clone: String
         let record: HandoffRecord
-        let service: SandboxRepositories
+
+        func service(_ runner: CommandRunner) -> SandboxRepositories {
+            SandboxRepositories(environment: sandbox.environment, runner: runner, configStore: sandbox.configStore,
+                                shared: sandbox.shared, isMacOS: true)
+        }
     }
 
     func setUp() async throws -> Setup {
@@ -80,9 +121,7 @@ import Testing
         var config = AppConfig()
         config.repos = [record]
         try sandbox.configStore.save(config)
-        let service = SandboxRepositories(environment: sandbox.environment, runner: ProcessCommandRunner(),
-                                          configStore: sandbox.configStore, shared: sandbox.shared)
-        return Setup(sandbox: sandbox, host: host, clone: clone, record: record, service: service)
+        return Setup(sandbox: sandbox, host: host, clone: clone, record: record)
     }
 
     @Test func countsUnfetchedCommitsAndFetchesBack() async throws {
@@ -94,16 +133,17 @@ import Testing
             try await TestGit.run(setup.clone, ["commit", "-q", "-m", "work \(index)"])
         }
         try await TestGit.run(setup.clone, ["tag", "v9.9"])
+        let runner = SandboxEmulator(environment: setup.sandbox.environment)
 
         // Before the first fetch the host's own branch is the base.
-        let before = try #require(try await setup.service.repositories().first)
+        let before = try #require(try await setup.service(runner).repositories().first)
         #expect(before.record?.id == setup.record.id)
         #expect(before.branch == "main")
         #expect(before.unfetchedCommits == 2)
         #expect(before.aheadOfOrigin == 2 && before.behindOrigin == 0)
         #expect(!before.dirty)
 
-        let after = try await setup.service.fetchBack(setup.record)
+        let after = try await setup.service(runner).fetchBack(setup.record)
         #expect(after.unfetchedCommits == 0)
         let head = try await TestGit.run(setup.clone, ["rev-parse", "HEAD"])
         #expect(try await TestGit.run(setup.host, ["rev-parse", "refs/remotes/sandvault/main"]) == head)
@@ -111,7 +151,7 @@ import Testing
         #expect(try await TestGit.run(setup.host, ["tag", "--list"]) == "")
     }
 
-    @Test func statusDoesNotRunWhatTheSandboxPlanted() async throws {
+    @Test func theHostNeverRunsGitInsideTheClone() async throws {
         let setup = try await setUp()
         defer { setup.sandbox.cleanup() }
         let traps = setup.sandbox.base + "/traps"
@@ -121,7 +161,7 @@ import Testing
             try setup.sandbox.write("#!/bin/sh\ntouch \(traps)/\(name).ran\ncat\n", to: path, mode: 0o755)
             return path
         }
-        // A clean filter (git status re-hashes modified files through it), fsmonitor, and gpg for log.showSignature.
+        // What a sandbox can plant: a clean filter (git status re-hashes files through it), fsmonitor, gpg for log.
         try setup.sandbox.write("*.txt filter=evil\n", to: setup.clone + "/.git/info/attributes")
         try await TestGit.run(setup.clone, ["config", "filter.evil.clean", try trap("filter")])
         try await TestGit.run(setup.clone, ["config", "core.fsmonitor", try trap("fsmonitor")])
@@ -132,16 +172,27 @@ import Testing
         try setup.sandbox.write("ONE\n", to: setup.clone + "/notes.txt")
         try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: setup.clone + "/notes.txt")
 
-        let status = try #require(try await setup.service.repositories().first)
-        #expect(status.dirty)
-        #expect(status.headCommit != nil)
-        #expect(try FileManager.default.contentsOfDirectory(atPath: traps).filter { $0.hasSuffix(".ran") }.isEmpty)
+        // Sandboxed calls fail here, so anything that ran would have been the host's own doing.
+        let runner = SandboxEmulator(environment: setup.sandbox.environment, runsSandboxed: false)
+        let status = try #require(try await setup.service(runner).repositories().first)
+        #expect(status.branch == nil && status.headCommit == nil && !status.dirty)
+        _ = try await setup.service(runner).fetchBack(setup.record)
 
-        // Control: plain git in the clone does run them.
+        func ran() throws -> Set<String> { Set(try FileManager.default.contentsOfDirectory(atPath: traps).filter { $0.hasSuffix(".ran") }) }
+        #expect(try ran().isEmpty)
+        let hostGit = runner.invocations.filter { $0.executable == GitSafe.gitPath }
+        #expect(!hostGit.isEmpty)
+        #expect(!hostGit.contains { $0.arguments.contains { $0.hasPrefix(setup.clone) } })
+        let sandboxed = runner.invocations.filter { runner.unwrap($0) != nil }
+        #expect(sandboxed.count >= 8)
+        #expect(sandboxed.allSatisfy { $0.arguments.contains(setup.clone) })
+        // fetchBack ran host-side in the host repository and fetched from the clone.
+        #expect(try await TestGit.run(setup.host, ["rev-parse", "refs/remotes/sandvault/main"]) == TestGit.run(setup.clone, ["rev-parse", "HEAD"]))
+
+        // Control: git run by the host inside the clone does trigger them.
         _ = try await ProcessCommandRunner().run(CommandInvocation(GitSafe.gitPath, ["-C", setup.clone, "status", "--porcelain"]))
         _ = try await ProcessCommandRunner().run(CommandInvocation(GitSafe.gitPath, ["-C", setup.clone, "log", "-1"]))
-        let ran = Set(try FileManager.default.contentsOfDirectory(atPath: traps).filter { $0.hasSuffix(".ran") })
-        #expect(ran.isSuperset(of: ["filter.ran", "gpg.ran"]))
+        #expect(try ran().isSuperset(of: ["filter.ran", "gpg.ran"]))
     }
 
     /// A commit with a `gpgsig` header, so `log --show-signature` calls `gpg.program`.
@@ -171,16 +222,20 @@ import Testing
         try FileManager.default.createDirectory(atPath: repos + "/esc\u{1B}[2Jape", withIntermediateDirectories: true)
         try FileManager.default.createDirectory(atPath: repos + "/plain", withIntermediateDirectories: true)
 
-        let names = try await setup.service.repositories().map(\.name)
-        #expect(names == ["app", "plain"])
-        let plain = try #require(try await setup.service.repositories().last)
+        let runner = SandboxEmulator(environment: setup.sandbox.environment)
+        let all = try await setup.service(runner).repositories()
+        #expect(all.map(\.name) == ["app", "plain"])
+        #expect(all.first?.branch == "main")
+        let plain = try #require(all.last)
         #expect(plain.branch == nil && plain.headCommit == nil && plain.record == nil && !plain.dirty)
+        #expect(!runner.invocations.contains { $0.arguments.contains(repos + "/plain") })
     }
 
     @Test func fetchBackNeedsAHostRepository() async throws {
         let sandbox = try Sandbox()
         defer { sandbox.cleanup() }
-        let service = SandboxRepositories(environment: sandbox.environment, runner: ProcessCommandRunner(), configStore: sandbox.configStore, shared: sandbox.shared)
+        let service = SandboxRepositories(environment: sandbox.environment, runner: ProcessCommandRunner(), configStore: sandbox.configStore,
+                                          shared: sandbox.shared, isMacOS: true)
         let remote = HandoffRecord(hostPath: "https://github.com/org/app.git", repoName: "app", sandboxPath: sandbox.workspace + "/repos/app", agent: .claude)
         await #expect(throws: SandvaultError.self) { try await service.fetchBack(remote) }
         let plain = sandbox.base + "/plain"

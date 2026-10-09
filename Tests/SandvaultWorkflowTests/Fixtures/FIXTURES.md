@@ -2,8 +2,7 @@
 
 Host user `alice`, sandbox user `sandvault-alice`. Rows marked **synthetic** were written from the documented output
 format, not captured on a Mac; replace each with real output and remove the word `synthetic` from its row. The git
-rows were captured with git 2.43.0 on Linux (git's porcelain and `-z` formats are the same on macOS); the commands are
-in the scratch script that produced them, reproduced here.
+rows were captured with git 2.43.0 on Linux (git's porcelain and `-z` formats are the same on macOS).
 
 | File | Command on a Mac | Status |
 |---|---|---|
@@ -18,9 +17,10 @@ in the scratch script that produced them, reproduced here.
 | `git-symbolic-ref.txt` | `git symbolic-ref --quiet --short HEAD` in a clone | git 2.43.0 |
 | `git-log-head.txt` | `git -c log.showSignature=false log -1 --no-color --format='%H %ct' HEAD` | git 2.43.0 |
 | `git-rev-list-left-right.txt` | `git rev-list --left-right --count '@{upstream}...HEAD'` (1 behind, 2 ahead) | git 2.43.0 |
-| `git-config-filters.bin` | `git config -z --name-only --get-regexp '^filter\.'` (NUL-separated; drivers `lfs` and `my.driver`) | git 2.43.0 |
 | `git-status-dirty.bin` | `git --no-optional-locks status --porcelain=v1 -z --untracked-files=normal --ignore-submodules=all --no-renames` | git 2.43.0 |
 
-Setup for the git rows: a bare `origin` with two commits, a clone that has one of them plus two local commits and a
-fetch of the second, `filter.lfs.clean`, `filter.lfs.required` and `filter.my.driver.process` in its config, a
-modified tracked file and an untracked file.
+On a Mac every git row runs in the clone through `SandboxedCommand.git`, i.e. prefixed with
+`sudo -n -u sandvault-alice /usr/bin/env -i HOME=/Users/sandvault-alice USER=sandvault-alice PATH=/usr/bin:/bin:/usr/sbin:/sbin
+/usr/bin/sandbox-exec -f /var/sandvault/sandbox-sandvault-alice.sb /usr/bin/git <GitSafe hardening> -c safe.directory=* -C <clone>`;
+the output is plain git. Setup for the git rows: a bare `origin` with two commits, a clone that has one of them plus
+two local commits and a fetch of the second, a modified tracked file and an untracked file.
