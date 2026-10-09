@@ -75,6 +75,14 @@ import Testing
         #expect(try await ConnectionMonitor(environment: alice, runner: fake).connections().isEmpty)
     }
 
+    @Test func lsofErrorsAreReported() async throws {
+        let fake = FakeCommandRunner()
+        fake.on(Invocations.lsof(alice).argv, stdout: "", exitCode: 1, stderr: "lsof: unsupported option\n")
+        await #expect(throws: SandvaultError.self) { try await ConnectionMonitor(environment: alice, runner: fake).connections() }
+        fake.on(Invocations.lsof(alice).argv, stdout: "p1\ncx\nf3\ntIPv4\nPTCP\nn*:22\nTST=LISTEN\n", exitCode: 1, stderr: "lsof: WARNING: can't stat()\n")
+        #expect(try await ConnectionMonitor(environment: alice, runner: fake).connections().map(\.localPort) == [22])
+    }
+
     @Test func refusedSudoIsAPermissionError() async throws {
         let fake = FakeCommandRunner()
         fake.on(Invocations.lsof(alice).argv, stdout: "", exitCode: 1, stderr: "sudo: a password is required\n")

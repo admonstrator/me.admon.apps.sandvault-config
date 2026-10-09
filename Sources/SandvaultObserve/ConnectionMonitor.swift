@@ -15,8 +15,8 @@ public struct ConnectionMonitor: Sendable {
     public func connections() async throws -> [SandboxConnection] {
         let result = try await runner.run(Invocations.lsof(environment))
         if result.sudoRefused { throw SandvaultError.sudoMissing(environment) }
-        // lsof exits 1 without output when nothing matched.
-        guard result.succeeded || result.stdout.isEmpty else {
+        // lsof exits 1 silently when nothing matched, and also after mere warnings while still listing sockets.
+        guard result.succeeded || !result.stdout.isEmpty || result.stderr.isEmpty else {
             throw SandvaultError.commandFailed(Invocations.lsof(environment).description, result.exitCode, result.stderrString)
         }
         return LsofParser.parse(result.stdoutString)
