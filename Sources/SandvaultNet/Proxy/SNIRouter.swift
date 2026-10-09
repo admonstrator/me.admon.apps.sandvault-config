@@ -2,7 +2,8 @@ import NIOCore
 import SandvaultCore
 
 /// Transparent TLS listener: buffers the ClientHello, decides on its SNI, then replays the buffered bytes
-/// to `<sni>:443` (tunnel) or into a local TLS server (inspection). No SNI means deny.
+/// to `<sni>:443` (tunnel) or into a local TLS server (inspection). Without SNI (`curl https://1.1.1.1`) the host
+/// is the address the sandbox socket connects to, as lsof sees it; when that is unknown, the connection is refused.
 final class SNIRouter: ChannelInboundHandler, RemovableChannelHandler {
     typealias InboundIn = ByteBuffer
 
@@ -29,7 +30,7 @@ final class SNIRouter: ChannelInboundHandler, RemovableChannelHandler {
         case .invalid(let why):
             reject(host: "(unknown)", reason: "not a TLS ClientHello: \(why)", context: context)
         case .complete(nil):
-            reject(host: "(no SNI)", reason: "ClientHello without server name", context: context)
+            decideWithoutSNI(context: context)
         case .complete(let name?):
             let host = HostName.normalize(name)
             guard HostName.isValid(host) else {
@@ -70,6 +71,25 @@ final class SNIRouter: ChannelInboundHandler, RemovableChannelHandler {
             case .allow:
                 self.tunnel(host: host, port: upstreamPort, addresses: addresses, tracker: tracker, context: context)
             }
+        }
+    }
+
+    private func decideWithoutSNI(context: ChannelHandlerContext) {
+        state = .deciding
+        try? context.channel.syncOptions?.setOption(ChannelOptions.autoRead, value: false)
+        let runtime = self.runtime
+        let clientPort = context.channel.remoteAddress?.port.map { UInt16(truncatingIfNeeded: $0) }
+        context.eventLoop.makeFutureWithTask {
+            await runtime.originalDestination(ofPort: clientPort, proto: .tcp)
+        }
+        .assumeIsolated()
+        .whenSuccess { destination in
+            guard let destination, destination.port == 443, HostName.isIPLiteral(destination.address),
+                  !PrivateNetworks.loopback.contains(where: { $0.contains(destination.address) })
+            else {
+                return self.reject(host: "(no SNI)", reason: "ClientHello without server name, original destination unknown", context: context)
+            }
+            self.decide(host: HostName.normalize(destination.address), context: context)
         }
     }
 

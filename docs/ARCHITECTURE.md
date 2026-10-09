@@ -104,8 +104,10 @@ sandbox user, so the kernel refuses anything else too (a setuid tool accepts it:
 lines exactly. `pkill -u` matches the effective user, so setuid survivors then get `kill -KILL` as the sandbox user. Reports list each command with its
 outcome and the pids still alive after a short settle delay.
 
-**netd seams.** The attributor keeps one lsof snapshot (port and protocol -> pid, name) for 2 s. A miss joins the
-running refresh or starts one at most every 100 ms, and a lookup waits at most 200 ms before answering `nil`; a
+**netd seams.** The attributor keeps one lsof snapshot (port and protocol -> pid, name, remote address) for 2 s. A
+miss joins the running refresh or starts one at most every 100 ms, and a lookup waits at most 200 ms before answering
+`nil` (2 s for a destination: pf's `rdr` rewrites packets, not the socket, so the sandbox socket still names the
+address it connected to, which is all netd knows of a ClientHello without SNI); a
 failing lsof clears the cache rather than serving stale owners. Local ports are TCP listeners of the sandbox on
 loopback or wildcard plus the ports of live host helpers; UDP is left out because an unconnected UDP socket is not a
 listener.
@@ -308,7 +310,7 @@ are SwiftNIO on `127.0.0.1`, ports from `NetworkPolicy.ports`:
 |---|---|---|
 | explicit proxy (18080) | `CONNECT host:port`, absolute-form `http://` requests | tunnel, or origin-form request without hop-by-hop and `Proxy-*` headers |
 | transparent HTTP (18081) | pf-redirected port 80 | `Host` header, port 80 |
-| transparent TLS (18443) | pf-redirected port 443 | SNI of the buffered ClientHello, port 443; bytes are replayed |
+| transparent TLS (18443) | pf-redirected port 443 | SNI of the buffered ClientHello, port 443; without SNI the IP address the sandbox socket connects to (lsof); bytes are replayed |
 | DNS (18053, UDP + TCP) | pf-redirected port 53 | upstream from `--upstream-dns` or the first `nameserver` of `/etc/resolv.conf` |
 | control | `AppPaths.effectiveControlSocket`, mode 0600 | `ControlRequest` / `ControlEvent` lines |
 
@@ -355,8 +357,8 @@ pushes `.status` and, in `open`/`proxyOnly` with `localhost == .sandboxAndHelper
 `svctl asks [--follow] [--answer <id-prefix> <allow-once|allow-always|deny-once|deny-always> [--domain]]`,
 `svctl netd install [--executable path]|uninstall|status|restart`. Config edits send `reloadConfig` when netd answers.
 
-Limits: HTTP upgrades (WebSocket over plain `ws://`) are not forwarded; in `watch` and `proxyOnly`, TLS on 443
-without SNI (an IP address as host) is refused, because netd cannot learn the original destination without root; a plain HTTP request body is not
+Limits: HTTP upgrades (WebSocket over plain `ws://`) are not forwarded; TLS on 443 without SNI is refused when lsof
+does not answer within 2 s (the record then says `(no SNI)`); a plain HTTP request body is not
 back-pressured; inspection covers HTTP/1.1 only (clients negotiating `h2` fall back through ALPN).
 
 ## 7 · Workflow

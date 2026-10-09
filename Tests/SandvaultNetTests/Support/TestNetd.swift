@@ -18,6 +18,7 @@ struct TestNetd {
     static func start(
         _ config: AppConfig,
         resolver: HostResolver = StaticHostResolver([:]),
+        attributor: ProcessAttributor = NoProcessAttributor(),
         upstreamDNS: String? = nil,
         transparentHTTPPort: Int = 80,
         transparentTLSPort: Int = 443,
@@ -37,7 +38,7 @@ struct TestNetd {
         options.manageEnvironmentBlock = false
         options.refreshInterval = 60
         let messages = Recorded<String>()
-        let daemon = try NetDaemon(options: options, resolver: resolver, logger: { messages.append($0) })
+        let daemon = try NetDaemon(options: options, attributor: attributor, resolver: resolver, logger: { messages.append($0) })
         let ports = try await daemon.start()
         return TestNetd(daemon: daemon, layout: layout, ports: ports, socketPath: socketPath, messages: messages)
     }
@@ -115,4 +116,13 @@ extension AppConfig {
         config.network.dnsOverrides = overrides.sorted { $0.key < $1.key }.map { DnsOverride(pattern: $0.key, address: $0.value) }
         return config
     }
+}
+
+/// Attributes every port to one process and destination.
+struct FixedAttributor: ProcessAttributor {
+    var process: (pid: Int32, name: String)?
+    var destination: (address: String, port: UInt16)?
+
+    func process(forLocalPort port: UInt16, proto: TransportProtocol) async -> (pid: Int32, name: String)? { process }
+    func destination(forLocalPort port: UInt16, proto: TransportProtocol) async -> (address: String, port: UInt16)? { destination }
 }

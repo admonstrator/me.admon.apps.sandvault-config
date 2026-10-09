@@ -7,6 +7,13 @@ import Foundation
 /// Implemented by SandvaultObserve (lsof as the sandbox user), consumed by SandvaultNet.
 public protocol ProcessAttributor: Sendable {
     func process(forLocalPort port: UInt16, proto: TransportProtocol) async -> (pid: Int32, name: String)?
+    /// Where the sandbox socket on `port` connects to. pf's `rdr` rewrites packets, not the socket, so the socket
+    /// still names the original destination after netd took the connection. `nil` when unknown.
+    func destination(forLocalPort port: UInt16, proto: TransportProtocol) async -> (address: String, port: UInt16)?
+}
+
+extension ProcessAttributor {
+    public func destination(forLocalPort port: UInt16, proto: TransportProtocol) async -> (address: String, port: UInt16)? { nil }
 }
 
 /// Loopback ports the sandbox may reach under `LocalhostPolicy.sandboxAndHelpers`:

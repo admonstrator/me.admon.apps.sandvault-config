@@ -79,6 +79,14 @@ final class CachedProcessAttributor: ProcessAttributor {
         guard let hit = await cache.lookup(port: port, proto: proto) else { return nil }
         return (hit.pid, hit.name)
     }
+
+    /// Waits up to two seconds: without it the connection is refused anyway.
+    func destination(forLocalPort port: UInt16, proto: TransportProtocol) async -> (address: String, port: UInt16)? {
+        guard let hit = await cache.lookup(port: port, proto: proto, deadline: .seconds(2)),
+              let address = hit.remoteAddress, let remotePort = hit.remotePort
+        else { return nil }
+        return (address, remotePort)
+    }
 }
 
 actor ConnectionCache {
@@ -90,6 +98,8 @@ actor ConnectionCache {
     struct Owner: Sendable {
         var pid: Int32
         var name: String
+        var remoteAddress: String?
+        var remotePort: UInt16?
     }
 
     let monitor: ConnectionMonitor
@@ -112,10 +122,11 @@ actor ConnectionCache {
         self.deadline = deadline
     }
 
-    func lookup(port: UInt16, proto: TransportProtocol) async -> Owner? {
+    /// `deadline` overrides the cache's own.
+    func lookup(port: UInt16, proto: TransportProtocol, deadline: Duration? = nil) async -> Owner? {
         let key = Key(port: port, proto: proto)
         if let refreshedAt, clock.now - refreshedAt < maxAge, let owner = owners[key] { return owner }
-        await waitBounded(for: refresh())
+        await waitBounded(for: refresh(), deadline: deadline ?? self.deadline)
         return owners[key]
     }
 
@@ -144,14 +155,15 @@ actor ConnectionCache {
         }
         var owners: [Key: Owner] = [:]
         for connection in connections {
-            owners[Key(port: connection.localPort, proto: connection.proto)] = Owner(pid: connection.pid, name: connection.process)
+            owners[Key(port: connection.localPort, proto: connection.proto)] = Owner(
+                pid: connection.pid, name: connection.process, remoteAddress: connection.remoteAddress, remotePort: connection.remotePort
+            )
         }
         self.owners = owners
         refreshedAt = clock.now
     }
 
-    private nonisolated func waitBounded(for task: Task<Void, Never>) async {
-        let deadline = deadline
+    private nonisolated func waitBounded(for task: Task<Void, Never>, deadline: Duration) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             let once = Once()
             Task {

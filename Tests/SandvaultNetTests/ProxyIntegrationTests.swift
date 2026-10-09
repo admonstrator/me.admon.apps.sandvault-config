@@ -142,6 +142,20 @@ import Testing
         }
     }
 
+    @Test func transparentTLSWithoutSNIUsesTheSocketsDestination() async throws {
+        // `curl https://203.0.113.9`: no SNI, but lsof still names the address the sandbox socket connects to.
+        let attributor = FixedAttributor(process: (7, "curl"), destination: ("203.0.113.9", 443))
+        let netd = try await TestNetd.start(.testing([("203.0.113.9", .deny)]), attributor: attributor)
+        try await withCleanup({ await netd.stop() }) {
+            let reply = try await RawClient.exchange(
+                port: Int(netd.ports.transparentTLS), send: [UInt8](try Fixture.data("clienthello-no-sni.bin"))
+            )
+            #expect(reply.isEmpty)
+            let record = try await netd.record { $0.host == "203.0.113.9" }
+            #expect(record.decision == .denied && record.process == "curl")
+        }
+    }
+
     @Test func statusAndReloadThroughTheControlSocket() async throws {
         let origin = try await TestOrigin.start(name: "origin")
         let netd = try await TestNetd.start(.testing([("127.0.0.1", .allow)]))

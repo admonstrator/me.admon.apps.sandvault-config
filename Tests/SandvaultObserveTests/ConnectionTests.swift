@@ -141,6 +141,14 @@ import Testing
         #expect(await attributor.process(forLocalPort: 52000, proto: .udp) == nil)
     }
 
+    @Test func knowsTheDestinationOfASourcePort() async throws {
+        let attributor = CachedProcessAttributor(monitor: ConnectionMonitor(environment: alice, runner: try observeRunner()))
+        let destination = await attributor.destination(forLocalPort: 52010, proto: .tcp)
+        #expect(destination?.address == "2a00:1450:4001:82b::200a")
+        #expect(destination?.port == 443)
+        #expect(await attributor.destination(forLocalPort: 5173, proto: .tcp) == nil)  // a listener has none
+    }
+
     @Test func oneLsofServesABurst() async throws {
         let fake = try observeRunner()
         let attributor = CachedProcessAttributor(monitor: ConnectionMonitor(environment: alice, runner: fake), minInterval: .seconds(5))

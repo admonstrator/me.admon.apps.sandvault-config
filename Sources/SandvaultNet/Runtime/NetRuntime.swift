@@ -126,6 +126,12 @@ final class NetRuntime: Sendable {
         return await attributor.process(forLocalPort: port, proto: proto).map { ProcessOwner(pid: $0.pid, name: $0.name) }
     }
 
+    /// The address and port the sandbox socket on `port` connects to (the destination before pf's `rdr`).
+    func originalDestination(ofPort port: UInt16?, proto: TransportProtocol) async -> (address: String, port: UInt16)? {
+        guard let port else { return nil }
+        return await attributor.destination(forLocalPort: port, proto: proto)
+    }
+
     /// A tracker whose record goes to the log, the subscribers and the counters when finished.
     func track(_ result: GateResult, kind: ConnectionKind) -> ConnectionTracker {
         counters.opened()
