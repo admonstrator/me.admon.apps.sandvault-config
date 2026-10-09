@@ -1,0 +1,4 @@
+NFSHomeDirectory: /Users/sandvault-alice
+PrimaryGroupID: 502
+UniqueID: 502
+UserShell: /bin/zsh

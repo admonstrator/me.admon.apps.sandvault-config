@@ -1,0 +1,20 @@
+    1     0 root               0.0  0.1  14336 05-03:12:44 Ss   /sbin/launchd
+  320     1 sandvault-alice    0.0  0.0   6016 02-01:00:07 Ss   /usr/sbin/cfprefsd agent
+  612     1 alice              0.3  0.5  81920 05-03:10:01 S    /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  980   975 alice              0.0  0.0   3600    03:15:20 S    -zsh
+  981   975 alice              0.0  0.0   3600    03:15:00 S    -zsh
+ 4100   980 alice              0.0  0.0   4512    01:02:03 S+   /bin/bash /opt/homebrew/bin/sv --browser claude
+ 4105  4100 alice              2.0  1.5 250000    01:02:02 S    /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless --disable-gpu --remote-debugging-port=0 --remote-debugging-address=127.0.0.1 --user-data-dir=/Users/alice/.local/state/sandvault/chrome-data-3F2504E0-4F89-11D3-9A0C-0305E82C3301 --no-first-run --no-default-browser-check --disable-extensions --disable-background-networking
+ 4106  4105 alice              0.5  0.8 120000    01:02:01 S    /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/131.0.6778.86/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) --type=renderer --user-data-dir=/Users/alice/.local/state/sandvault/chrome-data-3F2504E0-4F89-11D3-9A0C-0305E82C3301 --lang=en-US
+ 4120  4100 root               0.0  0.0   5632    01:02:02 S+   sudo --login --set-home --user=sandvault-alice /usr/bin/env -i HOME=/Users/sandvault-alice USER=sandvault-alice SHELL=/bin/zsh TERM=xterm-256color INITIAL_DIR=/Users/Shared/sv-alice/repos/app SHARED_WORKSPACE=/Users/Shared/sv-alice SV_SESSION_ID=3F2504E0-4F89-11D3-9A0C-0305E82C3301 SV_VERBOSE=0 VERBOSE= PATH=/usr/bin:/bin:/usr/sbin:/sbin GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/Users/Shared/sv-alice/* SV_BROWSER_ENDPOINT=http://127.0.0.1:52341 /usr/bin/sandbox-exec -f /var/sandvault/sandbox-sandvault-alice.sb /bin/zsh -c export TMPDIR=$(mktemp -d); cd ~; ~/configure; source ~/.zshenv; source ~/.zprofile; source ~/.zshrc; exec claude
+ 4121  4120 sandvault-alice    1.2  2.3 389120    01:02:01 S+   claude
+ 4130  4121 sandvault-alice   12,5  1,1 180224       45:10 R+   node /Users/sandvault-alice/.npm-global/bin/vite --port 5173
+ 4140  4130 sandvault-alice    0.0  0.0   3200       00:03 S+   /bin/zsh -c npm test
+ 5200   981 alice              0.0  0.0   4512       10:00 S+   /bin/bash /opt/homebrew/bin/sv --ios codex
+ 5210  5200 alice              0.4  0.3  30000       09:58 S    /opt/homebrew/opt/python@3.13/bin/python3.13 /opt/homebrew/opt/sandvault/libexec/helpers/sv-ios-bridge --udid 9C1F2A5E-61B2-4D7B-8C11-2F3A4B5C6D7E --host 127.0.0.1 --port 0 --scratch-dir /Users/Shared/sv-alice/_sandvault/tmp/sv-ios-bridge.Ab12Cd
+ 5220  5200 root               0.0  0.0   5632       09:57 S+   sudo --login --set-home --user=sandvault-alice /usr/bin/env -i HOME=/Users/sandvault-alice USER=sandvault-alice SHELL=/bin/zsh TERM=xterm-256color INITIAL_DIR=/Users/Shared/sv-alice SHARED_WORKSPACE=/Users/Shared/sv-alice SV_SESSION_ID=7B1E0C52-0D8A-4C55-9B4E-2E8A1F6C9D10 SV_VERBOSE=0 VERBOSE= PATH=/usr/bin:/bin:/usr/sbin:/sbin GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/Users/Shared/sv-alice/* SV_IOS_SIMULATOR_ENDPOINT=http://127.0.0.1:52400 /usr/bin/sandbox-exec -f /var/sandvault/sandbox-sandvault-alice.sb /bin/zsh -c export TMPDIR=$(mktemp -d); cd ~; ~/configure; source ~/.zshenv; source ~/.zprofile; source ~/.zshrc; exec codex
+ 5221  5220 sandvault-alice    0.0  0.0   4000       09:56 S+   /bin/zsh /Users/sandvault-alice/bin/codex
+ 5222  5221 sandvault-alice    0.3  0.6  90000       09:55 S+   node /opt/homebrew/bin/codex
+ 5223  5222 sandvault-alice    3.1  1.9 300000       09:55 S+   /opt/homebrew/lib/node_modules/@openai/codex/vendor/aarch64-apple-darwin/codex/codex
+ 6000   612 root               0.0  0.0   5000       00:00 S    /usr/bin/sudo -n -u sandvault-alice /usr/bin/env /usr/sbin/lsof -nP -i -a -u sandvault-alice -F pcPtnT
+ 6001  6000 sandvault-alice    0.0  0.0   2000       00:00 R    /usr/sbin/lsof -nP -i -a -u sandvault-alice -F pcPtnT
