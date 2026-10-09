@@ -169,6 +169,20 @@ public final class FirewallModel {
         }
     }
 
+    // MARK: Protection level (simple window)
+
+    /// The simple window's level; `nil` for settings only expert mode makes.
+    public var protection: ProtectionLevel? { ProtectionLevel.current(network) }
+
+    /// Saves the level and loads it at once, without the rule preview; Off flushes the anchor. Like every
+    /// deliberate apply it also ends a panic.
+    public func setProtection(_ level: ProtectionLevel) async {
+        if level == .off { return await turnOff() }
+        guard await editFirewall("Set protection", { level.apply(to: &$0) }) else { return }
+        await prepareApply()
+        await confirmApply()
+    }
+
     // MARK: Apply, panic, off
 
     /// Builds the state `apply` would send and the anchor text it generates; nothing is loaded yet.

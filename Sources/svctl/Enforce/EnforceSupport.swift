@@ -96,7 +96,7 @@ extension EnforceCLI {
     }
 
     enum ModeArgument: String, ExpressibleByArgument, CaseIterable {
-        case off, open
+        case off, open, watch
         case proxyOnly = "proxy-only"
         case blocked
 
@@ -104,6 +104,7 @@ extension EnforceCLI {
             switch self {
             case .off: .off
             case .open: .open
+            case .watch: .watch
             case .proxyOnly: .proxyOnly
             case .blocked: .blocked
             }

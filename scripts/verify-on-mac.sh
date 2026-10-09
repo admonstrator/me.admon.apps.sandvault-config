@@ -72,7 +72,7 @@ capture() {
     say "Raw command output for the test fixtures"
     local predicate='((processID == 0) AND (senderImagePath CONTAINS "/Sandbox")) OR (subsystem == "com.apple.sandbox.reporting")'
     # Only the sandbox user's processes; other users' command lines stay out of the capture.
-    /bin/ps -axww -o pid=,ppid=,user=,%cpu=,%mem=,rss=,etime=,state=,command= \
+    /bin/ps -axww -o pid=,ppid=,user=,ruser=,%cpu=,%mem=,rss=,etime=,state=,command= \
         | awk -v u="$SANDBOX_USER" '$3 == u' > "$out/ps-axww.txt" || true
     # Environment values are redacted except the ones the parser reads. A value runs up to the next
     # ` NAME=`, so values with spaces (an app path in PATH) are redacted completely.

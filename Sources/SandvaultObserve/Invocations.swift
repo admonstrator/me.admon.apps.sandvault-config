@@ -6,7 +6,7 @@ import SandvaultCore
 enum Invocations {
     /// All processes of all users (`/bin/ps` is setuid on macOS, so arguments of other users are visible).
     static let psAll = CommandInvocation(
-        "/bin/ps", ["-axww", "-o", "pid=,ppid=,user=,%cpu=,%mem=,rss=,etime=,state=,command="], timeout: 10
+        "/bin/ps", ["-axww", "-o", "pid=,ppid=,user=,ruser=,%cpu=,%mem=,rss=,etime=,state=,command="], timeout: 10
     )
 
     /// Command line plus appended environment of the sandbox user's processes. `ps -E` shows the

@@ -5,6 +5,7 @@ import SwiftUI
 struct SettingsView: View {
     let settings: SettingsModel
     let netd: NetdLink
+    let setExpertMode: @MainActor (Bool) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -13,7 +14,7 @@ struct SettingsView: View {
                 HelperSection(settings: settings)
                 NetdSection(settings: settings, netd: netd)
                 HandoffDefaultsSection(settings: settings)
-                AppSection(settings: settings)
+                AppSection(settings: settings, setExpertMode: setExpertMode)
             }
             .formStyle(.grouped)
         }
@@ -103,9 +104,14 @@ struct HandoffDefaultsSection: View {
 
 struct AppSection: View {
     let settings: SettingsModel
+    let setExpertMode: @MainActor (Bool) -> Void
 
     var body: some View {
         Section("App") {
+            Toggle("Expert mode", isOn: expertMode)
+            Text("Shows processes, sockets, firewall details, sandbox rules, tools and migration in the sidebar.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
             Picker("Refresh while visible", selection: interval) {
                 ForEach([1.0, 2.0, 5.0, 10.0, 30.0], id: \.self) { seconds in
                     Text(verbatim: "every \(Int(seconds)) s").tag(seconds)
@@ -118,6 +124,10 @@ struct AppSection: View {
                     .textSelection(.enabled)
             }
         }
+    }
+
+    private var expertMode: Binding<Bool> {
+        Binding<Bool>(get: { settings.preferences.expertMode }, set: { on in setExpertMode(on) })
     }
 
     private var interval: Binding<Double> {

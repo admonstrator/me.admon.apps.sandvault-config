@@ -58,3 +58,11 @@ Numbered decisions, one table per phase. Briefs and reports are measured against
 | D30 | Sandbox-writable code | Executed only as the sandbox user under `sandbox-exec` with sv's profile (tool lookup sources the sandbox's dotfiles that way) |
 | D31 | sv options in hand-offs and defaults | `--no-sandbox`, `--rebuild` (drops the managed block) and options that make sv exit immediately are refused |
 | D32 | Migration | Symlinks, credential files, files over 1 MB and token patterns are never copied; `.zshenv` keeps the managed network block |
+
+## Device feedback (2026-10-09)
+
+| No. | Question | Decision |
+|---|---|---|
+| D33 | Seeing host names without blocking | New firewall mode `watch`: 80/443/53 go through netd as in `proxyOnly`, everything else passes as in `open`; netd refuses only what a `deny` rule names. Most lookups go through mDNSResponder, so host names come from SNI and `Host`, not from DNS |
+| D34 | ICMP | pf cannot match ICMP to a user and `ping` is setuid root: it is shown (process list, real user), not filtered. Only an exec rule stops it |
+| D35 | App for end users | Simple window by default (Overview, Activity, Repos & Hand-off, Settings) with four protection levels applied without a rule preview; expert mode shows every page |

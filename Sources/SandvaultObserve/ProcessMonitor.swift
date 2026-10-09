@@ -121,11 +121,13 @@ public struct ProcessMonitor: Sendable {
         files: HostFiles, now: Date = Date()
     ) -> ProcessSnapshot {
         let byPID = Dictionary(all.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
+        var processes = sandboxOnly(all, environment: environment)
+        let sandboxPIDs = Set(processes.map(\.pid))
         // Host processes whose arguments carry `SV_SESSION_ID=<uuid>`: sv's `sudo --login ... /usr/bin/env -i ...`
         // (root) or `ssh ... /usr/bin/env -i ...` (host user). Their parent is the `sv` process of that session.
         var launchers: [Int32: String] = [:]
         var svProcesses: [Int32: String] = [:]
-        for process in all where process.user != environment.sandvaultUser {
+        for process in all where !sandboxPIDs.contains(process.pid) {
             guard let id = ProcessParser.sessionID(in: process.command) else { continue }
             launchers[process.pid] = id
             svProcesses[process.ppid] = id
@@ -135,7 +137,7 @@ public struct ProcessMonitor: Sendable {
             var current = pid
             for _ in 0..<64 {
                 guard let process = byPID[current] else { return nil }
-                if process.user != environment.sandvaultUser { return launchers[current] }
+                if !sandboxPIDs.contains(current) { return launchers[current] }
                 if let id = environmentSessions?[current] { return id }
                 guard process.ppid != current, process.ppid > 1 else { return nil }
                 current = process.ppid
@@ -143,7 +145,6 @@ public struct ProcessMonitor: Sendable {
             return nil
         }
 
-        var processes = sandboxOnly(all, environment: environment)
         for index in processes.indices {
             processes[index].sessionID = environmentSessions?[processes[index].pid] ?? inheritedSession(processes[index].pid)
         }
@@ -160,12 +161,14 @@ public struct ProcessMonitor: Sendable {
         )
     }
 
-    /// The sandbox user's processes, minus the `ps`/`lsof` this module itself runs as that user.
+    /// Processes whose real or effective user is the sandbox user, minus the `ps`/`lsof` this module itself runs as
+    /// that user. The real user matters for setuid tools such as `ping`: they run as root but keep the sandbox user
+    /// as their real user, also once their parent is gone.
     static func sandboxOnly(_ all: [SandboxProcess], environment: SandvaultEnvironment) -> [SandboxProcess] {
         let ownInspection = Set([Invocations.psEnvironment(environment), Invocations.lsof(environment)].map { $0.argv.joined(separator: " ") })
         let inspectionLaunchers = Set(all.filter { ownInspection.contains($0.command) }.map(\.pid))
         return all
-            .filter { $0.user == environment.sandvaultUser && !inspectionLaunchers.contains($0.ppid) }
+            .filter { ($0.user == environment.sandvaultUser || $0.realUser == environment.sandvaultUser) && !inspectionLaunchers.contains($0.ppid) }
             .sorted { $0.pid < $1.pid }
     }
 

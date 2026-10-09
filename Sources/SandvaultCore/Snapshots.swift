@@ -6,7 +6,10 @@ import Foundation
 public struct SandboxProcess: Codable, Sendable, Equatable, Hashable, Identifiable {
     public var pid: Int32
     public var ppid: Int32
+    /// Effective user (`root` for a setuid tool such as `ping`).
     public var user: String
+    /// Real user: the sandbox user for everything the sandbox started, setuid tools included.
+    public var realUser: String
     public var cpuPercent: Double
     public var memPercent: Double
     /// Resident set size in KiB.
@@ -22,12 +25,13 @@ public struct SandboxProcess: Codable, Sendable, Equatable, Hashable, Identifiab
     public var id: Int32 { pid }
 
     public init(
-        pid: Int32, ppid: Int32, user: String, cpuPercent: Double = 0, memPercent: Double = 0, rssKiB: Int = 0,
-        elapsedSeconds: Int = 0, state: String = "", command: String, sessionID: String? = nil
+        pid: Int32, ppid: Int32, user: String, realUser: String? = nil, cpuPercent: Double = 0, memPercent: Double = 0,
+        rssKiB: Int = 0, elapsedSeconds: Int = 0, state: String = "", command: String, sessionID: String? = nil
     ) {
         self.pid = pid
         self.ppid = ppid
         self.user = user
+        self.realUser = realUser ?? user
         self.cpuPercent = cpuPercent
         self.memPercent = memPercent
         self.rssKiB = rssKiB

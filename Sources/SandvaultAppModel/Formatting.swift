@@ -35,6 +35,11 @@ public enum Format {
         return String(format: "%d:%02d", s / 60, s % 60)
     }
 
+    /// `1 host`, `3 hosts`; `plural` for nouns that do not take an `s`.
+    public static func count(_ value: Int, _ noun: String, plural: String? = nil) -> String {
+        "\(value) \(value == 1 ? noun : plural ?? noun + "s")"
+    }
+
     public static func percent(_ value: Double) -> String {
         String(format: "%.1f", value)
     }
@@ -73,6 +78,7 @@ extension FirewallMode {
         switch self {
         case .off: "Off"
         case .open: "Open"
+        case .watch: "Watch"
         case .proxyOnly: "Proxy only"
         case .blocked: "Blocked"
         }
@@ -82,6 +88,7 @@ extension FirewallMode {
         switch self {
         case .off: "No firewall: the sandbox reaches the network directly (sv's default)."
         case .open: "Direct traffic allowed; LAN and localhost guards and port exceptions apply."
+        case .watch: "Everything allowed, but web and DNS go through sandvault-netd, so every host is logged; only deny rules refuse."
         case .proxyOnly: "Web and DNS go through sandvault-netd and its domain rules; everything else needs an exception."
         case .blocked: "No network for the sandbox user."
         }

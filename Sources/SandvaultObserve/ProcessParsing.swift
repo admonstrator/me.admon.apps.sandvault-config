@@ -3,18 +3,18 @@ import SandvaultCore
 
 /// Parsers for `ps` output and the logs of sv's host helpers.
 public enum ProcessParser {
-    /// Parses `ps -axww -o pid=,ppid=,user=,%cpu=,%mem=,rss=,etime=,state=,command=`.
+    /// Parses `ps -axww -o pid=,ppid=,user=,ruser=,%cpu=,%mem=,rss=,etime=,state=,command=`.
     /// Malformed lines are skipped. `%cpu`/`%mem` may use a decimal comma (ps honours the locale).
     public static func parse(_ text: String) -> [SandboxProcess] {
         text.split(separator: "\n").compactMap { line in
-            guard let (fields, command) = splitFields(line, count: 8),
+            guard let (fields, command) = splitFields(line, count: 9),
                   let pid = Int32(fields[0]), let ppid = Int32(fields[1]),
-                  let elapsed = elapsedSeconds(String(fields[6]))
+                  let elapsed = elapsedSeconds(String(fields[7]))
             else { return nil }
             return SandboxProcess(
-                pid: pid, ppid: ppid, user: String(fields[2]),
-                cpuPercent: decimal(fields[3]), memPercent: decimal(fields[4]), rssKiB: Int(fields[5]) ?? 0,
-                elapsedSeconds: elapsed, state: String(fields[7]), command: String(command)
+                pid: pid, ppid: ppid, user: String(fields[2]), realUser: String(fields[3]),
+                cpuPercent: decimal(fields[4]), memPercent: decimal(fields[5]), rssKiB: Int(fields[6]) ?? 0,
+                elapsedSeconds: elapsed, state: String(fields[8]), command: String(command)
             )
         }
     }

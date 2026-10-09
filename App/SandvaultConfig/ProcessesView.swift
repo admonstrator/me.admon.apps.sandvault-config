@@ -66,7 +66,7 @@ struct ProcessTable: View {
     var body: some View {
         Table(rows, selection: $selection) {
             TableColumn("Process") { row in
-                Text(row.indentedName)
+                Text(row.label)
                     .help(row.command)
             }
             TableColumn("PID") { row in
@@ -110,7 +110,7 @@ struct SessionList: View {
                 Section {
                     ForEach(group.rows) { row in
                         HStack {
-                            Text(row.indentedName)
+                            Text(row.label)
                             Spacer()
                             Text(verbatim: "pid \(row.pid) · \(Format.percent(row.cpuPercent)) % · \(Format.kibibytes(row.rssKiB))")
                                 .foregroundStyle(.secondary)

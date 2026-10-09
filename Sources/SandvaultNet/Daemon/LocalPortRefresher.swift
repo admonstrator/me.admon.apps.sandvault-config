@@ -1,6 +1,6 @@
 import SandvaultCore
 
-/// Keeps the pf anchor's dynamic loopback ports current: when the mode is `open` or `proxyOnly` and
+/// Keeps the pf anchor's dynamic loopback ports current: when the mode is `open`, `watch` or `proxyOnly` and
 /// `localhost == .sandboxAndHelpers`, it fetches the allowed ports and calls `applyFirewall` only when they
 /// changed. Errors are logged once per kind and never stop netd.
 public actor LocalPortRefresher {
@@ -25,7 +25,7 @@ public actor LocalPortRefresher {
     }
 
     public static func applies(to policy: NetworkPolicy) -> Bool {
-        (policy.mode == .open || policy.mode == .proxyOnly) && policy.localhost == .sandboxAndHelpers
+        [.open, .watch, .proxyOnly].contains(policy.mode) && policy.localhost == .sandboxAndHelpers
     }
 
     @discardableResult

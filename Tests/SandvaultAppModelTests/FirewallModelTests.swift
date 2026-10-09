@@ -36,6 +36,29 @@ import Testing
         #expect(firewall.message?.kind == .success)
     }
 
+    @Test func protectionLevelsSaveAndApplyAtOnce() async throws {
+        let world = TestWorld()
+        defer { world.cleanUp() }
+        let firewall = world.model().firewall
+        #expect(firewall.protection == .off)
+
+        await firewall.setProtection(.watch)
+        #expect(try world.store.load().network.mode == .watch)
+        #expect(world.policy.calls.get() == ["applyFirewall releasingPanic=true", "status"])
+        #expect(world.policy.states.get().first?.network.mode == .watch)
+        #expect(firewall.protection == .watch)
+        #expect(!firewall.changedSinceApply)
+
+        try world.store.save(AppConfig(network: NetworkPolicy(mode: .watch, defaultAction: .allow)))
+        await firewall.setProtection(.ask)
+        let policy = try world.store.load().network
+        #expect(policy.mode == .proxyOnly && policy.defaultAction == .ask)
+
+        await firewall.setProtection(.off)
+        #expect(try world.store.load().network.mode == .off)
+        #expect(world.policy.calls.get().suffix(2) == ["disableFirewall", "status"])
+    }
+
     @Test func cancelLeavesEverythingAsItWas() async {
         let world = TestWorld()
         defer { world.cleanUp() }

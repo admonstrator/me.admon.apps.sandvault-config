@@ -56,9 +56,9 @@ extension FirewallCommand {
     }
 
     struct Mode: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Set the mode: off, open, proxy-only or blocked.")
+        static let configuration = CommandConfiguration(abstract: "Set the mode: off, open, watch, proxy-only or blocked.")
         @OptionGroup var global: GlobalOptions
-        @Argument(help: "off, open, proxy-only or blocked.") var mode: EnforceCLI.ModeArgument
+        @Argument(help: "off, open, watch, proxy-only or blocked.") var mode: EnforceCLI.ModeArgument
 
         func run() async throws {
             try FirewallCommand.edit(global, "mode \(mode.rawValue)") { $0.mode = mode.mode }

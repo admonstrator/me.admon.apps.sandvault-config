@@ -74,14 +74,20 @@ prints. The CLI commands refuse to run off macOS (`SandvaultError.unsupportedPla
 
 | Area | API | Source |
 |---|---|---|
-| Processes, sessions | `ProcessMonitor.snapshot()` -> `ProcessSnapshot` (`processes`, `sessions`, `helpers`, `environmentReadable`, `tree()`, `session(matching:)`); `sandboxProcesses()`, `helpers()` | `ps -axww -o pid=,ppid=,user=,%cpu=,%mem=,rss=,etime=,state=,command=`, then `asSandvault(/bin/ps -E -ww -U <sandbox> -o pid=,command=)` |
+| Processes, sessions | `ProcessMonitor.snapshot()` -> `ProcessSnapshot` (`processes`, `sessions`, `helpers`, `environmentReadable`, `tree()`, `session(matching:)`); `sandboxProcesses()`, `helpers()` | `ps -axww -o pid=,ppid=,user=,ruser=,%cpu=,%mem=,rss=,etime=,state=,command=`, then `asSandvault(/bin/ps -E -ww -U <sandbox> -o pid=,command=)` |
 | Control | `ProcessController.terminate(pid:force:)`, `terminateSession(_:force:)`, `terminateAll()`, `throttle(pid:nice:background:)` -> `ControlReport` | `asSandvault(/bin/kill)`, `renice`, `taskpolicy -b`; sv's sudoers: `sudo -n /bin/launchctl bootout user/<uid>`, `sudo -n /usr/bin/pkill -9 -u <sandbox>` |
 | Sockets, traffic | `ConnectionMonitor.connections()`, `traffic(pids:)` | `asSandvault(/usr/sbin/lsof -w -nP -i -a -u <sandbox> -F pcPtnT)`, `nettop -P -L 1 -x -J bytes_in,bytes_out` |
+| ICMP | `ICMPActivity.find(in:)` (`ping`, `ping6`, `traceroute`, `traceroute6`, `mtr` with the target from the command line) | the process list |
 | netd seams | `Observe.makeProcessAttributor`, `Observe.makeLocalPortSource` | lsof cache; ps + helper logs |
 | Violations | `ViolationMonitor.stream()`, `collect(for:onEach:)`; `SandboxViolation.occurrences` | `log stream --style ndjson --predicate <sandbox predicate>` |
 | Learn mode | `RuleSuggester.suggestions(for:environment:)` -> `[RuleSuggestion]` | violations |
 | Doctor | `Observe.makeCheckProvider` (`ObserveChecks`, ids in `ObserveChecks.ids`) | dscl, dseditgroup, sudo, ls -led, files |
 | Overview | `StatusSummary.collect(environment:runner:firewallMode:checks:)` | the above |
+
+**Sandbox processes** are those whose effective or real user is the sandbox user. The real user matters for setuid
+tools: `/sbin/ping` runs as root, so `ps` shows `root` as its user, and lsof (`-u` matches the owner of the socket)
+and pf (`user` matches TCP and UDP only) never see it. Its real user stays the sandbox user, also after its shell
+has ended. The app marks such processes with their effective user, `ping (root)`.
 
 **Sessions.** `SV_SESSION_ID` is read from the environment that `ps -E` appends to each command line (last
 `SV_SESSION_ID=<uuid>` word, strict UUID). A process without one inherits from its parent. When `ps -E` is not
@@ -92,9 +98,10 @@ name. Host helpers: Chrome by `--user-data-dir=.../.local/state/sandvault/chrome
 `--type=`), the iOS bridge by `sv-ios-bridge --udid` and the session of its parent `sv`; ports come from
 `chrome-<uuid>.log` / `ios-bridge-<uuid>.log`. The `ps`/`lsof` this module runs as the sandbox user are left out.
 
-**Control.** A pid is signalled only after a fresh `ps` shows it belongs to the sandbox user, and the signal is
-sent as that user, so the kernel refuses anything else too. `terminateAll` follows sv's uninstall: bootout, wait,
-`pkill -9` only for survivors; the argv matches sv's sudoers lines exactly. Reports list each command with its
+**Control.** A pid is signalled only after a fresh `ps` shows it is a sandbox process, and the signal is sent as the
+sandbox user, so the kernel refuses anything else too (a setuid tool accepts it: its real user is the sender).
+`terminateAll` follows sv's uninstall: bootout, wait, `pkill -9` only for survivors; the argv matches sv's sudoers
+lines exactly. `pkill -u` matches the effective user, so setuid survivors then get `kill -KILL` as the sandbox user. Reports list each command with its
 outcome and the pids still alive after a short settle delay.
 
 **netd seams.** The attributor keeps one lsof snapshot (port and protocol -> pid, name) for 2 s. A miss joins the
@@ -124,7 +131,8 @@ sv). Every command has a timeout; a missing command or a timeout yields `unknown
 Enforce and Net providers and exits 1 on any failure.
 
 **CLI.** `svctl status`, `doctor`, `ps [--tree] [--session <id>]`, `sessions`, `kill <pid> | --session <id> | --all
-[--force] [--yes]`, `throttle <pid> [--nice <n>] [--background]`, `net [--listening] [--traffic]`,
+[--force] [--yes]`, `throttle <pid> [--nice <n>] [--background]`, `net [--listening] [--traffic]` (also lists running
+ICMP tools),
 `violations [--for 30s|5m|1h] [--all] [--suggest]` (live until Ctrl-C, or for the given time and then a summary;
 `--suggest` needs `--for`); all take `--json` (`violations --json` without `--for` prints JSON Lines).
 
@@ -213,6 +221,7 @@ uid (`user 601`), never the account; the uid comes from `dscl . -read /Users/<sa
 |---|---|
 | `off` | none |
 | `open` | netd ports; exceptions; LAN guard (`blockLAN`, `PrivateNetworks.lan`); localhost; `pass out` everything else |
+| `watch` | `rdr` and `route-to` for 80/443/53 as in `proxyOnly`; IPv6 to 80/443/53 refused (clients fall back to IPv4 through netd); then as `open` |
 | `proxyOnly` | `rdr` 80/443/53 on lo0 to netd; `route-to (lo0 127.0.0.1)` for 80/443/53 out on `! lo0` (IPv4); pass for the re-routed packet on lo0; netd ports; exceptions; localhost; `block return out log quick` for everything else (IPv4 and IPv6) |
 | `blocked` | `block return log quick` in and out on every interface |
 
@@ -234,7 +243,8 @@ Known limits: the `rdr` rules cannot match a user, so any local user's lo0 packe
 addresses on 80/443/53 are redirected while `proxyOnly` is on; DNS through mDNSResponder (most macOS lookups) is not
 the sandbox's socket and is not redirected (netd sees names through SNI and Host instead); existing pf states survive
 a mode change until the connection ends (panic kills the processes); a `set skip on lo0` in `/etc/pf.conf` disables
-the redirect; one host user per Mac can own the anchor.
+the redirect; one host user per Mac can own the anchor. ICMP has no owner for pf: `ping` and `traceroute` pass in
+every mode, `blocked` included; only an exec rule on `/sbin/ping` and `/usr/sbin/traceroute` stops them.
 
 ### 5.4 Root helper
 
@@ -304,7 +314,8 @@ are SwiftNIO on `127.0.0.1`, ports from `NetworkPolicy.ports`:
 
 **Decision path** (`NetRuntime.authorize`, one per connection, one per plain HTTP request):
 `PolicyEngine.evaluate` (exact > longer `*.suffix` > `*`; deny > allow > ask; no match → `defaultAction`; ports
-other than 80/443 need an explicit `allow`) → `ask` goes to `AskCoordinator` → resolution: `DnsOverride` (exempt
+other than 80/443 need an explicit `allow`; in `watch` only `deny` rules refuse, everything else is allowed on every
+port) → `ask` goes to `AskCoordinator` → resolution: `DnsOverride` (exempt
 from the guard), IP literal, or `getaddrinfo` on NIO's thread pool → addresses in `PrivateNetworks.all` are dropped
 when `blockPrivateDestinations` → connect. A refusal answers `403` with one line naming the rule or default and
 `svctl proxy allow <host>`; the transparent TLS listener just closes. DNS: deny → NXDOMAIN, override → synthesized
@@ -344,7 +355,8 @@ pushes `.status` and, in `open`/`proxyOnly` with `localhost == .sandboxAndHelper
 `svctl asks [--follow] [--answer <id-prefix> <allow-once|allow-always|deny-once|deny-always> [--domain]]`,
 `svctl netd install [--executable path]|uninstall|status|restart`. Config edits send `reloadConfig` when netd answers.
 
-Limits: HTTP upgrades (WebSocket over plain `ws://`) are not forwarded; a plain HTTP request body is not
+Limits: HTTP upgrades (WebSocket over plain `ws://`) are not forwarded; in `watch` and `proxyOnly`, TLS on 443
+without SNI (an IP address as host) is refused, because netd cannot learn the original destination without root; a plain HTTP request body is not
 back-pressured; inspection covers HTTP/1.1 only (clients negotiating `h2` fall back through ALPN).
 
 ## 7 · Workflow
@@ -525,9 +537,19 @@ only while someone listens, D22). It holds the latest `NetdStatus`, the last 100
 when the connection ends it forgets the asks, waits 0.5 s doubling to 15 s, reconnects and subscribes again.
 `retryNow()` skips the wait after a netd install or restart.
 
+**Simple and expert window.** Without expert mode (`AppPreferences.expertMode`, off by default, a toggle in Settings)
+the sidebar has Overview, Activity, Repos & Hand-off and Settings (`Screen.simple`, `AppModel.screens`); a hidden
+page asked for (the next step's firewall link) opens the overview instead. The overview then shows the protection
+level, the next step only while setup is incomplete, sessions and the newest five activity lines; the doctor sections
+and the raw firewall state only in expert mode. `ProtectionLevel` maps four choices onto the policy: Off (`off`),
+Watch (`watch`), Ask (`proxyOnly` with default action `ask`), Block All (`blocked`, processes keep running).
+`FirewallModel.setProtection` saves and applies at once, without the rule preview; any other combination reads as
+"custom settings from expert mode". The menu bar offers the same four levels, or the five modes in expert mode.
+
 | Screen | Model | What it does |
 |---|---|---|
 | Overview | `OverviewModel` | doctor sections of Observe, Enforce, Net; `StatusSummary`; sessions; `SetupState.nextStep` (install sv, create the sandbox, install the helper, end a panic, start netd, turn on the firewall, apply it, ready) |
+| Activity | `ActivityModel` | one list: running ICMP tools (from the process snapshot), hosts netd saw (`HostGroup`, Allow = `*.<registrable domain>`, Block = the host), then direct connections from lsof grouped by address (loopback left out; 80/443/53 left out while pf hands them to netd); a summary line and a hint when host names cannot be seen (Off, Open, netd down) |
 | Processes | `ProcessesModel` | snapshot, tree rows, session groups; terminate, kill, throttle, end session, end all with the `ControlReport` as a message |
 | Network | `NetworkModel` | lsof sockets and nettop traffic (polled on this page only); netd records grouped by host (`HostGroup`: allowed, denied, ports, processes, bytes, last decision); Allow Host, Allow Domain (`*.<registrable domain>`), Deny via `upsertDomainRule` and reload |
 | Firewall & Proxy | `FirewallModel` | mode, LAN guard, localhost, port exceptions (pf, take effect on apply); default action, ask fallback and timeout, domain rules, DNS overrides, private destinations (netd, reloaded at once); inspection with CA create and publish and the `.zshenv` sync; `prepareApply` builds the `AppliedState` and the anchor text (`Enforce.firewallPreview`), `confirmApply` sends it with `releasingPanic: true`; panic saves `blocked` first, then calls the helper; Turn Off saves `off` and flushes |
@@ -543,13 +565,13 @@ service that throws `notImplemented` turns its screen into "not available yet" (
 
 **Polling.** `AppModel.setVisible(_:_:)` tracks the main window and the menu bar window. While either is visible, one
 task re-reads config.json if it changed and takes a process snapshot every `refreshInterval` (default 2 s); with the
-window open it also reads sockets on the Network page and refreshes the overview checks at most every 30 s. When both
+window open it also reads sockets on the Activity and Network pages and refreshes the overview checks at most every 30 s. When both
 are closed nothing polls; only the netd subscription stays (asks, menu bar state).
 
 **Menu bar.** `MenuBarSummary.state` picks the symbol (`AppModel.menuBarSymbol`, which does not read the connection
 records, so the icon is not redrawn per record): blocked or panic `xmark.shield.fill`, pending asks
-`exclamationmark.shield.fill`, proxy-only without netd `exclamationmark.triangle`, off `shield.slash`, open
-`shield.lefthalf.filled`, proxy-only `checkmark.shield.fill`. The window shows sessions, processes, denials of the last
+`exclamationmark.shield.fill`, watch or proxy-only without netd `exclamationmark.triangle`, off `shield.slash`, open
+`shield.lefthalf.filled`, watch `eye`, proxy-only `checkmark.shield.fill`. The window shows sessions, processes, denials of the last
 hour, the firewall mode (choosing one saves it and opens the Firewall page with the rules to confirm), Hand Off a
 Repository (folder picker), Open Window, a two-step Panic, Firewall Off, and the last five denied hosts with Allow.
 

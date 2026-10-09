@@ -4,7 +4,21 @@
 
 Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-on-mac.sh capture`).
 
+### Neu
+- **Einfaches Fenster:** Standardmäßig zeigt die App nur Übersicht, Aktivität, Repos & Hand-off und Einstellungen.
+  Der Schalter „Expert mode“ in den Einstellungen blendet die übrigen Seiten wieder ein.
+- **Schutzstufen:** Off, Watch, Ask und Block All auf der Übersicht und im Menü. Die Wahl gilt sofort, ohne
+  Regelvorschau.
+- **Firewall-Modus `watch`:** Alles bleibt erlaubt, aber Web und DNS laufen über netd. Damit erscheint jeder Host,
+  mit dem die Sandbox spricht. netd weist nur ab, was eine Deny-Regel nennt. `svctl firewall mode watch`.
+- **Aktivität:** eine Liste mit Hosts (Allow, Block), direkten Verbindungen ohne Hostnamen und laufenden
+  ping/traceroute.
+
 ### Behoben
+- `ping` und `traceroute` fehlten überall. Sie laufen setuid als root, daher zeigte ps root als Benutzer. Prozesse
+  zählen jetzt auch über den realen Benutzer zur Sandbox; die App markiert sie als `ping (root)`. `svctl net` und die
+  Aktivitätsseite listen sie mit ihrem Ziel. Filtern kann pf ICMP nicht, das geht nur über eine Ausführungsregel.
+- `svctl kill --all` beendet übrig gebliebene setuid-Programme jetzt als Sandbox-Benutzer; `pkill -u` erfasst sie nicht.
 - `svctl status` und `svctl net` brachen ab, wenn die Sandbox keine offenen Sockets hatte: lsof endet dann mit
   Exit 1 und warnt als Sandbox-User zusätzlich über das DeviceFS von Xcode im Host-Home. lsof läuft jetzt mit `-w`,
   und reine Warnungen gelten nicht mehr als Fehler.
@@ -25,7 +39,9 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
 ### Tests
 - Fixtures für dscl, dseditgroup, `ls -led`, sudoers und das sv-Profil durch echte Ausgaben ersetzt; neue echte
   Fixtures für ps ohne Session, lsof ohne Sockets, nettop ohne Zeilen, das Unified Log und `launchctl print` ohne
-  Dienst, dazu Prozesse, Umgebung, lsof und nettop einer laufenden Session. 392 Tests.
+  Dienst, dazu Prozesse, Umgebung, lsof und nettop einer laufenden Session.
+- ps liest zusätzlich `ruser=`; in den echten ps-Fixtures wurde die Spalte nachträglich mit dem Benutzerwert ergänzt.
+  405 Tests.
 
 ## 0.1.0 · 2026-10-09
 

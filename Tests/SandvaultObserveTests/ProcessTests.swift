@@ -10,6 +10,8 @@ import Testing
         let node = try #require(processes.first { $0.pid == 4130 })
         #expect(node.ppid == 4121)
         #expect(node.user == "sandvault-alice")
+        #expect(node.realUser == "sandvault-alice")
+        #expect(processes.first { $0.pid == 4120 }?.realUser == "alice")  // sudo is setuid root
         #expect(node.cpuPercent == 12.5)  // decimal comma from a German locale
         #expect(node.memPercent == 1.1)
         #expect(node.rssKiB == 180_224)
@@ -122,6 +124,44 @@ import Testing
         #expect(snapshot.sessions.first?.command == "claude")
     }
 
+    @Test func setuidToolsStayInTheSandbox() async throws {
+        // /sbin/ping is setuid root: ps shows root as the user and the sandbox user as the real user.
+        let fake = FakeCommandRunner()
+        let ping = " 4150  4140 root               sandvault-alice    0.0  0.0   1200       00:20 S+   ping -c 100 example.com\n"
+        fake.on(Invocations.psAll.argv, stdout: try fixture("ps-axww.txt") + ping)
+        fake.on(Invocations.psEnvironment(alice).argv, stdout: try fixture("ps-environment.txt"))
+        let snapshot = try await monitor(fake).snapshot()
+        let process = try #require(snapshot.processes.first { $0.pid == 4150 })
+        #expect(process.user == "root")
+        #expect(process.realUser == "sandvault-alice")
+        #expect(process.sessionID == firstSession)
+        #expect(snapshot.sessions.first?.processCount == 4)
+        // Root processes the sandbox did not start stay out: sv's sudo launchers and our own inspection.
+        #expect(!snapshot.processes.contains { [4120, 5220, 6000].contains($0.pid) })
+        #expect(ICMPActivity.find(in: snapshot.processes) == [
+            ICMPActivity(pid: 4150, tool: "ping", target: "example.com", sessionID: firstSession, elapsedSeconds: 20),
+        ])
+    }
+
+    @Test(arguments: [
+        ("ping 1.1.1.1", "ping", "1.1.1.1"),
+        ("/sbin/ping -c 5 -i 0.2 example.com", "ping", "example.com"),
+        ("/usr/sbin/traceroute -m 20 example.org 52", "traceroute", "example.org"),
+        ("ping6 ::1", "ping6", "::1"),
+        ("ping -c 5", "ping", nil),
+    ] as [(String, String, String?)])
+    func findsICMPTools(command: String, tool: String, target: String?) {
+        let found = ICMPActivity.find(in: [SandboxProcess(pid: 7, ppid: 1, user: "root", command: command)])
+        #expect(found == [ICMPActivity(pid: 7, tool: tool, target: target)])
+    }
+
+    @Test func otherCommandsAreNoICMPTools() {
+        let processes = ["pinger example.com", "/bin/zsh -c ping example.com", "node ping.js"].map {
+            SandboxProcess(pid: 1, ppid: 0, user: "sandvault-alice", command: $0)
+        }
+        #expect(ICMPActivity.find(in: processes).isEmpty)
+    }
+
     @Test func fallsBackToLauncherAncestryWithoutSudo() async throws {
         let fake = try observeRunner()
         fake.on(Invocations.psEnvironment(alice).argv, stdout: "", exitCode: 1, stderr: "sudo: a password is required\n")
@@ -133,7 +173,7 @@ import Testing
 
     @Test func noSandboxProcessesIsAnEmptySnapshot() async throws {
         let fake = FakeCommandRunner()
-        fake.on(Invocations.psAll.argv, stdout: "    1     0 root  0.0  0.1  14336 05-03:12:44 Ss   /sbin/launchd\n")
+        fake.on(Invocations.psAll.argv, stdout: "    1     0 root  root  0.0  0.1  14336 05-03:12:44 Ss   /sbin/launchd\n")
         fake.on(Invocations.psEnvironment(alice).argv, stdout: "", exitCode: 1)
         let snapshot = try await ProcessMonitor(environment: alice, runner: fake, files: .fixed()).snapshot()
         #expect(snapshot.processes.isEmpty)
@@ -246,6 +286,26 @@ import Testing
         #expect(report.steps.map(\.command) == [bootout.joined(separator: " "), pkill.joined(separator: " ")])
         #expect(report.succeeded)
         #expect(report.targets == [320, 4121, 4130, 4140, 5221, 5222, 5223])
+    }
+
+    @Test func terminateAllKillsSetuidSurvivorsAsTheSandboxUser() async throws {
+        // pkill -u matches the effective user, so an orphaned ping (root, real user sandbox) survives it.
+        let runner = SequencedRunner()
+        let ping = "\n 4150     1 root               sandvault-alice    0.0  0.0   1200       00:20 S+   ping example.com\n"
+        let ps = try fixture("ps-axww.txt") + ping
+        let hostOnly = withoutSandboxProcesses(try fixture("ps-axww.txt"))
+        runner.on(Invocations.psAll.argv, CommandResult(exitCode: 0, stdout: ps), CommandResult(exitCode: 0, stdout: ps),
+                  CommandResult(exitCode: 0, stdout: hostOnly + ping), CommandResult(exitCode: 0, stdout: hostOnly))
+        runner.on(["/usr/bin/dscl", ".", "-read", "/Users/sandvault-alice", "UniqueID"], stdout: "UniqueID: 502\n")
+        runner.on(["/usr/bin/sudo", "-n", "/bin/launchctl", "bootout", "user/502"], stdout: "")
+        runner.on(["/usr/bin/sudo", "-n", "/usr/bin/pkill", "-9", "-u", "sandvault-alice"], stdout: "")
+        let kill = ["/usr/bin/sudo", "-n", "-u", "sandvault-alice", "/usr/bin/env", "/bin/kill", "-KILL", "4150"]
+        runner.on(kill, stdout: "")
+        let report = try await controller(runner).terminateAll()
+        #expect(report.steps.count == 3)
+        #expect(report.steps.last?.command == kill.joined(separator: " "))
+        #expect(report.remaining.isEmpty)
+        #expect(report.succeeded)
     }
 
     @Test func terminateAllSkipsPkillWhenBootoutSuffices() async throws {

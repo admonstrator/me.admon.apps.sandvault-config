@@ -117,6 +117,11 @@ public final class SettingsModel {
         await editHandoff("Set the terminal") { $0.terminal = terminal }
     }
 
+    public func setExpertMode(_ on: Bool) {
+        preferences.expertMode = on
+        store.save(preferences)
+    }
+
     public func setRefreshInterval(_ seconds: Double) {
         preferences.refreshInterval = min(max(seconds, AppPreferences.refreshRange.lowerBound), AppPreferences.refreshRange.upperBound)
         store.save(preferences)
