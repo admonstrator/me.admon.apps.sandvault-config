@@ -40,14 +40,15 @@ public struct NetChecks: CheckProvider {
                 detail: "running since \(ISO8601DateFormatter().string(from: netd.startedAt)), \(netd.activeConnections) active, "
                     + "\(netd.allowedCount) allowed, \(netd.deniedCount) denied, \(netd.pendingAsks) pending asks"
             ))
-            let mismatched = zip(["proxy", "http", "tls", "dns"], zip(netd.ports.all, policy.ports.all)).filter { $0.1.0 != $0.1.1 }
-            result.append(mismatched.isEmpty
-                ? Check(id: "net.ports", title: "netd ports", state: .ok, detail: policy.ports.all.map(String.init).joined(separator: ", "))
-                : Check(
-                    id: "net.ports", title: "netd ports", state: .warning,
-                    detail: mismatched.map { "\($0.0) bound \($0.1.0), configured \($0.1.1)" }.joined(separator: "; "),
-                    fix: "svctl netd restart"
-                ))
+            let names = ["proxy", "http", "tls", "dns"]
+            let mismatched = names.indices.filter { netd.ports.all[$0] != policy.ports.all[$0] }.map {
+                "\(names[$0]) bound \(netd.ports.all[$0]), configured \(policy.ports.all[$0])"
+            }
+            result.append(Check(
+                id: "net.ports", title: "netd ports", state: mismatched.isEmpty ? .ok : .warning,
+                detail: mismatched.isEmpty ? policy.ports.all.map(String.init).joined(separator: ", ") : mismatched.joined(separator: "; "),
+                fix: mismatched.isEmpty ? nil : "svctl netd restart"
+            ))
         } else {
             result.append(Check(
                 id: "net.netd", title: "sandvault-netd", state: needed ? .failure : .skipped,
