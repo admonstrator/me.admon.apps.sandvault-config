@@ -58,12 +58,26 @@ struct TestNetd {
     }
 }
 
+/// Runs `body`, then `cleanup`, also when `body` throws (an async `defer`).
+func withCleanup(_ cleanup: () async -> Void, _ body: () async throws -> Void) async throws {
+    do {
+        try await body()
+    } catch {
+        await cleanup()
+        throw error
+    }
+    await cleanup()
+}
+
 /// A CA and TLS context for test origins (`upstream` side), separate from netd's inspection CA.
+/// The CA lives in memory; its temporary directory is removed right away.
 struct OriginTLS {
     let ca: InspectionCA
     let service: InspectionService
 
-    init(directory: String) throws {
+    init() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("origin-ca-\(UUID().uuidString)").path
+        defer { try? FileManager.default.removeItem(atPath: directory) }
         let store = CAStore(directory: directory)
         ca = try store.loadOrCreate(hostUser: "origin-test").ca
         service = try InspectionService(store: store, upstreamTrustRoots: .default)

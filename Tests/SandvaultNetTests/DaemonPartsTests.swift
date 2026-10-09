@@ -259,13 +259,14 @@ import Testing
 
     @Test func reportsARunningNetd() async throws {
         let netd = try await TestNetd.start(.testing())
-        defer { Task { await netd.stop() } }
-        var config = try netd.store.load()
-        config.network.ports = netd.ports
-        let running = await checks(netd.layout, config, socket: netd.socketPath)
-        #expect(state(running, "net.netd") == .ok)
-        #expect(state(running, "net.ports") == .ok)
-        config.network.ports.dns = 1
-        #expect(state(await checks(netd.layout, config, socket: netd.socketPath), "net.ports") == .warning)
+        try await withCleanup({ await netd.stop() }) {
+            var config = try netd.store.load()
+            config.network.ports = netd.ports
+            let running = await checks(netd.layout, config, socket: netd.socketPath)
+            #expect(state(running, "net.netd") == .ok)
+            #expect(state(running, "net.ports") == .ok)
+            config.network.ports.dns = 1
+            #expect(state(await checks(netd.layout, config, socket: netd.socketPath), "net.ports") == .warning)
+        }
     }
 }
