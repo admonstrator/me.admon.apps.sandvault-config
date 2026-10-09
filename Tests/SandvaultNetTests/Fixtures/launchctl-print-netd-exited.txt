@@ -1,0 +1,21 @@
+gui/501/me.admon.apps.sandvault-config.netd = {
+	active count = 0
+	path = /Users/alice/Library/LaunchAgents/me.admon.apps.sandvault-config.netd.plist
+	type = LaunchAgent
+	state = not running
+
+	program = /Applications/Sandvault Config.app/Contents/MacOS/sandvault-netd
+	arguments = {
+		/Applications/Sandvault Config.app/Contents/MacOS/sandvault-netd
+		run
+	}
+
+	domain = gui/501 [100005]
+	asid = 100005
+	minimum runtime = 10
+	exit timeout = 5
+	runs = 3
+	last exit code = 1
+
+	spawn type = daemon (3)
+}

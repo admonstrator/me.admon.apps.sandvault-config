@@ -72,7 +72,17 @@ let package = Package(
         .testTarget(name: "SandvaultCoreTests", dependencies: ["SandvaultCore"], resources: [.copy("Fixtures")]),
         .testTarget(name: "SandvaultObserveTests", dependencies: ["SandvaultObserve"], resources: [.copy("Fixtures")]),
         .testTarget(name: "SandvaultEnforceTests", dependencies: ["SandvaultEnforce"], resources: [.copy("Fixtures")]),
-        .testTarget(name: "SandvaultNetTests", dependencies: ["SandvaultNet"], resources: [.copy("Fixtures")]),
+        .testTarget(
+            name: "SandvaultNetTests",
+            dependencies: [
+                "SandvaultNet",
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
+                .product(name: "NIOSSL", package: "swift-nio-ssl"),
+            ],
+            resources: [.copy("Fixtures")]
+        ),
         .testTarget(name: "SandvaultWorkflowTests", dependencies: ["SandvaultWorkflow"], resources: [.copy("Fixtures")]),
     ]
 )
