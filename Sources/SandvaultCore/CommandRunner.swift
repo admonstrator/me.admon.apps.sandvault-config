@@ -1,4 +1,9 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 /// One external command. The only way any module runs a process is through a `CommandRunner`,
 /// so every call is visible, testable with `FakeCommandRunner`, and free of shell interpolation.
@@ -121,32 +126,40 @@ public struct ProcessCommandRunner: CommandRunner {
             process.standardError = FileHandle.nullDevice
             process.standardInput = FileHandle.nullDevice
 
-            let buffer = LineBuffer()
-            out.fileHandleForReading.readabilityHandler = { handle in
-                let chunk = handle.availableData
-                if chunk.isEmpty {
-                    handle.readabilityHandler = nil
-                    for line in buffer.flush() { continuation.yield(line) }
-                    return
-                }
-                for line in buffer.append(chunk) { continuation.yield(line) }
-            }
-            process.terminationHandler = { finished in
-                if finished.terminationStatus == 0 || finished.terminationReason == .uncaughtSignal {
-                    continuation.finish()
-                } else {
-                    continuation.finish(throwing: SandvaultError.commandFailed(
-                        invocation.description, finished.terminationStatus, ""))
-                }
-            }
             continuation.onTermination = { _ in
-                if process.isRunning { process.terminate() }
+                guard process.isRunning else { return }
+                process.terminate()
+                let pid = process.processIdentifier
+                DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
+                    if process.isRunning { kill(pid, SIGKILL) }
+                }
             }
             do {
                 try process.run()
             } catch {
                 continuation.finish(throwing: SandvaultError.commandNotRunnable(invocation.description, "\(error)"))
+                return
             }
+
+            // A dedicated thread does blocking reads until EOF, then reaps the process, so the last line
+            // is always delivered before the stream finishes. Long-running streams do not tie up GCD workers.
+            let reader = Thread {
+                let buffer = LineBuffer()
+                let handle = out.fileHandleForReading
+                while true {
+                    let chunk = handle.availableData
+                    if chunk.isEmpty { break }
+                    for line in buffer.append(chunk) { continuation.yield(line) }
+                }
+                for line in buffer.flush() { continuation.yield(line) }
+                process.waitUntilExit()
+                if process.terminationStatus == 0 || process.terminationReason == .uncaughtSignal {
+                    continuation.finish()
+                } else {
+                    continuation.finish(throwing: SandvaultError.commandFailed(invocation.description, process.terminationStatus, ""))
+                }
+            }
+            reader.start()
         }
     }
 
@@ -193,7 +206,11 @@ public struct ProcessCommandRunner: CommandRunner {
             if group.wait(timeout: .now() + timeout) == .timedOut {
                 timedOut = true
                 process.terminate()
-                _ = group.wait(timeout: .now() + 2)
+                if group.wait(timeout: .now() + 1) == .timedOut {
+                    // SIGTERM can be blocked by an inherited signal mask; SIGKILL cannot.
+                    kill(process.processIdentifier, SIGKILL)
+                    _ = group.wait(timeout: .now() + 2)
+                }
             }
         } else {
             group.wait()

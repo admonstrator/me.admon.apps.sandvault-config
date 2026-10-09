@@ -31,7 +31,10 @@ let package = Package(
         .target(name: "SandvaultObserve", dependencies: ["SandvaultCore"]),
 
         // Agent B: SBPL and pf generation, profile merge, privileged helper logic.
-        .target(name: "SandvaultEnforce", dependencies: ["SandvaultCore"]),
+        .target(
+            name: "SandvaultEnforce",
+            dependencies: ["SandvaultCore", .product(name: "Crypto", package: "swift-crypto")]
+        ),
 
         // Agent C: proxy, DNS forwarder, policy engine, TLS inspection, control socket.
         .target(

@@ -6,6 +6,11 @@ public enum Enforce {
     public static func makePolicyApplier(runner: CommandRunner) -> PolicyApplier {
         UnimplementedPolicyApplier()
     }
+
+    /// Helper installed, profile block drift, pf anchor state, integrity (consumed by `svctl doctor`, the app).
+    public static func makeCheckProvider(environment: SandvaultEnvironment, runner: CommandRunner, config: AppConfig) -> CheckProvider {
+        NoChecks()
+    }
 }
 
 struct UnimplementedPolicyApplier: PolicyApplier {

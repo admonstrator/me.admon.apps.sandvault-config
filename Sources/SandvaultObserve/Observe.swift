@@ -11,6 +11,11 @@ public enum Observe {
     public static func makeLocalPortSource(environment: SandvaultEnvironment, runner: CommandRunner) -> LocalPortSource {
         UnimplementedLocalPortSource()
     }
+
+    /// Account, workspace, sudoers, profile presence, sv install checks (consumed by `svctl doctor`, the app).
+    public static func makeCheckProvider(environment: SandvaultEnvironment, runner: CommandRunner) -> CheckProvider {
+        NoChecks()
+    }
 }
 
 struct UnimplementedLocalPortSource: LocalPortSource {

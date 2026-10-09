@@ -28,3 +28,15 @@ public struct NoProcessAttributor: ProcessAttributor {
     public init() {}
     public func process(forLocalPort port: UInt16, proto: TransportProtocol) async -> (pid: Int32, name: String)? { nil }
 }
+
+/// A module's contribution to `svctl doctor` and the app's overview.
+/// Each module exposes one through its factory (`Observe.makeCheckProvider`, `Enforce.makeCheckProvider`,
+/// `Net.makeCheckProvider`); the doctor command concatenates them in that order.
+public protocol CheckProvider: Sendable {
+    func checks() async -> [Check]
+}
+
+public struct NoChecks: CheckProvider {
+    public init() {}
+    public func checks() async -> [Check] { [] }
+}

@@ -53,6 +53,10 @@ The sandbox user is the adversary.
 - Seams implemented in one module and consumed in another: `ProcessAttributor` and `LocalPortSource` (Observe → netd),
   `PolicyApplier` (Enforce → svctl, netd, app). Factories: `Observe.makeProcessAttributor`,
   `Observe.makeLocalPortSource`, `Enforce.makePolicyApplier`.
+- `SharedFiles` is the only way to read or write inside the shared workspace (sandbox-writable): it walks
+  paths with `openat(O_NOFOLLOW)`, creates with `O_EXCL`, replaces with `renameat`, so a symlink the sandbox
+  planted never redirects a host-user write or read. Never use `FileManager`/`Data.write` there.
+- `CheckProvider` per module (`Observe/Enforce/Net.makeCheckProvider`); `svctl doctor` concatenates them.
 - CLI: each area registers its commands in `Sources/svctl/<Area>/<Area>Commands.swift`; shared options in
   `GlobalOptions` (`--json`, `--config`), output helpers in `Output`.
 
