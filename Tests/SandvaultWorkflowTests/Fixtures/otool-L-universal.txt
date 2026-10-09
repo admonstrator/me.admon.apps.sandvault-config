@@ -1,0 +1,6 @@
+/usr/local/bin/tool (architecture x86_64):
+	@rpath/libtool-core.dylib (compatibility version 1.0.0, current version 1.0.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1351.0.0)
+/usr/local/bin/tool (architecture arm64):
+	@rpath/libtool-core.dylib (compatibility version 1.0.0, current version 1.0.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1351.0.0)

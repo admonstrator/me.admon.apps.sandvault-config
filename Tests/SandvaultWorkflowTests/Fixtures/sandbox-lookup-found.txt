@@ -1,0 +1,2 @@
+sandvault-config:lookup
+/opt/homebrew/bin/jq
