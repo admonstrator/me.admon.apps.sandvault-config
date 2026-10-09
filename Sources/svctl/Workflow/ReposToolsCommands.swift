@@ -27,7 +27,7 @@ struct ReposCommand: AsyncParsableCommand {
             Output.table(["NAME", "BRANCH", "HEAD", "LAST COMMIT", "DIRTY", "AHEAD/BEHIND", "UNFETCHED", "DEPLOY KEY", "HOST"], repos.map {
                 [
                     $0.name, $0.branch ?? "-", $0.headCommit.map { String($0.prefix(8)) } ?? "-", WorkflowCLI.date($0.lastCommitDate),
-                    $0.dirty ? "yes" : "", "\(WorkflowCLI.count($0.aheadOfOrigin))/\(WorkflowCLI.count($0.behindOrigin))",
+                    $0.dirty.map { $0 ? "yes" : "no" } ?? "?", "\(WorkflowCLI.count($0.aheadOfOrigin))/\(WorkflowCLI.count($0.behindOrigin))",
                     WorkflowCLI.count($0.unfetchedCommits), $0.deployKey == nil ? "" : "yes", $0.record?.hostPath ?? "-",
                 ]
             })

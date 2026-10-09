@@ -42,7 +42,7 @@ import Testing
         #expect(status.branch == "main")
         #expect(status.headCommit == "c5e22242579d73f94faadaf10a31dfabf48d12d1")
         #expect(status.lastCommitDate == Date(timeIntervalSince1970: 1_791_540_000))
-        #expect(status.dirty)
+        #expect(status.dirty == true)
         #expect(status.behindOrigin == 1 && status.aheadOfOrigin == 2)
         #expect(status.unfetchedCommits == nil && status.record == nil)
         #expect(status.deployKey == sandbox.workspace + "/_sandvault/.ssh/deploy_app")
@@ -62,7 +62,7 @@ import Testing
         fake.on(SandboxedCommand.git(sandbox.environment, clone: clone, ["--no-optional-locks"]).argv, stdout: "", exitCode: 128)
         let status = try #require(try await SandboxRepositories(environment: sandbox.environment, runner: fake, configStore: sandbox.configStore,
                                                                  shared: sandbox.shared, isMacOS: true).repositories().first)
-        #expect(status.branch == nil && status.headCommit == nil && status.behindOrigin == nil && !status.dirty)
+        #expect(status.branch == nil && status.headCommit == nil && status.behindOrigin == nil && status.dirty == nil)
     }
 
     @Test func offMacOSCloneFieldsStayUnknown() async throws {
@@ -74,7 +74,7 @@ import Testing
         let status = try #require(try await SandboxRepositories(environment: sandbox.environment, runner: fake, configStore: sandbox.configStore,
                                                                  shared: sandbox.shared, isMacOS: false).repositories().first)
         #expect(status.branch == nil && status.headCommit == nil && status.lastCommitDate == nil && status.unfetchedCommits == nil)
-        #expect(status.aheadOfOrigin == nil && status.behindOrigin == nil && !status.dirty)
+        #expect(status.aheadOfOrigin == nil && status.behindOrigin == nil && status.dirty == nil)
         #expect(status.deployKey != nil)
         #expect(fake.invocations.isEmpty)
     }
@@ -141,7 +141,7 @@ import Testing
         #expect(before.branch == "main")
         #expect(before.unfetchedCommits == 2)
         #expect(before.aheadOfOrigin == 2 && before.behindOrigin == 0)
-        #expect(!before.dirty)
+        #expect(before.dirty == false)
 
         let after = try await setup.service(runner).fetchBack(setup.record)
         #expect(after.unfetchedCommits == 0)
@@ -175,7 +175,7 @@ import Testing
         // Sandboxed calls fail here, so anything that ran would have been the host's own doing.
         let runner = SandboxEmulator(environment: setup.sandbox.environment, runsSandboxed: false)
         let status = try #require(try await setup.service(runner).repositories().first)
-        #expect(status.branch == nil && status.headCommit == nil && !status.dirty)
+        #expect(status.branch == nil && status.headCommit == nil && status.dirty == nil)
         _ = try await setup.service(runner).fetchBack(setup.record)
 
         func ran() throws -> Set<String> { Set(try FileManager.default.contentsOfDirectory(atPath: traps).filter { $0.hasSuffix(".ran") }) }
@@ -227,7 +227,7 @@ import Testing
         #expect(all.map(\.name) == ["app", "plain"])
         #expect(all.first?.branch == "main")
         let plain = try #require(all.last)
-        #expect(plain.branch == nil && plain.headCommit == nil && plain.record == nil && !plain.dirty)
+        #expect(plain.branch == nil && plain.headCommit == nil && plain.record == nil && plain.dirty == nil)
         #expect(!runner.invocations.contains { $0.arguments.contains(repos + "/plain") })
     }
 

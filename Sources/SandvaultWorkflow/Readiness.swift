@@ -101,10 +101,9 @@ struct ReadinessCheck: Sendable {
             findings.append(ReadinessFinding(kind: .noCommits, severity: .blocker, message: "the repository has no commits yet; commit once before handing it off"))
         }
         let origin = try await git(root, ["remote", "get-url", "origin"])
-        // sv-clone v1.32 aborts on a local repository without `origin` (sv-clone line 156). The contract has no
-        // dedicated kind for it; `notGitRepository` is the "sv-clone cannot use this source" bucket.
+        // sv-clone v1.32 aborts on a local repository without `origin` (sv-clone line 156).
         if !origin.succeeded {
-            findings.append(ReadinessFinding(kind: .notGitRepository, severity: .blocker,
+            findings.append(ReadinessFinding(kind: .noOriginRemote, severity: .blocker,
                 message: "no 'origin' remote: sv-clone refuses a local repository without one (git remote add origin <url>)"))
         }
 

@@ -44,7 +44,7 @@ import Testing
         let local = sandbox.base + "/local"
         try await TestGit.repository(at: local, origin: nil)
         let noOrigin = try await check(sandbox, local)
-        #expect(kinds(noOrigin, .blocker) == [.notGitRepository])
+        #expect(kinds(noOrigin, .blocker) == [.noOriginRemote])
         #expect(noOrigin.findings.first?.message.contains("origin") == true)
 
         let sub = sandbox.base + "/src/app"

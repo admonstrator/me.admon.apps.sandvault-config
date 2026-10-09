@@ -348,7 +348,7 @@ extension RepoStatus {
         if let unfetchedCommits, unfetchedCommits > 0 { parts.append("\(unfetchedCommits) new commit\(unfetchedCommits == 1 ? "" : "s") to fetch") }
         if let aheadOfOrigin, aheadOfOrigin > 0 { parts.append("\(aheadOfOrigin) ahead of origin") }
         if let behindOrigin, behindOrigin > 0 { parts.append("\(behindOrigin) behind origin") }
-        if dirty { parts.append("uncommitted changes") }
+        if dirty == true { parts.append("uncommitted changes") }
         if record == nil { parts.append("not handed off from this Mac") }
         return parts.joined(separator: " · ")
     }

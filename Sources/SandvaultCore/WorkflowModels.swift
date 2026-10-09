@@ -22,6 +22,8 @@ public enum ReadinessKind: String, Codable, Sendable, CaseIterable {
     case notGitRepository, noCommits, uncommittedChanges, untrackedFiles
     case symlinkOutside, virtualenvHostInterpreter, envrc, dotenvFile, localSubmodule, gitFileIndirection
     case largeRepository, alreadyHandedOff
+    /// sv-clone (v1.32) refuses a local repository without an `origin` remote.
+    case noOriginRemote
 }
 
 public struct ReadinessFinding: Codable, Sendable, Equatable, Hashable {
@@ -108,7 +110,8 @@ public struct RepoStatus: Codable, Sendable, Equatable, Identifiable {
     public var branch: String?
     public var headCommit: String?
     public var lastCommitDate: Date?
-    public var dirty: Bool
+    /// `nil` when unknown (not on macOS, or the sandboxed status call failed).
+    public var dirty: Bool?
     /// Commits in the sandbox clone that the host repository has not fetched yet (`HEAD` of the clone vs `sandvault/<branch>` on the host).
     public var unfetchedCommits: Int?
     public var aheadOfOrigin: Int?
@@ -119,7 +122,7 @@ public struct RepoStatus: Codable, Sendable, Equatable, Identifiable {
 
     public init(
         record: HandoffRecord?, name: String, sandboxPath: String, branch: String? = nil, headCommit: String? = nil,
-        lastCommitDate: Date? = nil, dirty: Bool = false, unfetchedCommits: Int? = nil, aheadOfOrigin: Int? = nil,
+        lastCommitDate: Date? = nil, dirty: Bool? = nil, unfetchedCommits: Int? = nil, aheadOfOrigin: Int? = nil,
         behindOrigin: Int? = nil, deployKey: String? = nil
     ) {
         self.record = record
