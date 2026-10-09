@@ -23,7 +23,9 @@ struct PanicCommand: AsyncParsableCommand {
         var config = try global.configStore.load()
         config.network.mode = .blocked
         try global.configStore.save(config)
-        try EnforceCLI.report(try await EnforceCLI.applier(global).panic(AppliedState(config: config)), json: global.json)
+        let result = try await EnforceCLI.applier(global).panic(AppliedState(config: config))
+        _ = await NetCLI.reload(global)
+        try EnforceCLI.report(result, json: global.json)
     }
 }
 

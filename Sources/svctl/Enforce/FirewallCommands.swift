@@ -149,6 +149,7 @@ extension FirewallCommand {
                 throw ExitCode.failure
             }
             let result = try await EnforceCLI.applier(global).applyFirewall(state, releasingPanic: true)
+            _ = await NetCLI.reload(global)
             try EnforceCLI.report(result, json: global.json)
         }
     }
@@ -162,7 +163,9 @@ extension FirewallCommand {
             var config = try global.configStore.load()
             config.network.mode = .off
             try global.configStore.save(config)
-            try EnforceCLI.report(try await EnforceCLI.applier(global).disableFirewall(), json: global.json)
+            let result = try await EnforceCLI.applier(global).disableFirewall()
+            _ = await NetCLI.reload(global)
+            try EnforceCLI.report(result, json: global.json)
         }
     }
 
