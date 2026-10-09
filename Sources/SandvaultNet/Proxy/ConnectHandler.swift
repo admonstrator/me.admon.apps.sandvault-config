@@ -55,11 +55,9 @@ final class ConnectHandler: ChannelInboundHandler, RemovableChannelHandler {
             let tracker = runtime.track(result, kind: .explicitProxy)
             switch result.verdict {
             case .deny:
-                tracker.finish(bytesIn: 0, bytesOut: 0)
-                self.respond(.forbidden, NetRuntime.denialMessage(result), context: context)
+                self.respond(.forbidden, NetRuntime.denialMessage(result), context: context, finishing: tracker)
             case .fail:
-                tracker.finish(bytesIn: 0, bytesOut: 0)
-                self.respond(.badGateway, "sandvault-config could not reach \(host):\(port): \(result.reason)\n", context: context)
+                self.respond(.badGateway, "sandvault-config could not reach \(host):\(port): \(result.reason)\n", context: context, finishing: tracker)
             case .allow where result.inspect:
                 self.inspect(host: host, port: port, result: result, tracker: tracker, context: context)
             case .allow:
@@ -74,8 +72,9 @@ final class ConnectHandler: ChannelInboundHandler, RemovableChannelHandler {
             .whenComplete { outcome in
                 switch outcome {
                 case .failure(let error):
-                    tracker.finish(bytesIn: 0, bytesOut: 0)
-                    self.respond(.badGateway, "sandvault-config could not connect to \(host):\(port): \(error)\n", context: context)
+                    self.respond(
+                        .badGateway, "sandvault-config could not connect to \(host):\(port): \(error)\n", context: context, finishing: tracker
+                    )
                 case .success(let upstream):
                     guard context.channel.isActive else {
                         upstream.close(promise: nil)
@@ -138,12 +137,16 @@ final class ConnectHandler: ChannelInboundHandler, RemovableChannelHandler {
         }
     }
 
-    private func respond(_ status: HTTPResponseStatus, _ message: String, context: ChannelHandlerContext) {
+    /// Answers with a plain-text error, closes, and finishes `tracker` with the bytes of the exchange.
+    private func respond(_ status: HTTPResponseStatus, _ message: String, context: ChannelHandlerContext, finishing tracker: ConnectionTracker? = nil) {
         state = .done
         let (head, body) = HTTPRewrite.errorResponse(status, body: message)
         context.write(wrapOutboundOut(.head(head)), promise: nil)
         context.write(wrapOutboundOut(.body(.byteBuffer(context.channel.allocator.buffer(string: body)))), promise: nil)
+        let counter = self.counter
         context.writeAndFlush(wrapOutboundOut(.end(nil))).assumeIsolated().whenComplete { _ in
+            let totals = counter.totals
+            tracker?.finish(bytesIn: totals.sent, bytesOut: totals.received)
             context.close(promise: nil)
         }
     }

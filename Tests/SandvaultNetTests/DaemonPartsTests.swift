@@ -226,3 +226,46 @@ import Testing
         #expect(await asks.raise(host: "new.test", kind: .dns, owner: nil, policy: policy)?.decision == .askedDenied)
     }
 }
+
+@Suite struct NetChecksTests {
+    func state(_ checks: [Check], _ id: String) -> CheckState? { checks.first { $0.id == id }?.state }
+
+    func checks(_ layout: TempLayout, _ config: AppConfig, socket: String) async -> [Check] {
+        await NetChecks(paths: layout.paths, runner: FakeCommandRunner(), config: config, socketPath: socket, shared: layout.shared).checks()
+    }
+
+    @Test func reportsAMissingNetdAndStaleFiles() async throws {
+        let layout = try TempLayout()
+        defer { layout.cleanup() }
+        var config = AppConfig()
+        config.network.mode = .proxyOnly
+        config.network.inspection.enabled = true
+        let socket = "/tmp/svn-missing-\(UUID().uuidString.prefix(6)).sock"
+        let on = await checks(layout, config, socket: socket)
+        #expect(on.map(\.id) == ["net.netd", "net.ports", "net.launchagent", "net.ca", "net.zshenv"])
+        #expect(state(on, "net.netd") == .failure)
+        #expect(state(on, "net.ports") == .unknown)
+        #expect(state(on, "net.ca") == .failure, "inspection is on but no CA exists")
+        #expect(state(on, "net.zshenv") == .warning)
+        #expect(on.first { $0.id == "net.zshenv" }?.fix == "svctl proxy env apply")
+
+        config.network.mode = .off
+        config.network.inspection.enabled = false
+        let off = await checks(layout, config, socket: socket)
+        #expect(state(off, "net.netd") == .skipped)
+        #expect(state(off, "net.ca") == .skipped)
+        #expect(state(off, "net.zshenv") == .ok)
+    }
+
+    @Test func reportsARunningNetd() async throws {
+        let netd = try await TestNetd.start(.testing())
+        defer { Task { await netd.stop() } }
+        var config = try netd.store.load()
+        config.network.ports = netd.ports
+        let running = await checks(netd.layout, config, socket: netd.socketPath)
+        #expect(state(running, "net.netd") == .ok)
+        #expect(state(running, "net.ports") == .ok)
+        config.network.ports.dns = 1
+        #expect(state(await checks(netd.layout, config, socket: netd.socketPath), "net.ports") == .warning)
+    }
+}

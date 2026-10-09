@@ -45,7 +45,10 @@ public final class ControlClient: @unchecked Sendable {
                 .get()
             client.lock.withLock { client.channel = channel }
         } catch {
-            throw SandvaultError.notInstalled("sandvault-netd is not reachable at \(socketPath) (\(error))")
+            guard FileManager.default.fileExists(atPath: socketPath) else {
+                throw SandvaultError.notInstalled("sandvault-netd is not running (no control socket at \(socketPath))")
+            }
+            throw SandvaultError.notInstalled("sandvault-netd is not answering at \(socketPath) (\(error))")
         }
         return client
     }

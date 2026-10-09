@@ -49,6 +49,8 @@ final class HTTPForwardHandler: ChannelInboundHandler, RemovableChannelHandler {
     private var queue = CircularBuffer<HTTPServerRequestPart>()
     private var upstream: (target: Target, channel: Channel)?
     private var exchange: Exchange?
+    /// Byte totals when the previous exchange ended; the next record counts from here (its request head included).
+    private var boundary: (received: Int64, sent: Int64) = (0, 0)
 
     init(runtime: NetRuntime, mode: Mode, counter: ByteCounter) {
         self.runtime = runtime
@@ -126,7 +128,7 @@ final class HTTPForwardHandler: ChannelInboundHandler, RemovableChannelHandler {
         state = .waiting
         setReading(false, context: context)
         let redact = Set(runtime.policy.snapshot.policy.inspection.redactHeaders.map { $0.lowercased() })
-        let startCounts = counter.totals
+        let startCounts = boundary
 
         switch mode {
         case .explicitProxy:
@@ -315,6 +317,7 @@ final class HTTPForwardHandler: ChannelInboundHandler, RemovableChannelHandler {
             tunnel.add(current.summary)
         } else if let tracker = current.tracker {
             let now = counter.totals
+            boundary = now
             tracker.add(current.summary)
             tracker.finish(bytesIn: now.sent - current.startCounts.sent, bytesOut: now.received - current.startCounts.received)
         }

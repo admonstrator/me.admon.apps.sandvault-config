@@ -211,14 +211,28 @@ public final class NetDaemon: Sendable, ControlService {
         }
     }
 
+    /// Writes or removes the `.zshenv` block; a repeated failure is logged once.
     private func syncEnvironmentBlock(_ config: AppConfig) {
         guard options.manageEnvironmentBlock else { return }
-        do {
-            let change = try SandboxEnvironmentBlock.apply(policy: config.network, paths: options.paths, shared: options.sharedFiles)
-            if change != .unchanged { logger("sandbox .zshenv block \(change.rawValue)") }
-        } catch {
-            logger("sandbox .zshenv block: \(error)")
+        let message: String
+        var isDirectory: ObjCBool = false
+        if !FileManager.default.fileExists(atPath: options.sharedFiles.root, isDirectory: &isDirectory) || !isDirectory.boolValue {
+            message = "sandbox .zshenv block skipped: shared workspace \(options.sharedFiles.root) does not exist"
+        } else {
+            do {
+                let change = try SandboxEnvironmentBlock.apply(policy: config.network, paths: options.paths, shared: options.sharedFiles)
+                if change != .unchanged { logger("sandbox .zshenv block \(change.rawValue)") }
+                state.withLock { $0.environmentProblem = nil }
+                return
+            } catch {
+                message = "sandbox .zshenv block: \(error)"
+            }
         }
+        let repeated = state.withLock { values -> Bool in
+            defer { values.environmentProblem = message }
+            return values.environmentProblem == message
+        }
+        if !repeated { logger(message) }
     }
 
     /// UDP and TCP on the same port. For an ephemeral port (0) the TCP side may collide; then try another.
@@ -259,6 +273,7 @@ private final class LockedState: @unchecked Sendable {
         var bound = ProxyPorts(explicitProxy: 0, transparentHTTP: 0, transparentTLS: 0, dns: 0)
         var startedAt = Date()
         var loop: Task<Void, Never>?
+        var environmentProblem: String?
     }
 
     private let lock = NSLock()
