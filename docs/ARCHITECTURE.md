@@ -33,7 +33,13 @@ The sandbox user is the adversary.
   We never execute them and treat their content as untrusted when we read it back.
 - The helper is the privilege boundary: it takes typed JSON (`AppliedState`) on stdin, derives the user from
   `SUDO_USER`, writes only fixed paths, and generates SBPL/pf text itself with strict validation.
-- Git on sandbox-writable repositories always goes through `GitSafe` (same hardening as `sv-clone`).
+- Git never runs as the host user inside a sandbox clone: `git status`/`log` would execute filters, fsmonitor or
+  `gpg.program` from the clone's config, and reading the config first races with the sandbox rewriting it.
+  Every git call against a clone runs as the sandbox user under sv's profile (`SandboxedCommand.git`, §7). Only
+  host-side git in the host repository (`git fetch sandvault`) runs as the host user, with `GitSafe` hardening,
+  `--no-tags` and `--no-recurse-submodules`.
+- Code the sandbox can write (its dotfiles, `$SHARED_WORKSPACE/user`) is only ever executed as the sandbox user
+  under `sandbox-exec` with sv's profile, never as the bare sandbox user and never as the host user.
 - Enforcement is pf (per user) plus sandbox-exec; proxy variables in the sandbox are only hints for cooperative tools.
 
 ## 3 · Contract (SandvaultCore)

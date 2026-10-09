@@ -49,3 +49,12 @@ Numbered decisions, one table per phase. Briefs and reports are measured against
 | D26 | Hand-off mechanics | `sv-clone <source> [-k|-w] -- [sv options] <agent> [-- <first prompt>]` in the chosen terminal; the task goes into `$SHARED_WORKSPACE/tmp/handoff-<repo>.md` through `SharedFiles`, the agent is told to read it |
 | D27 | Helper installation from the app | `osascript … with administrator privileges` running the bundled `svctl-helper install --source <bundle path> --user <name>`; netd as LaunchAgent through `NetdLaunchAgent` |
 | D28 | App CI | `macos-latest`: `brew install xcodegen`, `xcodegen generate`, `xcodebuild … CODE_SIGNING_ALLOWED=NO build` |
+
+## Phase 2 · Results that became rules (2026-10-09)
+
+| No. | Question | Decision |
+|---|---|---|
+| D29 | Git on sandbox clones | Only as the sandbox user under sv's profile (`SandboxedCommand.git`); output parsed as untrusted text. The host runs git only in the host repository (`fetch sandvault --no-tags --no-recurse-submodules` with `GitSafe`) |
+| D30 | Sandbox-writable code | Executed only as the sandbox user under `sandbox-exec` with sv's profile (tool lookup sources the sandbox's dotfiles that way) |
+| D31 | sv options in hand-offs and defaults | `--no-sandbox`, `--rebuild` (drops the managed block) and options that make sv exit immediately are refused |
+| D32 | Migration | Symlinks, credential files, files over 1 MB and token patterns are never copied; `.zshenv` keeps the managed network block |
