@@ -118,7 +118,7 @@ struct EnforceCheckProvider: CheckProvider {
 
     func panicCheck(_ status: HelperStatus) -> Check {
         status.panicActive
-            ? Check(id: "enforce.panic", title: "Panic switch", state: .warning, detail: "active: the sandbox user has no network", fix: "svctl firewall apply")
+            ? Check(id: "enforce.panic", title: "Panic switch", state: .warning, detail: "active: the sandbox user has no network", fix: "svctl firewall mode <mode>, then svctl firewall apply")
             : Check(id: "enforce.panic", title: "Panic switch", state: .ok, detail: "not active")
     }
 }

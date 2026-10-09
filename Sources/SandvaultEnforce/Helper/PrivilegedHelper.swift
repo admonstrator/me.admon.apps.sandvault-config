@@ -202,7 +202,7 @@ public struct PrivilegedHelper: Sendable {
         try checkAnchorOwner(record, environment)
         if record.panicActive == true, !releasePanic, state.network.mode != .blocked {
             return HelperResult(
-                ok: false, message: "panic is active: the firewall stays blocked until a user applies it (svctl firewall apply)",
+                ok: false, message: "panic is active: the firewall stays blocked until a user applies a mode (svctl firewall mode <mode>, then svctl firewall apply)",
                 details: ["panicActive": "true"]
             )
         }

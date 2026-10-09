@@ -7,7 +7,7 @@ struct PanicCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "panic",
         abstract: "Block all network access of the sandbox user and terminate all its processes.",
-        discussion: "Sets the firewall mode to blocked in config.json. `svctl firewall apply` (or `off`) ends it."
+        discussion: "Sets the firewall mode to blocked in config.json. To end it, choose a mode and apply (`svctl firewall mode open && svctl firewall apply`), or run `svctl firewall off`."
     )
 
     @OptionGroup var global: GlobalOptions
