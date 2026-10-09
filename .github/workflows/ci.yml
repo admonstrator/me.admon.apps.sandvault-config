@@ -31,3 +31,17 @@ jobs:
         run: swift build --build-tests
       - name: Test
         run: swift test
+
+  app:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: XcodeGen
+        if: ${{ hashFiles('App/project.yml') != '' }}
+        run: brew install xcodegen && cd App && xcodegen generate
+      - name: Build app
+        if: ${{ hashFiles('App/project.yml') != '' }}
+        run: |
+          xcodebuild -project App/SandvaultConfig.xcodeproj -scheme SandvaultConfig \
+            -configuration Debug -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO build

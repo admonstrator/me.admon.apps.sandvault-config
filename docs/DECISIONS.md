@@ -29,3 +29,23 @@ Numbered decisions, one table per phase. Briefs and reports are measured against
 | D16 | Firewall default | `FirewallMode.off` until the user turns it on; unknown domains default to `ask`, unanswered asks fall back to `deny` |
 | D17 | pf integration | Rules live in the sub-anchor `com.apple/sandvault-config` (evaluated by the stock `/etc/pf.conf`); `/etc/pf.conf` is never edited |
 | D18 | Toolchain | Swift 6.2.4 on Linux (`/opt/swift`), `swift-tools-version:6.0`; CI on Linux (`swift:6.2-noble`) and `macos-latest` |
+
+## Phase 1 · Results that became rules (2026-10-09)
+
+| No. | Question | Decision |
+|---|---|---|
+| D19 | Helper sudoers rule | Argument-exact: the rule lists every unattended call (`PrivilegedHelper.unattendedArguments`, e.g. `<helper> pf-apply --json`), never the bare helper path. Otherwise any host process could run `sudo -n <helper> install --source <own binary>` and get root. `install`, `uninstall`, `restore` are unreachable through `sudo -n` |
+| D20 | Panic | `panic` latches in the root state: `pf-apply` stays `blocked` until a call with `--release-panic` (CLI/app `apply`), so netd's port refresh cannot silently undo it |
+| D21 | One owner per Mac | The pf anchor belongs to one host user; a second user is refused with a clear message |
+| D22 | netd and asks | netd raises asks only while a client subscribes to `.asks`; otherwise `askFallback` applies immediately |
+| D23 | Upstream DNS | First `nameserver` of `/etc/resolv.conf` (overridable with `--upstream-dns`); split DNS over VPN is not followed yet |
+
+## Phase 2 · Contract (2026-10-09)
+
+| No. | Question | Decision |
+|---|---|---|
+| D24 | App structure | `SandvaultAppModel` (package library, `@Observable` view models, no SwiftUI/AppKit, tested on Linux) plus `App/` (XcodeGen project with SwiftUI views and platform glue only) |
+| D25 | Workflow API | `HandoffService`, `RepoService`, `ToolService`, `MigrationService`, `KeyService` in `SandvaultCore/WorkflowModels.swift`, factories in `Workflow` |
+| D26 | Hand-off mechanics | `sv-clone <source> [-k|-w] -- [sv options] <agent> [-- <first prompt>]` in the chosen terminal; the task goes into `$SHARED_WORKSPACE/tmp/handoff-<repo>.md` through `SharedFiles`, the agent is told to read it |
+| D27 | Helper installation from the app | `osascript … with administrator privileges` running the bundled `svctl-helper install --source <bundle path> --user <name>`; netd as LaunchAgent through `NetdLaunchAgent` |
+| D28 | App CI | `macos-latest`: `brew install xcodegen`, `xcodegen generate`, `xcodebuild … CODE_SIGNING_ALLOWED=NO build` |

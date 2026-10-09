@@ -12,6 +12,7 @@ let package = Package(
         .library(name: "SandvaultEnforce", targets: ["SandvaultEnforce"]),
         .library(name: "SandvaultNet", targets: ["SandvaultNet"]),
         .library(name: "SandvaultWorkflow", targets: ["SandvaultWorkflow"]),
+        .library(name: "SandvaultAppModel", targets: ["SandvaultAppModel"]),
         .executable(name: "svctl", targets: ["svctl"]),
         .executable(name: "sandvault-netd", targets: ["sandvault-netd"]),
         .executable(name: "svctl-helper", targets: ["svctl-helper"]),
@@ -53,6 +54,12 @@ let package = Package(
         // Agent D (phase 2): hand-off, repos, tools, migration.
         .target(name: "SandvaultWorkflow", dependencies: ["SandvaultCore"]),
 
+        // Agent E (phase 2): view models of the SwiftUI app, without SwiftUI (testable on Linux).
+        .target(
+            name: "SandvaultAppModel",
+            dependencies: ["SandvaultCore", "SandvaultObserve", "SandvaultEnforce", "SandvaultNet", "SandvaultWorkflow"]
+        ),
+
         .executableTarget(
             name: "svctl",
             dependencies: [
@@ -84,5 +91,6 @@ let package = Package(
             resources: [.copy("Fixtures")]
         ),
         .testTarget(name: "SandvaultWorkflowTests", dependencies: ["SandvaultWorkflow"], resources: [.copy("Fixtures")]),
+        .testTarget(name: "SandvaultAppModelTests", dependencies: ["SandvaultAppModel"]),
     ]
 )
