@@ -67,6 +67,18 @@ import Testing
         #expect(Self.engine([], default: .allow).evaluate(host: "a.test", port: 8080).action == .deny)
     }
 
+    @Test func watchRefusesOnlyDenyRules() {
+        var policy = NetworkPolicy(mode: .watch, defaultAction: .deny)
+        policy.domainRules = [DomainRule(pattern: "tracker.example", action: .deny), DomainRule(pattern: "*.ask.example", action: .ask)]
+        let engine = PolicyEngine(policy: policy)
+        #expect(engine.evaluate(host: "tracker.example", port: 443).action == .deny)
+        #expect(engine.evaluate(host: "tracker.example", port: 22).action == .deny)
+        #expect(engine.evaluate(host: "a.ask.example", port: 443).action == .allow)
+        #expect(engine.evaluate(host: "github.com", port: 22).action == .allow)
+        #expect(engine.evaluate(host: "github.com", port: nil).reason == "watch mode (allow)")
+        #expect(engine.evaluate(host: "bad host", port: 443).action == .deny)
+    }
+
     @Test func reasonsNameTheCause() {
         let engine = Self.engine([("*.blocked.test", .deny)])
         #expect(engine.evaluate(host: "a.blocked.test", port: 443).reason == "rule *.blocked.test (deny)")

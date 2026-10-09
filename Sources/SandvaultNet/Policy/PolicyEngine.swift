@@ -23,6 +23,7 @@ public struct PolicyVerdict: Sendable, Equatable {
 /// Matching: an exact name beats `*.domain` (which also matches the apex), a longer suffix beats a shorter one,
 /// `*` comes last; at equal specificity `deny` beats `allow` beats `ask`. No match yields `defaultAction`.
 /// Ports other than 80 and 443 need an explicit `allow` rule; `ask` never applies to them.
+/// In `FirewallMode.watch` only `deny` rules refuse; everything else is allowed, on every port.
 public struct PolicyEngine: Sendable {
     public let policy: NetworkPolicy
     private let rules: [(pattern: DomainPattern, rule: DomainRule)]
@@ -61,6 +62,10 @@ public struct PolicyEngine: Sendable {
         let inspect = (rule?.inspect ?? false) && policy.inspection.enabled && !HostName.isIPLiteral(host)
         let ruleReason = rule.map { "rule \($0.pattern) (\($0.action.rawValue))" }
 
+        if policy.mode == .watch {
+            if rule?.action == .deny { return PolicyVerdict(action: .deny, rule: rule, inspect: false, reason: ruleReason!) }
+            return PolicyVerdict(action: .allow, rule: rule, inspect: inspect, reason: ruleReason ?? "watch mode (allow)")
+        }
         if let port, !Self.webPorts.contains(port) {
             switch rule?.action {
             case .allow?: return PolicyVerdict(action: .allow, rule: rule, inspect: inspect, reason: ruleReason!)

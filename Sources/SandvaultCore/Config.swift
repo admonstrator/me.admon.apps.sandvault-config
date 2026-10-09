@@ -191,10 +191,18 @@ public enum FirewallMode: String, Codable, Sendable, CaseIterable {
     case off
     /// Direct traffic allowed, LAN/localhost guards and port exceptions apply.
     case open
+    /// Like `open`, but 80/443/53 go through netd, so every web host and DNS query is logged; netd refuses only
+    /// what a `deny` rule names.
+    case watch
     /// Only the netd listeners (and exceptions) are reachable; 80/443/53 are redirected to netd.
     case proxyOnly
     /// Everything blocked for the sandbox user (also the panic state).
     case blocked
+}
+
+extension FirewallMode {
+    /// Web and DNS of the sandbox are redirected to netd: without netd they fail.
+    public var needsNetd: Bool { self == .watch || self == .proxyOnly }
 }
 
 public enum DomainAction: String, Codable, Sendable, CaseIterable { case allow, deny, ask }

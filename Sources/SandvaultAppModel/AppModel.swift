@@ -5,13 +5,17 @@ import SandvaultObserve
 
 /// Pages of the main window, in sidebar order.
 public enum Screen: String, CaseIterable, Identifiable, Hashable, Sendable {
-    case overview, processes, network, firewall, rules, tools, handoff, migration, settings
+    case overview, activity, processes, network, firewall, rules, tools, handoff, migration, settings
+
+    /// The window without expert mode.
+    public static let simple: [Screen] = [.overview, .activity, .handoff, .settings]
 
     public var id: String { rawValue }
 
     public var title: String {
         switch self {
         case .overview: "Overview"
+        case .activity: "Activity"
         case .processes: "Processes"
         case .network: "Network"
         case .firewall: "Firewall & Proxy"
@@ -26,6 +30,7 @@ public enum Screen: String, CaseIterable, Identifiable, Hashable, Sendable {
     public var symbolName: String {
         switch self {
         case .overview: "gauge.with.dots.needle.33percent"
+        case .activity: "dot.radiowaves.left.and.right"
         case .processes: "list.bullet.indent"
         case .network: "network"
         case .firewall: "shield.lefthalf.filled"
@@ -51,6 +56,7 @@ public final class AppModel {
     public let overview: OverviewModel
     public let processes: ProcessesModel
     public let network: NetworkModel
+    public let activity: ActivityModel
     public let firewall: FirewallModel
     public let rules: RulesModel
     public let asks: AsksModel
@@ -81,6 +87,7 @@ public final class AppModel {
         )
         processes = ProcessesModel(source: environment.processes, control: environment.processControl)
         network = NetworkModel(connections: environment.connections, netd: netd, editor: editor, clock: environment.clock)
+        activity = ActivityModel(network: network, processes: processes, netd: netd, editor: editor)
         firewall = FirewallModel(
             editor: editor, policy: environment.policy, sandboxUID: environment.sandboxUID, localPorts: environment.localPorts,
             ca: environment.ca, clock: environment.clock
@@ -126,9 +133,22 @@ public final class AppModel {
 
     // MARK: Navigation and visibility
 
+    /// Sidebar pages: all of them in expert mode, `Screen.simple` otherwise.
+    public var screens: [Screen] {
+        settings.preferences.expertMode ? Screen.allCases : Screen.simple
+    }
+
+    /// Opens `screen`; a page hidden outside expert mode opens the overview instead, where the simple window
+    /// offers the same choice (the protection level for the firewall steps).
     public func select(_ screen: Screen) {
-        selection = screen
-        Task { await refreshOnShow(screen) }
+        let target = screens.contains(screen) ? screen : .overview
+        selection = target
+        Task { await refreshOnShow(target) }
+    }
+
+    public func setExpertMode(_ on: Bool) {
+        settings.setExpertMode(on)
+        if !screens.contains(selection) { select(.overview) }
     }
 
     public func setVisible(_ surface: Surface, _ visible: Bool) {
@@ -163,6 +183,7 @@ public final class AppModel {
         guard visibleSurfaces.contains(.window) else { return }
         switch selection {
         case .network: await network.refreshSockets()
+        case .activity: await activity.refresh()
         case .overview: await overview.refreshIfStale()
         default: break
         }
@@ -172,6 +193,7 @@ public final class AppModel {
         editor.reloadIfChanged()
         switch screen {
         case .overview: await overview.refreshIfStale()
+        case .activity: await activity.refresh()
         case .processes: await processes.refresh()
         case .network: await network.refreshSockets()
         case .firewall: await firewall.refreshStatus()
@@ -263,16 +285,17 @@ public struct MenuBarSummary: Sendable, Equatable {
         recentDenied = Array(hosts.values.sorted { ($0.lastSeen, $1.host) > ($1.lastSeen, $0.host) }.prefix(Self.recentLimit))
     }
 
-    /// Symbol and title, in priority order: blocked, waiting asks, proxy-only without netd, then the mode.
+    /// Symbol and title, in priority order: blocked, waiting asks, netd missing where it carries the web, then the mode.
     public static func state(mode: FirewallMode, panicActive: Bool, netdRunning: Bool, pendingAsks: Int) -> (symbolName: String, title: String) {
         if panicActive || mode == .blocked {
             return ("xmark.shield.fill", panicActive ? "Panic: sandbox blocked" : "Firewall: blocked")
         }
         if pendingAsks > 0 { return ("exclamationmark.shield.fill", "Waiting for your answer") }
-        if mode == .proxyOnly && !netdRunning { return ("exclamationmark.triangle", "Proxy only, but netd is not running") }
+        if mode.needsNetd && !netdRunning { return ("exclamationmark.triangle", "\(mode.displayName), but netd is not running") }
         switch mode {
         case .off: return ("shield.slash", "Firewall off")
         case .open: return ("shield.lefthalf.filled", "Firewall: open")
+        case .watch: return ("eye", "Firewall: watch")
         case .proxyOnly, .blocked: return ("checkmark.shield.fill", "Firewall: proxy only")
         }
     }

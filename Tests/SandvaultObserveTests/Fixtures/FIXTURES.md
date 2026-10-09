@@ -9,9 +9,9 @@ denials by sandbox processes).
 
 | File | Command on a Mac | Status |
 |---|---|---|
-| `ps-axww.txt` | `/bin/ps -axww -o pid=,ppid=,user=,%cpu=,%mem=,rss=,etime=,state=,command=` (one line uses a decimal comma, as with a German locale) | synthetic (format confirmed by `ps-axww-idle.txt`) |
-| `ps-axww-idle.txt` | the same, sandbox user's lines only, no session running: eight macOS per-user agents left over from earlier sessions | real |
-| `ps-axww-session.txt` | the same during a session (the root-owned sudo launcher is not part of the capture) | real |
+| `ps-axww.txt` | `/bin/ps -axww -o pid=,ppid=,user=,ruser=,%cpu=,%mem=,rss=,etime=,state=,command=` (one line uses a decimal comma, as with a German locale; the setuid `sudo` lines have the host user as real user) | synthetic (format confirmed by `ps-axww-idle.txt`) |
+| `ps-axww-idle.txt` | the same, sandbox user's lines only, no session running: eight macOS per-user agents left over from earlier sessions | real, captured without `ruser=`; the column was added afterwards with the user's value |
+| `ps-axww-session.txt` | the same during a session (the root-owned sudo launcher is not part of the capture) | real, `ruser=` added afterwards like above |
 | `ps-environment.txt` | `sudo -n -u sandvault-alice /usr/bin/env /bin/ps -E -ww -U sandvault-alice -o pid=,command=` | synthetic |
 | `ps-environment-idle.txt` | the same, no session running. The system agents print no environment; only the `ps` itself does (values redacted) | real |
 | `ps-environment-session.txt` | `ps -E` during that session: Python and claude carry `SV_SESSION_ID`, the Apple binaries `zsh` and `caffeinate` print no environment. Values redacted except `SV_SESSION_ID` | real |

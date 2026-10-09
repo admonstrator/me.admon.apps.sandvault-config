@@ -30,6 +30,9 @@ import Testing
         #expect(model.rows.map(\.depth) == [0, 1, 2, 0])
         #expect(model.rows[1].name == "claude")
         #expect(model.rows[2].indentedName == "    sleep")
+        #expect(model.rows[2].label == "    sleep")
+        let ping = ProcessRow(SandboxProcess(pid: 7, ppid: 1, user: "root", realUser: "sandvault-alice", command: "ping x"), depth: 1)
+        #expect(ping.label == "  ping (root)")
         #expect(model.processCount == 4)
         #expect(model.sessionCount == 1)
 

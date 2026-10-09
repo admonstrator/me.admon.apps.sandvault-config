@@ -1,12 +1,12 @@
-62073     1 sandvault-alice    0.0  0.1  24144    19:38:00 SN   /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdbulkimport -s mdworker-bundle -c MDSImporterBundleFinder -m com.apple.metadata.mdbulkimport
-62076     1 sandvault-alice    0.0  0.0   5184    19:38:00 S    /usr/libexec/pkd
-62078     1 sandvault-alice    0.0  0.0   5072    19:38:00 S    /usr/libexec/containermanagerd --runmode=agent --user-container-mode=current --bundle-container-mode=proxy --system-container-mode=none
-72853     1 sandvault-alice    0.0  0.0   1040 01-05:24:49 S    /usr/sbin/distnoted agent
-72854     1 sandvault-alice    0.0  0.0  11664 01-05:24:49 S    /usr/libexec/lsd
-72855     1 sandvault-alice    0.0  0.0   3184 01-05:24:49 S    /usr/sbin/cfprefsd agent
-72857     1 sandvault-alice    0.0  0.0   5984 01-05:24:49 S    /usr/libexec/secd
-72858     1 sandvault-alice    0.0  0.0   9088 01-05:24:49 S    /usr/libexec/trustd --agent
-86014 86013 sandvault-alice    0.0  0.0   3392       00:44 S    /bin/zsh -i
-86064 86014 sandvault-alice    0.0  0.1  24656       00:43 SN   /opt/homebrew/Cellar/python@3.14/3.14.8_1/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python -m http.server 8765
-86073 86014 sandvault-alice    0.1  1.2 307040       00:36 S+   /opt/homebrew/bin/claude --dangerously-skip-permissions
-86165 86073 sandvault-alice    0.0  0.0   1984       00:30 S+   caffeinate -i -t 300
+62073     1 sandvault-alice    sandvault-alice    0.0  0.1  24144    19:38:00 SN   /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdbulkimport -s mdworker-bundle -c MDSImporterBundleFinder -m com.apple.metadata.mdbulkimport
+62076     1 sandvault-alice    sandvault-alice    0.0  0.0   5184    19:38:00 S    /usr/libexec/pkd
+62078     1 sandvault-alice    sandvault-alice    0.0  0.0   5072    19:38:00 S    /usr/libexec/containermanagerd --runmode=agent --user-container-mode=current --bundle-container-mode=proxy --system-container-mode=none
+72853     1 sandvault-alice    sandvault-alice    0.0  0.0   1040 01-05:24:49 S    /usr/sbin/distnoted agent
+72854     1 sandvault-alice    sandvault-alice    0.0  0.0  11664 01-05:24:49 S    /usr/libexec/lsd
+72855     1 sandvault-alice    sandvault-alice    0.0  0.0   3184 01-05:24:49 S    /usr/sbin/cfprefsd agent
+72857     1 sandvault-alice    sandvault-alice    0.0  0.0   5984 01-05:24:49 S    /usr/libexec/secd
+72858     1 sandvault-alice    sandvault-alice    0.0  0.0   9088 01-05:24:49 S    /usr/libexec/trustd --agent
+86014 86013 sandvault-alice    sandvault-alice    0.0  0.0   3392       00:44 S    /bin/zsh -i
+86064 86014 sandvault-alice    sandvault-alice    0.0  0.1  24656       00:43 SN   /opt/homebrew/Cellar/python@3.14/3.14.8_1/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python -m http.server 8765
+86073 86014 sandvault-alice    sandvault-alice    0.1  1.2 307040       00:36 S+   /opt/homebrew/bin/claude --dangerously-skip-permissions
+86165 86073 sandvault-alice    sandvault-alice    0.0  0.0   1984       00:30 S+   caffeinate -i -t 300

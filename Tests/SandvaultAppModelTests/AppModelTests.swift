@@ -19,7 +19,7 @@ import Testing
         #expect(world.connections.calls.get() == 0)
 
         model.setVisible(.window, true)
-        model.select(.network)
+        model.select(.activity)
         #expect(await eventually { world.connections.calls.get() >= 2 })
 
         model.setVisible(.menu, false)
@@ -60,6 +60,9 @@ import Testing
         #expect(symbol(.off) == "shield.slash")
         #expect(symbol(.open) == "shield.lefthalf.filled")
         #expect(symbol(.proxyOnly, netd: false) == "exclamationmark.triangle")
+        #expect(symbol(.watch) == "eye")
+        #expect(symbol(.watch, netd: false) == "exclamationmark.triangle")
+        #expect(MenuBarSummary.state(mode: .watch, panicActive: false, netdRunning: false, pendingAsks: 0).title == "Watch, but netd is not running")
         #expect(symbol(.open, asks: 2) == "exclamationmark.shield.fill")
         #expect(symbol(.open, panic: true, asks: 2) == "xmark.shield.fill")
         #expect(symbol(.blocked) == "xmark.shield.fill")
@@ -112,7 +115,7 @@ import Testing
 
     @Test func screensHaveTitlesInSidebarOrder() {
         #expect(Screen.allCases.map(\.title) == [
-            "Overview", "Processes", "Network", "Firewall & Proxy", "Sandbox Rules & Learn", "Tools", "Repos & Hand-off",
+            "Overview", "Activity", "Processes", "Network", "Firewall & Proxy", "Sandbox Rules & Learn", "Tools", "Repos & Hand-off",
             "Migration", "Settings",
         ])
     }

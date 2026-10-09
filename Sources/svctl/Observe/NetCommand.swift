@@ -20,6 +20,8 @@ struct NetCommand: AsyncParsableCommand {
     struct NetOutput: Encodable {
         var connections: [SandboxConnection]
         var traffic: [ProcessTraffic]?
+        /// ICMP tools (ping, traceroute): no socket of the sandbox user, so lsof cannot list them.
+        var icmp: [ICMPActivity]
     }
 
     func run() async throws {
@@ -28,7 +30,10 @@ struct NetCommand: AsyncParsableCommand {
         var connections = try await monitor.connections()
         if listening { connections = connections.filter(\.isListening) }
         let usage = traffic ? try await monitor.traffic() : nil
-        if global.json { return try Output.json(NetOutput(connections: connections, traffic: usage)) }
+        let icmp = listening ? [] : ICMPActivity.find(
+            in: try await ProcessMonitor(environment: global.environment, runner: global.runner).sandboxProcesses()
+        )
+        if global.json { return try Output.json(NetOutput(connections: connections, traffic: usage, icmp: icmp)) }
 
         if connections.isEmpty {
             Output.line(listening ? "no listening sockets" : "no sockets")
@@ -39,6 +44,12 @@ struct NetCommand: AsyncParsableCommand {
                     Format.endpoint(c.localAddress, c.localPort, family: c.family),
                     Format.endpoint(c.remoteAddress, c.remotePort, family: c.family), c.state ?? "-",
                 ]
+            })
+        }
+        if !icmp.isEmpty {
+            Output.line()
+            Output.table(["PID", "TOOL", "TARGET", "RUNNING"], icmp.map {
+                [String($0.pid), $0.tool, $0.target ?? "-", Format.duration($0.elapsedSeconds)]
             })
         }
         if let usage {

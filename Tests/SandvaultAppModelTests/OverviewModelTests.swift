@@ -26,7 +26,7 @@ import Testing
         #expect(state(outOfSync: true) == .applyFirewall)
         #expect(state() == .ready)
         #expect(SetupStep.installHelper.screen == .settings)
-        #expect(SetupStep.enableFirewall.suggestedCommand == "svctl firewall mode proxy-only && svctl firewall apply")
+        #expect(SetupStep.enableFirewall.suggestedCommand == "svctl firewall mode watch && svctl firewall apply")
     }
 
     @Test func setupStateReadsTheDoctorChecks() {

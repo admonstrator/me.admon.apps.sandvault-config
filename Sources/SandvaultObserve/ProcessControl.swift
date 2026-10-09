@@ -68,7 +68,8 @@ public struct ProcessController: Sendable {
     }
 
     /// Everything of the sandbox user, the way sv's uninstall does it and with sv's own sudoers rules:
-    /// `launchctl bootout user/<uid>`, then `pkill -9 -u <sandbox>` for survivors.
+    /// `launchctl bootout user/<uid>`, then `pkill -9 -u <sandbox>` for survivors, then `kill -KILL` as the sandbox
+    /// user for setuid tools.
     public func terminateAll() async throws -> ControlReport {
         let before = try await monitor.sandboxProcesses().map(\.pid)
         guard !before.isEmpty else { return ControlReport(action: "terminate-all", targets: [], steps: []) }
@@ -96,6 +97,13 @@ public struct ProcessController: Sendable {
             steps.append(await step(pkill, accept: [0, 1]))
             try await Task.sleep(for: settleDelay)
         }
+        // pkill matches the effective user, so setuid tools the sandbox started (`ping`) survive it; the sandbox user
+        // can still signal them.
+        let survivors = try await monitor.sandboxProcesses().map(\.pid)
+        if !survivors.isEmpty {
+            steps.append(await step(Invocations.kill(environment, pids: survivors, force: true)))
+            try await Task.sleep(for: settleDelay)
+        }
         let remaining = try await monitor.sandboxProcesses().map(\.pid)
         return ControlReport(action: "terminate-all", targets: before, steps: steps, remaining: remaining)
     }
@@ -121,10 +129,12 @@ public struct ProcessController: Sendable {
         guard let process = all.first(where: { $0.pid == pid }) else {
             throw SandvaultError.invalidInput("no process with pid \(pid)")
         }
-        guard process.user == environment.sandvaultUser else {
-            throw SandvaultError.permissionDenied("pid \(pid) belongs to \(process.user), not \(environment.sandvaultUser)")
-        }
+        // Members include setuid tools the sandbox started (`ping` shows as root); the kernel lets the sandbox user
+        // signal them because the real user is still the sandbox user.
         guard ProcessMonitor.sandboxOnly(all, environment: environment).contains(where: { $0.pid == pid }) else {
+            guard process.user == environment.sandvaultUser else {
+                throw SandvaultError.permissionDenied("pid \(pid) belongs to \(process.user), not \(environment.sandvaultUser)")
+            }
             throw SandvaultError.permissionDenied("pid \(pid) is an inspection process of this tool")
         }
     }

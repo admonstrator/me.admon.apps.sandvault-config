@@ -36,7 +36,16 @@ public enum PFAnchorGenerator {
                 "block return log quick \(tcpUDP) from any to any \(user)",
             ])
 
-        case .open:
+        case .open, .watch:
+            if policy.mode == .watch {
+                groups.append(translation(ports))
+                groups.append(reroute(user))
+                groups.append([
+                    "# Watch: IPv6 web and DNS cannot be re-routed; refuse them so clients fall back to IPv4 through netd.",
+                    "block return out log quick inet6 proto tcp from any to ! ::1 port { 53 80 443 } \(user)",
+                    "block return out log quick inet6 proto udp from any to ! ::1 port 53 \(user)",
+                ])
+            }
             groups.append(netd(ports, user))
             groups.append(contentsOf: try exceptions(policy.portExceptions, user))
             if policy.blockLAN {
@@ -47,26 +56,13 @@ public enum PFAnchorGenerator {
             }
             groups.append(localhost(policy, state.dynamicLocalPorts, user))
             groups.append([
-                "# Everything else is allowed in open mode.",
+                "# Everything else is allowed in \(policy.mode.cliName) mode.",
                 "pass out quick \(tcpUDP) from any to any \(user) keep state",
             ])
 
         case .proxyOnly:
-            groups.append([
-                "# Translation: flows re-routed to lo0 below still carry their original destination; hand them to netd.",
-                "# Note: this also catches any local user's lo0 packets to this Mac's own non-loopback addresses on these ports.",
-                "rdr pass on lo0 inet proto tcp from any to ! 127.0.0.0/8 port 80 -> 127.0.0.1 port \(ports.transparentHTTP)",
-                "rdr pass on lo0 inet proto tcp from any to ! 127.0.0.0/8 port 443 -> 127.0.0.1 port \(ports.transparentTLS)",
-                "rdr pass on lo0 inet \(tcpUDP) from any to ! 127.0.0.0/8 port 53 -> 127.0.0.1 port \(ports.dns)",
-            ])
-            groups.append([
-                "# Re-route HTTP, HTTPS and DNS of the sandbox user to lo0 (IPv4; IPv6 is refused below and clients fall back).",
-                "pass out quick on ! lo0 route-to (lo0 127.0.0.1) inet proto tcp from any to any port { 53 80 443 } \(user) keep state",
-                "pass out quick on ! lo0 route-to (lo0 127.0.0.1) inet proto udp from any to any port 53 \(user) keep state",
-                "# A re-routed packet is evaluated again as \"out on lo0\" with its original destination: let it through.",
-                "pass out quick on lo0 inet proto tcp from any to ! 127.0.0.0/8 port { 53 80 443 } \(user) keep state",
-                "pass out quick on lo0 inet proto udp from any to ! 127.0.0.0/8 port 53 \(user) keep state",
-            ])
+            groups.append(translation(ports))
+            groups.append(reroute(user))
             groups.append(netd(ports, user))
             groups.append(contentsOf: try exceptions(policy.portExceptions, user))
             groups.append(localhost(policy, state.dynamicLocalPorts, user))
@@ -79,6 +75,27 @@ public enum PFAnchorGenerator {
     }
 
     // MARK: - Groups
+
+    static func translation(_ ports: ProxyPorts) -> [String] {
+        [
+            "# Translation: flows re-routed to lo0 below still carry their original destination; hand them to netd.",
+            "# Note: this also catches any local user's lo0 packets to this Mac's own non-loopback addresses on these ports.",
+            "rdr pass on lo0 inet proto tcp from any to ! 127.0.0.0/8 port 80 -> 127.0.0.1 port \(ports.transparentHTTP)",
+            "rdr pass on lo0 inet proto tcp from any to ! 127.0.0.0/8 port 443 -> 127.0.0.1 port \(ports.transparentTLS)",
+            "rdr pass on lo0 inet \(tcpUDP) from any to ! 127.0.0.0/8 port 53 -> 127.0.0.1 port \(ports.dns)",
+        ]
+    }
+
+    static func reroute(_ user: String) -> [String] {
+        [
+            "# Re-route HTTP, HTTPS and DNS of the sandbox user to lo0 (IPv4; IPv6 is refused below and clients fall back).",
+            "pass out quick on ! lo0 route-to (lo0 127.0.0.1) inet proto tcp from any to any port { 53 80 443 } \(user) keep state",
+            "pass out quick on ! lo0 route-to (lo0 127.0.0.1) inet proto udp from any to any port 53 \(user) keep state",
+            "# A re-routed packet is evaluated again as \"out on lo0\" with its original destination: let it through.",
+            "pass out quick on lo0 inet proto tcp from any to ! 127.0.0.0/8 port { 53 80 443 } \(user) keep state",
+            "pass out quick on lo0 inet proto udp from any to ! 127.0.0.0/8 port 53 \(user) keep state",
+        ]
+    }
 
     static func netd(_ ports: ProxyPorts, _ user: String) -> [String] {
         [
@@ -174,6 +191,7 @@ extension FirewallMode {
         switch self {
         case .off: "off"
         case .open: "open"
+        case .watch: "watch"
         case .proxyOnly: "proxy-only"
         case .blocked: "blocked"
         }

@@ -51,7 +51,8 @@ svctl status                      # sessions, processes, listening ports, firewa
 svctl helper install              # once, admin password: privileged helper + sudoers rule
 svctl netd install                # proxy, DNS and connection log as a LaunchAgent
 
-svctl firewall mode proxy-only    # all web traffic of the sandbox goes through netd
+svctl firewall mode watch         # everything allowed, every host the sandbox uses is logged
+svctl firewall mode proxy-only    # only web traffic, through netd and your domain rules
 svctl firewall apply              # shows the pf rules, then loads them
 svctl asks --follow               # answer prompts for unknown domains (the app does this too)
 

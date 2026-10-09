@@ -45,12 +45,22 @@ struct MenuBarView: View {
                     .foregroundStyle(.secondary)
             }
             Divider()
-            Picker("Firewall", selection: mode) {
-                ForEach(FirewallMode.allCases, id: \.self) { mode in
-                    Text(mode.displayName).tag(mode)
+            if model.settings.preferences.expertMode {
+                Picker("Firewall", selection: mode) {
+                    ForEach(FirewallMode.allCases, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
                 }
+                .pickerStyle(.menu)
+            } else {
+                Picker("Protection", selection: protection) {
+                    ForEach(ProtectionLevel.allCases) { level in
+                        Text(level.title).tag(Optional(level))
+                    }
+                }
+                .pickerStyle(.menu)
+                .disabled(model.firewall.isBusy)
             }
-            .pickerStyle(.menu)
             HStack {
                 Button("Hand Off a Repository…") { chooseAndHandOff() }
                 Spacer()
@@ -111,6 +121,16 @@ struct MenuBarView: View {
                     await model.firewall.prepareApply()
                 }
                 open(.firewall)
+            }
+        )
+    }
+
+    /// Choosing a level here saves and applies it at once, like on the overview.
+    private var protection: Binding<ProtectionLevel?> {
+        Binding<ProtectionLevel?>(
+            get: { model.firewall.protection },
+            set: { level in
+                if let level { Task { await model.firewall.setProtection(level) } }
             }
         )
     }

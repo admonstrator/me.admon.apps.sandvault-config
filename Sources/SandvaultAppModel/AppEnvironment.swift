@@ -157,9 +157,19 @@ public struct AppClock: Sendable {
 public struct AppPreferences: Codable, Sendable, Equatable {
     /// Seconds between process and socket snapshots while a window or the menu is open.
     public var refreshInterval: Double
+    /// Shows every screen; off, the window has only Overview, Activity, Repos & Hand-off and Settings.
+    public var expertMode: Bool
 
-    public init(refreshInterval: Double = AppModelInfo.refreshInterval) {
+    public init(refreshInterval: Double = AppModelInfo.refreshInterval, expertMode: Bool = false) {
         self.refreshInterval = refreshInterval
+        self.expertMode = expertMode
+    }
+
+    /// Missing keys keep their defaults, so preferences saved by an older version survive.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        refreshInterval = try container.decodeIfPresent(Double.self, forKey: .refreshInterval) ?? AppModelInfo.refreshInterval
+        expertMode = try container.decodeIfPresent(Bool.self, forKey: .expertMode) ?? false
     }
 
     public static let refreshRange: ClosedRange<Double> = 1...30

@@ -120,6 +120,8 @@ public struct ProcessRow: Identifiable, Sendable, Equatable {
     /// Short name (`claude`, `node`), from `CommandName.display`.
     public var name: String
     public var command: String
+    /// The effective user when it differs from the sandbox user as real user: `root` for setuid tools like `ping`.
+    public var runsAs: String?
     public var cpuPercent: Double
     public var memPercent: Double
     public var rssKiB: Int
@@ -135,6 +137,7 @@ public struct ProcessRow: Identifiable, Sendable, Equatable {
         self.depth = depth
         name = CommandName.display(process.command)
         command = process.command
+        runsAs = process.user == process.realUser ? nil : process.user
         cpuPercent = process.cpuPercent
         memPercent = process.memPercent
         rssKiB = process.rssKiB
@@ -145,6 +148,9 @@ public struct ProcessRow: Identifiable, Sendable, Equatable {
 
     /// The name indented by tree depth (two spaces per level).
     public var indentedName: String { String(repeating: "  ", count: depth) + name }
+
+    /// The indented name, plus the effective user of a setuid tool: `  ping (root)`.
+    public var label: String { runsAs.map { "\(indentedName) (\($0))" } ?? indentedName }
 }
 
 public struct SessionGroup: Identifiable, Sendable, Equatable {

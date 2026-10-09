@@ -35,12 +35,13 @@ import Testing
         try Fixture.expectGolden(try rules(Self.state(.blocked)), "pf-blocked.conf")
         try Fixture.expectGolden(try rules(Self.state(.open)), "pf-open.conf")
         try Fixture.expectGolden(try rules(Self.state(.open, lan: false, localhost: .allowAll, exceptions: Self.exceptions)), "pf-open-nolan-allowall-exceptions.conf")
+        try Fixture.expectGolden(try rules(Self.state(.watch, exceptions: Self.exceptions)), "pf-watch.conf")
         try Fixture.expectGolden(try rules(Self.state(.proxyOnly, exceptions: Self.exceptions)), "pf-proxy-only.conf")
         try Fixture.expectGolden(try rules(Self.state(.proxyOnly, localhost: .blockAll)), "pf-proxy-only-blockall.conf")
         try Fixture.expectGolden(try rules(Self.state(.proxyOnly, localhost: .allowAll, ports: [])), "pf-proxy-only-allowall.conf")
     }
 
-    @Test(arguments: [FirewallMode.open, .proxyOnly, .blocked])
+    @Test(arguments: [FirewallMode.open, .watch, .proxyOnly, .blocked])
     func everyRuleNamesTheUIDAndNeverTheAccount(_ mode: FirewallMode) throws {
         for policy in LocalhostPolicy.allCases {
             let text = try rules(Self.state(mode, localhost: policy, exceptions: Self.exceptions))
@@ -70,6 +71,21 @@ import Testing
             let firstBlock = try #require(lines.firstIndex { $0.hasPrefix("block") })
             #expect(reroute < rerouted && rerouted < firstBlock)
         }
+    }
+
+    @Test func watchReroutesWebAndDNSAndPassesTheRest() throws {
+        let lines = try rules(Self.state(.watch, exceptions: Self.exceptions))
+            .split(separator: "\n").filter { !$0.hasPrefix("#") }.map(String.init)
+        let firstFilter = try #require(lines.firstIndex { !$0.hasPrefix("rdr ") })
+        #expect(lines[..<firstFilter].count == 3)
+        #expect(lines.last == "pass out quick proto { tcp udp } from any to any user 601 keep state")
+        // Web and DNS are re-routed before the LAN guard, so netd sees (and may refuse) LAN web hosts by name.
+        let reroute = try #require(lines.firstIndex { $0.contains("route-to") })
+        let rerouted = try #require(lines.firstIndex { $0.hasPrefix("pass out quick on lo0 inet proto tcp from any to ! 127.0.0.0/8") })
+        let lanGuard = try #require(lines.firstIndex { $0.contains("10.0.0.0/8") })
+        #expect(reroute < rerouted && rerouted < lanGuard)
+        // IPv6 web and DNS cannot be re-routed: refused, so clients fall back to IPv4.
+        #expect(lines.contains("block return out log quick inet6 proto tcp from any to ! ::1 port { 53 80 443 } user 601"))
     }
 
     @Test func openModeExceptionsPrecedeTheLANGuard() throws {

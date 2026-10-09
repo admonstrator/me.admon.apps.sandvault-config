@@ -157,7 +157,7 @@ public enum SetupStep: Sendable, Equatable {
         case .installHelper: "Rules and the firewall take effect through a root helper. Installing it asks for your administrator password once."
         case .endPanic: "The sandbox user has no network. Choose a firewall mode and apply it, or turn the firewall off."
         case .startNetd: "netd runs the proxy, DNS forwarder, connection log and the asks. Install its LaunchAgent in Settings."
-        case .enableFirewall: "The sandbox reaches the network directly. Proxy only sends web and DNS through your domain rules."
+        case .enableFirewall: "The sandbox reaches the network directly and only addresses are visible. Watch lists every host it contacts."
         case .applyFirewall: "The loaded pf anchor differs from the configured mode."
         case .ready: "sv, the helper, netd and the firewall are in place."
         }
@@ -169,7 +169,7 @@ public enum SetupStep: Sendable, Equatable {
         case .installHelper: "svctl helper install"
         case .endPanic: "svctl firewall off"
         case .startNetd: "svctl netd install"
-        case .enableFirewall: "svctl firewall mode proxy-only && svctl firewall apply"
+        case .enableFirewall: "svctl firewall mode watch && svctl firewall apply"
         case .applyFirewall: "svctl firewall apply"
         case .checking, .ready: nil
         }
