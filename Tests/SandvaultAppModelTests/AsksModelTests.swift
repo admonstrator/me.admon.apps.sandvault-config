@@ -243,6 +243,8 @@ enum AskFixtures {
         #expect(AskFormat.shortOwner("Hetzner Online GmbH") == "Hetzner Online")
         #expect(AskFormat.hasDomain("registry.npmjs.org"))
         #expect(!AskFormat.hasDomain("185.142.236.41"))
+        #expect(AskFormat.subtitle(host: "185.142.236.41", details: AskDetails(address: "185.142.236.41", reverseName: "")) == nil)
+        #expect(AskFormat.subtitle(host: "a.example", details: AskDetails(address: "192.0.2.1", reverseName: "")) == "192.0.2.1")
         #expect(!AskFormat.hasDomain("localhost"))
         #expect(AskFormat.scopeLabel(.host, host: "db.internal.example", port: 5432) == "This host, any port")
         #expect(AskFormat.scopeLabel(.hostAndPort, host: "db.internal.example", port: 5432) == "This host and port")

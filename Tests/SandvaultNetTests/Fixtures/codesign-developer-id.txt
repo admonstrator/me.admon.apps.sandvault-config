@@ -1,0 +1,14 @@
+Executable=/Applications/Example.app/Contents/MacOS/example
+Identifier=com.example.tool
+Format=app bundle with Mach-O universal (x86_64 arm64)
+CodeDirectory v=20500 size=169583 flags=0x10000(runtime) hashes=5288+7 location=embedded
+Signature size=9045
+Authority=Developer ID Application: Example Developer (A1B2C3D4E5)
+Authority=Developer ID Certification Authority
+Authority=Apple Root CA
+Timestamp=2 Oct 2026 at 19:40:01
+Info.plist entries=34
+TeamIdentifier=A1B2C3D4E5
+Runtime Version=15.0.0
+Sealed Resources version=2 rules=13 files=411
+Internal requirements count=1 size=216

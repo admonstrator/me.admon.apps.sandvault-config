@@ -23,6 +23,17 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   Zahlenkacheln, Startzeilen für Standard-Agent, Shell und Hand-off, blockierten Hosts mit „Allow“ beim Überfahren
   und „Emergency Stop…“ mit Bestätigung in der Fläche. Im Expert mode steht zusätzlich die Firewall-Modus-Auswahl.
   Das Menüleisten-Symbol ist jetzt die Tresortür, mit der Zahl wartender Anfragen daneben.
+- **Verbindungsanfragen mit Details:** Das Anfragefenster zeigt sechs Kacheln (Name, Port, Netzwerk,
+  Verschlüsselung, Verlauf, Programm), eine Einschätzung (normal, ungewöhnlich, verdächtig) mit Begründung je
+  Kachel und die Restzeit als Ring. Eine Knopfzeile: links „Merken“ (Nur dieses Mal, Immer für Adresse und Port, …),
+  rechts Deny und Allow. Bei verdächtigen Anfragen ist Deny der Standardknopf. Jedes Detail lässt sich unter
+  Einstellungen > Connection requests abschalten, dort stehen auch die markierten Länder (anfangs leer).
+- **Jeder TCP-Port in Ask:** Im Modus Ask laufen jetzt alle TCP-Verbindungen der Sandbox über netd, nicht nur Web und
+  DNS. Regeln können einen Port tragen (`svctl proxy allow host --port 22`), Anfragen auf anderen Ports gelten je
+  Host und Port.
+- **Netzwerkdaten:** Wem eine Adresse gehört, kommt aus einer lokalen Tabelle (iptoasn, gemeinfrei), die
+  `svctl net database update` oder die Einstellungen herunterladen, wahlweise online per RDAP. Reverse-DNS fragt den
+  eingestellten DNS-Server.
 - **Aktivität:** eine Liste mit Hosts (Allow, Block), direkten Verbindungen ohne Hostnamen und laufenden
   ping/traceroute.
 
@@ -61,6 +72,11 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   - `--last` und `--follow` entfallen, ebenso „Read Last 10 Minutes“ in der App.
   - Der geführte Gerätetest scheiterte vorher an `--follow --suggest`, das die CLI ablehnte.
 
+### Bekannte Grenzen
+- Private Netze (LAN, VPN, Tailscale) laufen weiterhin nicht über netd und brauchen eine Port-Ausnahme; pf kann an
+  der Stelle nicht nach Benutzer unterscheiden.
+- Die lokale Netzwerktabelle kennt nur IPv4.
+- Noch nicht auf dem Mac geprüft: die neuen pf-Regeln, Programmprüfung per `codesign`, echte RDAP-Antworten.
 ### Tests
 - Fixtures für dscl, dseditgroup, `ls -led`, sudoers und das sv-Profil durch echte Ausgaben ersetzt; neue echte
   Fixtures für ps ohne Session, lsof ohne Sockets, nettop ohne Zeilen, das Unified Log und `launchctl print` ohne

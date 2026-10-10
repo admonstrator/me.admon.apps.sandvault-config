@@ -70,6 +70,51 @@ struct NetAsksCommand: AsyncParsableCommand {
         if global.json { return try Output.json(pending) }
         guard !pending.isEmpty else { return Output.line("no pending asks") }
         Output.table(["ID", "HOST", "PORT", "KIND", "PROCESS", "EXPIRES"], pending.map(Self.row))
+        for ask in pending where ask.details != nil {
+            Output.line()
+            Output.line(Self.row(ask)[0])
+            for line in Self.detailLines(ask) { Output.line(line) }
+        }
+    }
+
+    /// The details netd collected, one per line, then the assessment and its signals.
+    static func detailLines(_ ask: AskRequest) -> [String] {
+        guard let details = ask.details else { return [] }
+        var lines: [String] = []
+        if let address = details.address { lines.append("address   \(address)") }
+        if let name = details.name {
+            lines.append("name      " + (name.name.map { "\($0) (from \(name.source.rawValue))" } ?? "none, IP address only"))
+        }
+        if let reverse = details.reverseName { lines.append("reverse   " + (reverse.isEmpty ? "no PTR name" : reverse)) }
+        if let service = details.service { lines.append("port      \(service.port) \(service.name ?? "(not in any list)")") }
+        if let network = details.network {
+            let parts = [network.owner, network.asn.map { "AS\($0)" }, network.country, network.kind.rawValue, network.source.rawValue]
+            lines.append("network   " + parts.compactMap { $0 }.joined(separator: ", "))
+        }
+        if let encryption = details.encryption { lines.append("protocol  \(encryption)") }
+        if let history = details.history {
+            let seen = history.lastSeen.map { ", last \(NetCLI.timestamp($0))" } ?? ""
+            lines.append("history   \(history.allowed) allowed, \(history.denied) denied\(seen)")
+        }
+        if let program = details.program {
+            let signature: String
+            switch program.signature {
+            case .apple: signature = "Apple"
+            case .developer(let team): signature = "developer" + (team.map { " \($0)" } ?? "")
+            case .adHoc: signature = "ad hoc"
+            case .unsigned: signature = "unsigned"
+            case .unknown: signature = "signature unknown"
+            }
+            lines.append("program   \(program.path ?? "?") (\(signature)\(program.inTemporaryFolder ? ", temporary folder" : ""))")
+        }
+        if let assessment = details.assessment {
+            lines.append("verdict   \(assessment.level.rawValue), \(assessment.score) points")
+            for signal in assessment.signals {
+                let points = signal.points > 0 ? "+\(signal.points)" : "\(signal.points)"
+                lines.append("  \(points.padding(toLength: 3, withPad: " ", startingAt: 0)) \(signal.text)")
+            }
+        }
+        return lines.map { "  " + $0 }
     }
 
     static func row(_ ask: AskRequest) -> [String] {
@@ -83,6 +128,7 @@ struct NetAsksCommand: AsyncParsableCommand {
             if global.json { return FileHandle.standardOutput.write(try ControlCodec.encode(ask)) }
             let row = Self.row(ask)
             Output.line("ASK \(row[0])  \(row[1]):\(row[2])  \(row[3])  \(row[4])  (answer: svctl asks --answer \(row[0]) allow-once)")
+            for line in Self.detailLines(ask) { Output.line(line) }
         case .askResolved(let id, let decision):
             if global.json { return FileHandle.standardOutput.write(try ControlCodec.encode(event)) }
             Output.line("RESOLVED \(NetCLI.shortID(id))  \(decision.rawValue)")

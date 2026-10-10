@@ -306,12 +306,15 @@ public enum AskFormat {
         endpoint(ask.host, ask.port)
     }
 
-    /// The reverse name and, when the destination is a name, the address it resolved to.
+    /// The reverse name and, when the destination is a name, the address it resolved to. An empty reverse name
+    /// (asked, nothing found) shows nothing here; its signal says so.
     public static func subtitle(host: String, details: AskDetails) -> String? {
         let normalized = HostName.normalize(host)
         var parts: [String] = []
         if let address = details.address, HostName.normalize(address) != normalized { parts.append(address) }
-        if let reverse = details.reverseName, HostName.normalize(reverse) != normalized { parts.append(reverse) }
+        if let reverse = details.reverseName, !details.reverseLookupFoundNothing, HostName.normalize(reverse) != normalized {
+            parts.append(reverse)
+        }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 

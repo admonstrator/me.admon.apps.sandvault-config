@@ -1,0 +1,22 @@
+{
+  "handle": "185.142.236.0 - 185.142.236.255",
+  "name": "VDSINA-NET",
+  "country": "ru",
+  "parentHandle": "185.142.236.0 - 185.142.239.255",
+  "startAddress": "185.142.236.0",
+  "endAddress": "185.142.236.255",
+  "ipVersion": "v4",
+  "type": "ASSIGNED PA",
+  "entities": [
+    {
+      "handle": "VDS-RIPE",
+      "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "VDSINA Hosting Network Operations"], ["kind", {}, "text", "group"]]],
+      "roles": ["administrative", "technical"],
+      "objectClassName": "entity"
+    }
+  ],
+  "status": ["active"],
+  "objectClassName": "ip network",
+  "rdapConformance": ["cidr0", "rdap_level_0", "nro_rdap_profile_0", "redacted"],
+  "port43": "whois.ripe.net"
+}
