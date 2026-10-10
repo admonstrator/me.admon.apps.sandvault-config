@@ -1,26 +1,39 @@
 import Foundation
 import Observation
 import SandvaultCore
+import SandvaultNet
 import SandvaultObserve
 
-/// Activity screen: what the sandbox talks to, in one list. Host names come from netd (web and DNS in Watch, Ask
-/// and Proxy only); direct connections from lsof show addresses only; ICMP tools come from the process list,
-/// because no socket of the sandbox user carries them.
+/// Activity screen. Hosts: what the sandbox talks to, in one list. Host names come from netd (web and DNS in Watch,
+/// Ask and Proxy only); direct connections from lsof show addresses only; ICMP tools come from the process list,
+/// because no socket of the sandbox user carries them. Web traffic: one row per request netd saw (D42).
+/// Files & programs has its own model (`FileActivityModel`).
 @MainActor @Observable
 public final class ActivityModel {
+    public var page: ActivityPage = .hosts
     public var filter = ""
     public var message: UserMessage?
+
+    /// Web traffic: matches host and path.
+    public var webFilter = ""
+    public var selectedRequestID: String?
+    /// Bodies fetched for the detail pane, by `StoredContent.id`.
+    public private(set) var contents: [UUID: ContentLoad] = [:]
+    @ObservationIgnored private var contentOrder: [UUID] = []
+    public static let contentCacheLimit = 40
 
     @ObservationIgnored private let network: NetworkModel
     @ObservationIgnored private let processes: ProcessesModel
     @ObservationIgnored private let netd: NetdLink
     @ObservationIgnored private let editor: ConfigEditor
+    @ObservationIgnored private let clock: AppClock
 
-    public init(network: NetworkModel, processes: ProcessesModel, netd: NetdLink, editor: ConfigEditor) {
+    public init(network: NetworkModel, processes: ProcessesModel, netd: NetdLink, editor: ConfigEditor, clock: AppClock = .live) {
         self.network = network
         self.processes = processes
         self.netd = netd
         self.editor = editor
+        self.clock = clock
     }
 
     /// One lsof and one nettop sample; polled while the screen is visible.
@@ -81,6 +94,153 @@ public final class ActivityModel {
     private func takeMessage() {
         message = network.message
         network.message = nil
+    }
+
+    // MARK: Web traffic (D42, D43)
+
+    public var webRows: [WebRequestRow] {
+        WebRequestRow.rows(netd.records, filter: webFilter)
+    }
+
+    public var selectedRequest: WebRequestRow? {
+        guard let id = selectedRequestID else { return nil }
+        return WebRequestRow.rows(netd.records).first { $0.id == id }
+    }
+
+    /// `42 requests · 3 blocked · 5 encrypted`.
+    public var webSummary: String {
+        let rows = webRows
+        var parts = [Format.count(rows.count, "request")]
+        let blocked = rows.filter(\.blocked).count
+        if blocked > 0 { parts.append("\(blocked) blocked") }
+        let encrypted = rows.filter { $0.visibility == .encrypted }.count
+        if encrypted > 0 { parts.append("\(encrypted) encrypted") }
+        return parts.joined(separator: " · ")
+    }
+
+    public var inspectionEnabled: Bool { editor.config.network.inspection.enabled }
+
+    /// Why the list may be short: netd not carrying the web, or requests not recorded.
+    public var webHint: String? {
+        let network = editor.config.network
+        switch network.mode {
+        case .off, .open: return "Web traffic is visible only when it goes through netd. Choose Watch on the Overview."
+        case .blocked: return "The sandbox has no network."
+        case .watch, .proxyOnly: break
+        }
+        if !netd.isConnected { return "sandvault-netd is not running: nothing is recorded." }
+        if !network.recording.requests { return "Recording requests is off in Settings > Recording; only connections are listed." }
+        return nil
+    }
+
+    /// Shows only the requests to `host`.
+    public func showAll(from host: String) {
+        webFilter = host
+        selectedRequestID = nil
+    }
+
+    public func content(_ meta: StoredContent) -> ContentLoad? {
+        contents[meta.id]
+    }
+
+    /// Fetches a body from netd once; a failed fetch is tried again on the next call.
+    public func loadContent(_ meta: StoredContent) async {
+        switch contents[meta.id] {
+        case .loading?, .text?, .binary?: return
+        case .failed?, nil: break
+        }
+        store(.loading, for: meta.id)
+        do {
+            let (stored, data) = try await netd.content(id: meta.id)
+            store(ContentLoad.make(stored, data), for: meta.id)
+        } catch {
+            store(.failed(Self.contentError(error)), for: meta.id)
+        }
+    }
+
+    static func contentError(_ error: Error) -> String {
+        switch error as? SandvaultError {
+        case .notImplemented?: return "This netd does not keep contents yet."
+        case .notInstalled?: return "sandvault-netd is not running."
+        default: return UserMessage.describe(error)
+        }
+    }
+
+    private func store(_ load: ContentLoad, for id: UUID) {
+        if contents[id] == nil { contentOrder.append(id) }
+        contents[id] = load
+        while contentOrder.count > Self.contentCacheLimit {
+            contents[contentOrder.removeFirst()] = nil
+        }
+    }
+
+    /// Copy as curl, with the request body when it was kept as text and is loaded.
+    public func curl(_ row: WebRequestRow) -> String? {
+        var body: String?
+        if let meta = row.summary?.requestContent, case .text(_, let text)? = contents[meta.id] { body = text }
+        return row.curl(body: body)
+    }
+
+    /// `Blocked by your rule Deny example.com. Nothing left the Mac.`
+    public func blockedNote(_ row: WebRequestRow) -> String? {
+        guard row.blocked else { return nil }
+        switch row.decision {
+        case .askedDenied: return "You denied it when asked. Nothing left the Mac."
+        case .timedOut: return "Nobody answered the request in time. Nothing left the Mac."
+        case .denied, .allowed, .askedAllowed: break
+        }
+        if let id = row.ruleID, let rule = editor.config.network.domainRules.first(where: { $0.id == id }) {
+            return "Blocked by your rule \(rule.action.displayName) \(rule.displayPattern). Nothing left the Mac."
+        }
+        return "Blocked by the default for unknown hosts. Nothing left the Mac."
+    }
+
+    /// For an encrypted row: what netd saw and how to see more.
+    public func encryptedNote(_ row: WebRequestRow) -> String {
+        let seen = "This connection was encrypted end to end. Sandvault saw the name \(row.host), how much went back and forth and how long it took."
+        if !inspectionEnabled { return seen + " Turn on Look inside HTTPS to see the requests." }
+        if canInspect(row.host) { return seen + " Look inside this host to see its requests from the next connection on." }
+        return seen + " Look inside HTTPS is on, but no rule for this host has Inspect (Firewall & Proxy)."
+    }
+
+    /// Inspection is on and a rule for `host` could get Inspect: an existing rule, or in Watch a new allow rule
+    /// (Watch allows everything anyway, so the new rule changes nothing but the inspection).
+    public func canInspect(_ host: String) -> Bool {
+        guard inspectionEnabled else { return false }
+        if let rule = network.rule(for: host), rule.pattern != "*" { return !rule.inspect }
+        return editor.config.network.mode == .watch
+    }
+
+    /// Turns on Inspect for the rule that decides `host` (or a new exact allow rule in Watch).
+    public func inspect(_ host: String) async {
+        guard canInspect(host) else { return }
+        let existing = network.rule(for: host).flatMap { $0.pattern == "*" ? nil : $0 }
+        let pattern = existing?.pattern ?? RegistrableDomain.rulePattern(for: host, scope: .host)
+        let action = existing?.action ?? .allow
+        let now = clock.now()
+        do {
+            let edit = try await editor.edit { config in
+                try config.network.upsertDomainRule(pattern: pattern, action: action, inspect: true, now: now, port: existing?.port)
+            }
+            message = .success("Looking inside \(edit.value.pattern)", detail: netdReloadNote(edit.netdReloaded))
+        } catch {
+            message = UserMessage(error: error, action: "Inspect \(host)")
+        }
+    }
+}
+
+/// The three views of the Activity page.
+public enum ActivityPage: String, CaseIterable, Identifiable, Sendable {
+    case hosts, web, files
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .hosts: "Hosts"
+        case .web: "Web traffic"
+        case .files: "Files & programs"
+        }
     }
 }
 

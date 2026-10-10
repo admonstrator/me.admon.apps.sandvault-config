@@ -184,6 +184,11 @@ final class FakeNetdClient: NetdClient, @unchecked Sendable {
     let closed = Locked(false)
     let pending: [AskRequest]
     let recentRecords: [ConnectionRecord]
+    /// Bodies `content(id:)` serves; a missing id fails like netd does.
+    let stored = Locked<[UUID: (StoredContent, Data)]>([:])
+    let contentRequests = Locked<[UUID]>([])
+    let clears = Locked(0)
+    let storedBytes = Locked<Int64?>(nil)
 
     init(pending: [AskRequest] = [], recent: [ConnectionRecord] = [], reloads: Locked<Int> = Locked(0)) {
         (events, sink) = AsyncStream.makeStream(of: ControlEvent.self)
@@ -192,7 +197,22 @@ final class FakeNetdClient: NetdClient, @unchecked Sendable {
         self.reloads = reloads
     }
 
-    func status() async throws -> NetdStatus { NetdStatus(startedAt: Date(timeIntervalSince1970: 0), ports: ProxyPorts(), mode: .proxyOnly) }
+    func status() async throws -> NetdStatus {
+        NetdStatus(startedAt: Date(timeIntervalSince1970: 0), ports: ProxyPorts(), mode: .proxyOnly, storedContentBytes: storedBytes.get())
+    }
+
+    func content(id: UUID) async throws -> (StoredContent, Data) {
+        contentRequests.mutate { $0.append(id) }
+        guard let entry = stored.get()[id] else { throw SandvaultError.commandFailed("netd", 1, "no stored content \(id)") }
+        return entry
+    }
+
+    func clearContent() async throws {
+        clears.mutate { $0 += 1 }
+        stored.set([:])
+        storedBytes.set(0)
+    }
+
     func subscribe(_ topics: [ControlTopic]) async throws { subscriptions.mutate { $0.append(topics) } }
     func answer(_ answer: AskAnswer) async throws { answers.mutate { $0.append(answer) } }
     func pendingAsks() async throws -> [AskRequest] { pending }
@@ -381,6 +401,37 @@ final class FakeNetworkDatabase: NetworkDatabaseService, @unchecked Sendable {
     }
 }
 
+/// The files-and-programs recorder: `stream` hands out a continuation per `record` call; stored events and the
+/// storage size are set by the test.
+final class FakeActivityRecorder: ActivityRecording, @unchecked Sendable {
+    let continuations = Locked<[AsyncThrowingStream<FileActivityEvent, Error>.Continuation]>([])
+    let settingsSeen = Locked<[ActivityRecordingSettings]>([])
+    let storedEvents = Locked<[FileActivityEvent]>([])
+    let bytes = Locked<Int64>(0)
+    let clears = Locked(0)
+    let terminated = Locked(0)
+
+    func record(settings: ActivityRecordingSettings) -> AsyncThrowingStream<FileActivityEvent, Error> {
+        let (stream, continuation) = AsyncThrowingStream.makeStream(of: FileActivityEvent.self)
+        continuation.onTermination = { [terminated] _ in terminated.mutate { $0 += 1 } }
+        settingsSeen.mutate { $0.append(settings) }
+        continuations.mutate { $0.append(continuation) }
+        return stream
+    }
+
+    func stored(since: Date?, retentionDays: Int) async throws -> [FileActivityEvent] { storedEvents.get() }
+
+    func clear() async throws {
+        clears.mutate { $0 += 1 }
+        storedEvents.set([])
+        bytes.set(0)
+    }
+
+    func storageBytes() async -> Int64 { bytes.get() }
+
+    var latest: AsyncThrowingStream<FileActivityEvent, Error>.Continuation? { continuations.get().last }
+}
+
 final class MemoryPreferences: PreferencesStore, @unchecked Sendable {
     let stored = Locked(AppPreferences())
     func load() -> AppPreferences { stored.get() }
@@ -406,6 +457,7 @@ struct TestWorld {
     let sandbox = FakeSandbox()
     let preferences = MemoryPreferences()
     let networkDatabase = FakeNetworkDatabase()
+    let activity = FakeActivityRecorder()
     var checks: [Check] = []
 
     init(checks: [Check] = []) {
@@ -428,7 +480,7 @@ struct TestWorld {
             sandboxUID: FakeUID(), localPorts: FakePorts(), helperSetup: helperSetup,
             netd: netd, netdAgent: agent, ca: ca,
             handoff: workflow, repos: workflow, tools: workflow, migration: workflow, keys: workflow, sandbox: sandbox,
-            networkDatabase: networkDatabase
+            networkDatabase: networkDatabase, activity: activity
         )
     }
 

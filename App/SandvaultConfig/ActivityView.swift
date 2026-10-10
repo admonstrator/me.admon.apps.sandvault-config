@@ -1,8 +1,41 @@
 import SandvaultAppModel
 import SwiftUI
 
-/// What the sandbox talks to: host names from netd, direct connections, pings.
+/// Activity: Hosts, Web traffic and Files & programs, switched in the toolbar.
 struct ActivityView: View {
+    let model: AppModel
+    @Bindable var activity: ActivityModel
+
+    init(model: AppModel) {
+        self.model = model
+        _activity = Bindable(model.activity)
+    }
+
+    var body: some View {
+        Group {
+            switch activity.page {
+            case .hosts: HostsView(activity: activity)
+            case .web: WebTrafficView(activity: activity) { model.showRecordingSettings() }
+            case .files: FileActivityView(files: model.files) { await model.installHelperForRecording() }
+            }
+        }
+        .navigationTitle(Screen.activity.title)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("View", selection: $activity.page) {
+                    ForEach(ActivityPage.allCases) { page in
+                        Text(page.title).tag(page)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+        }
+    }
+}
+
+/// What the sandbox talks to: host names from netd, direct connections, pings.
+struct HostsView: View {
     @Bindable var activity: ActivityModel
 
     var body: some View {
@@ -30,7 +63,6 @@ struct ActivityView: View {
                 }
             }
         }
-        .navigationTitle(Screen.activity.title)
         .searchable(text: $activity.filter, prompt: "Filter")
     }
 }

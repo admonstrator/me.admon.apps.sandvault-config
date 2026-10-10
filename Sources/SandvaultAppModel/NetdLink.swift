@@ -24,7 +24,10 @@ public final class NetdLink {
     public private(set) var connectCount = 0
 
     public static let topics: [ControlTopic] = [.status, .connections, .asks]
-    public static let recordLimit = 1000
+    /// Records kept for Activity; Web traffic lists one row per request, so it holds more than netd's ring.
+    public static let recordLimit = 3000
+    /// Memory bound besides the count: request summaries over all kept records.
+    public static let summaryLimit = 20_000
 
     @ObservationIgnored private let connector: NetdConnector
     @ObservationIgnored private let clock: AppClock
@@ -77,6 +80,24 @@ public final class NetdLink {
         pendingAsks.removeAll { $0.id == answer.id }
     }
 
+    /// A body netd kept (D43).
+    public func content(id: UUID) async throws -> (StoredContent, Data) {
+        guard let client else { throw SandvaultError.notInstalled("sandvault-netd is not connected") }
+        return try await client.content(id: id)
+    }
+
+    /// Deletes every body netd kept, then asks for the new status (its `storedContentBytes`).
+    public func clearContent() async throws {
+        guard let client else { throw SandvaultError.notInstalled("sandvault-netd is not connected") }
+        try await client.clearContent()
+        await refreshStatus()
+    }
+
+    public func refreshStatus() async {
+        guard let client, let status = try? await client.status() else { return }
+        self.status = status
+    }
+
     /// Every state change happens on the main actor right after a cancellation check, so a run that `stop()`
     /// cancelled never overwrites the state of the run that replaced it.
     func run() async {
@@ -98,7 +119,7 @@ public final class NetdLink {
                 try Task.checkCancellation()
                 self.status = status
                 pendingAsks = asks
-                records = Array(recent.suffix(Self.recordLimit))
+                records = Self.trimmed(Array(recent.suffix(Self.recordLimit)))
                 state = .connected
                 connectCount += 1
                 backoff.reset()
@@ -127,7 +148,7 @@ public final class NetdLink {
             self.status = status
         case .connection(let record):
             records.append(record)
-            if records.count > Self.recordLimit { records.removeFirst(records.count - Self.recordLimit) }
+            records = Self.trimmed(records)
         case .ask(let ask):
             if !pendingAsks.contains(where: { $0.id == ask.id }) { pendingAsks.append(ask) }
         case .askResolved(let id, _):
@@ -135,6 +156,19 @@ public final class NetdLink {
         case .hello, .recent, .pending, .content, .ack, .error:
             break
         }
+    }
+}
+
+extension NetdLink {
+    /// The newest records within `recordLimit` and `summaryLimit`.
+    static func trimmed(_ records: [ConnectionRecord]) -> [ConnectionRecord] {
+        var drop = max(0, records.count - recordLimit)
+        var summaries = records[drop...].reduce(0) { $0 + $1.http.count }
+        while summaries > summaryLimit, drop < records.count - 1 {
+            summaries -= records[drop].http.count
+            drop += 1
+        }
+        return drop == 0 ? records : Array(records[drop...])
     }
 }
 

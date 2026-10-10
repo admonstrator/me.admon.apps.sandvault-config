@@ -57,7 +57,7 @@ struct ScreenView: View {
         switch model.selection {
         case .overview: OverviewView(model: model)
         case .sandbox: SandboxView(model: model)
-        case .activity: ActivityView(activity: model.activity)
+        case .activity: ActivityView(model: model)
         case .processes: ProcessesView(processes: model.processes)
         case .network: NetworkView(network: model.network, netd: model.netd)
         case .firewall: FirewallView(firewall: model.firewall)
@@ -65,7 +65,7 @@ struct ScreenView: View {
         case .tools: ToolsView(tools: model.tools)
         case .handoff: HandoffView(model: model)
         case .migration: MigrationView(migration: model.migration, keys: model.keys)
-        case .settings: SettingsView(settings: model.settings, netd: model.netd) { on in model.setExpertMode(on) }
+        case .settings: SettingsView(settings: model.settings, netd: model.netd, recording: model.recording) { on in model.setExpertMode(on) }
         }
     }
 }
