@@ -198,6 +198,7 @@ extension ConnectionKind {
         case .transparentHTTP: "http"
         case .transparentTLS: "tls"
         case .dns: "dns"
+        case .transparentTCP: "tcp"
         }
     }
 }

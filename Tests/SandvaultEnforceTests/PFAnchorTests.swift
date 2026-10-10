@@ -13,11 +13,11 @@ import Testing
 
     static func state(
         _ mode: FirewallMode, lan: Bool = true, localhost: LocalhostPolicy = .sandboxAndHelpers,
-        exceptions: [PortException] = [], ports: [UInt16] = [9222, 3000, 18080, 3000]
+        exceptions: [PortException] = [], ports: [UInt16] = [9222, 3000, 18080, 3000], routeAllTCP: Bool = false
     ) -> AppliedState {
         AppliedState(
             sandbox: SandboxSettings(),
-            network: NetworkPolicy(mode: mode, portExceptions: exceptions, blockLAN: lan, localhost: localhost),
+            network: NetworkPolicy(mode: mode, portExceptions: exceptions, blockLAN: lan, localhost: localhost, routeAllTCP: routeAllTCP),
             dynamicLocalPorts: ports,
             generatedAt: Date(timeIntervalSince1970: 0)
         )
@@ -39,18 +39,66 @@ import Testing
         try Fixture.expectGolden(try rules(Self.state(.proxyOnly, exceptions: Self.exceptions)), "pf-proxy-only.conf")
         try Fixture.expectGolden(try rules(Self.state(.proxyOnly, localhost: .blockAll)), "pf-proxy-only-blockall.conf")
         try Fixture.expectGolden(try rules(Self.state(.proxyOnly, localhost: .allowAll, ports: [])), "pf-proxy-only-allowall.conf")
+        try Fixture.expectGolden(try rules(Self.state(.proxyOnly, exceptions: Self.exceptions, routeAllTCP: true)), "pf-proxy-only-route-all-tcp.conf")
+        try Fixture.expectGolden(try rules(Self.state(.proxyOnly, localhost: .allowAll, ports: [], routeAllTCP: true)), "pf-proxy-only-allowall-route-all-tcp.conf")
     }
 
     @Test(arguments: [FirewallMode.open, .watch, .proxyOnly, .blocked])
     func everyRuleNamesTheUIDAndNeverTheAccount(_ mode: FirewallMode) throws {
         for policy in LocalhostPolicy.allCases {
-            let text = try rules(Self.state(mode, localhost: policy, exceptions: Self.exceptions))
-            let ruleLines = text.split(separator: "\n").filter { !$0.hasPrefix("#") }
-            for line in ruleLines where !line.hasPrefix("rdr ") {
-                #expect(line.hasSuffix("user 601") || line.hasSuffix("user 601 keep state"), "\(line)")
+            for routeAll in [false, true] {
+                let text = try rules(Self.state(mode, localhost: policy, exceptions: Self.exceptions, routeAllTCP: routeAll))
+                let ruleLines = text.split(separator: "\n").filter { !$0.hasPrefix("#") }
+                for line in ruleLines where !line.hasPrefix("rdr ") && !line.hasPrefix("no rdr ") {
+                    #expect(line.hasSuffix("user 601") || line.hasSuffix("user 601 keep state"), "\(line)")
+                }
+                #expect(!text.contains("user sandvault") && !text.contains("alice"))
             }
-            #expect(!text.contains("user sandvault") && !text.contains("alice"))
         }
+    }
+
+    @Test(arguments: [FirewallMode.open, .watch, .blocked])
+    func routeAllTCPChangesOnlyProxyOnly(_ mode: FirewallMode) throws {
+        for policy in LocalhostPolicy.allCases {
+            let off = try rules(Self.state(mode, localhost: policy, exceptions: Self.exceptions, routeAllTCP: false))
+            let on = try rules(Self.state(mode, localhost: policy, exceptions: Self.exceptions, routeAllTCP: true))
+            #expect(off == on)
+        }
+    }
+
+    @Test func routeAllTCPOrder() throws {
+        let direct = "{ 127.0.0.0/8 0.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10 224.0.0.0/4 }"
+        for policy in LocalhostPolicy.allCases {
+            let lines = try rules(Self.state(.proxyOnly, localhost: policy, exceptions: Self.exceptions, routeAllTCP: true))
+                .split(separator: "\n").filter { !$0.hasPrefix("#") }.map(String.init)
+            // Translation: web and DNS first (pf takes the first match), then the exclusions, then the catch-all.
+            let translations = lines.prefix { $0.hasPrefix("rdr ") || $0.hasPrefix("no rdr ") }
+            #expect(translations.count == 5)
+            #expect(translations[3] == "no rdr on lo0 inet proto tcp from any to \(direct)")
+            #expect(translations[4] == "rdr pass on lo0 inet proto tcp from any to any -> 127.0.0.1 port 18444")
+            #expect(lines[translations.count...].allSatisfy { !$0.contains("rdr ") })
+
+            let exception = try #require(lines.firstIndex { $0.contains("140.82.112.0/20 port 22") })
+            let localhost = try #require(lines.firstIndex { $0.contains("to { 127.0.0.0/8 ::1 }") && !$0.hasPrefix("pass in") })
+            let privateBlock = try #require(lines.firstIndex { $0 == "block return out log quick inet proto tcp from any to \(direct) user 601" })
+            let reroute = try #require(lines.firstIndex { $0 == "pass out quick on ! lo0 route-to (lo0 127.0.0.1) inet proto tcp from any to any user 601 keep state" })
+            let rerouted = try #require(lines.firstIndex { $0 == "pass out quick on lo0 inet proto tcp from any to ! 127.0.0.0/8 user 601 keep state" })
+            // Exceptions and the localhost policy win over the catch-all re-route.
+            #expect(exception < localhost && localhost < privateBlock && privateBlock < reroute && reroute < rerouted)
+            #expect(rerouted == lines.count - 2)
+            #expect(lines.last == "block return out log quick proto { tcp udp } from any to any user 601")
+            // The web re-route still lets its re-routed packets through before any block of non-loopback destinations.
+            let webRerouted = try #require(lines.firstIndex { $0.hasPrefix("pass out quick on lo0 inet proto tcp from any to ! 127.0.0.0/8 port") })
+            #expect(webRerouted < privateBlock)
+            // IPv6 and UDP on other ports meet only the catch-all refusal.
+            #expect(!lines.contains { $0.contains("inet6") })
+        }
+    }
+
+    @Test func routeAllTCPOffIsTodaysAnchor() throws {
+        let text = try rules(Self.state(.proxyOnly, exceptions: Self.exceptions, routeAllTCP: false))
+        try Fixture.expectGolden(text, "pf-proxy-only.conf")
+        #expect(!text.contains("-> 127.0.0.1 port 18444") && !text.contains("no rdr"))
     }
 
     @Test func proxyOnlyOrderAndTheRerouteSubtlety() throws {

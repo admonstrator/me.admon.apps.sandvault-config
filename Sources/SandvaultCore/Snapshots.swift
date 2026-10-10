@@ -177,7 +177,7 @@ public struct RuleSuggestion: Codable, Sendable, Equatable, Hashable, Identifiab
 
 // MARK: - netd connection log
 
-public enum ConnectionKind: String, Codable, Sendable, CaseIterable { case explicitProxy, transparentHTTP, transparentTLS, dns }
+public enum ConnectionKind: String, Codable, Sendable, CaseIterable { case explicitProxy, transparentHTTP, transparentTLS, dns, transparentTCP }
 
 public enum ConnectionDecision: String, Codable, Sendable, CaseIterable {
     case allowed, denied, askedAllowed, askedDenied, timedOut

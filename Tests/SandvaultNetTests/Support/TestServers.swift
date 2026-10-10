@@ -282,3 +282,69 @@ enum Curl {
         ))
     }
 }
+
+/// Plain TCP origin on 127.0.0.1 for the transparent TCP listener. `echo`: sends back what it receives and closes after
+/// a newline; `banner`: speaks first (like SSH), sends one line and closes; `sink`: closes after that many bytes.
+/// Records the bytes it received.
+struct TCPOrigin {
+    enum Behaviour: Sendable { case echo, banner(String), sink(Int) }
+
+    let channel: Channel
+    let port: Int
+    let received: Recorded<[UInt8]>
+    var address: SocketAddress { channel.localAddress! }
+
+    static func start(_ behaviour: Behaviour) async throws -> TCPOrigin {
+        let received = Recorded<[UInt8]>()
+        let channel = try await ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)
+            .childChannelInitializer { channel in
+                channel.eventLoop.makeCompletedFuture {
+                    try channel.pipeline.syncOperations.addHandler(TCPOriginHandler(behaviour: behaviour, received: received))
+                }
+            }
+            .bind(host: "127.0.0.1", port: 0)
+            .get()
+        return TCPOrigin(channel: channel, port: channel.localAddress!.port!, received: received)
+    }
+
+    func stop() async {
+        try? await channel.close()
+    }
+}
+
+private final class TCPOriginHandler: ChannelInboundHandler {
+    typealias InboundIn = ByteBuffer
+    typealias OutboundOut = ByteBuffer
+
+    let behaviour: TCPOrigin.Behaviour
+    let received: Recorded<[UInt8]>
+
+    init(behaviour: TCPOrigin.Behaviour, received: Recorded<[UInt8]>) {
+        self.behaviour = behaviour
+        self.received = received
+    }
+
+    func channelActive(context: ChannelHandlerContext) {
+        if case .banner(let line) = behaviour {
+            context.writeAndFlush(wrapOutboundOut(context.channel.allocator.buffer(string: line))).assumeIsolated().whenComplete { _ in
+                context.close(promise: nil)
+            }
+        }
+        context.fireChannelActive()
+    }
+
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+        let bytes = Array(unwrapInboundIn(data).readableBytesView)
+        received.append(bytes)
+        if case .sink(let count) = behaviour, received.all.joined().count >= count { return context.close(promise: nil) }
+        guard case .echo = behaviour else { return }
+        let done = bytes.contains(UInt8(ascii: "\n"))
+        context.writeAndFlush(wrapOutboundOut(context.channel.allocator.buffer(bytes: bytes))).assumeIsolated().whenComplete { _ in
+            if done { context.close(promise: nil) }
+        }
+    }
+
+    func errorCaught(context: ChannelHandlerContext, error: Error) {
+        context.close(promise: nil)
+    }
+}

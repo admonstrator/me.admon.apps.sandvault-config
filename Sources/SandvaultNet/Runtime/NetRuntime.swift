@@ -31,12 +31,14 @@ final class NetRuntime: Sendable {
     /// Upstream ports of the transparent listeners (80 and 443 in production).
     let transparentHTTPPort: Int
     let transparentTLSPort: Int
+    /// Where the transparent TCP listener connects instead of the original destination (tests only).
+    let transparentTCPUpstream: SocketAddress?
     let logger: @Sendable (String) -> Void
 
     init(
         policy: PolicyStore, resolver: HostResolver, attributor: ProcessAttributor, log: ConnectionLog, hub: ControlHub,
         inspection: InspectionService, transparentHTTPPort: Int, transparentTLSPort: Int, enricher: AskEnriching = NoAskEnrichment(),
-        logger: @escaping @Sendable (String) -> Void
+        transparentTCPUpstream: SocketAddress? = nil, logger: @escaping @Sendable (String) -> Void
     ) {
         self.policy = policy
         self.resolver = resolver
@@ -46,10 +48,11 @@ final class NetRuntime: Sendable {
         self.inspection = inspection
         self.transparentHTTPPort = transparentHTTPPort
         self.transparentTLSPort = transparentTLSPort
+        self.transparentTCPUpstream = transparentTCPUpstream
         self.logger = logger
         asks = AskCoordinator(
             hub: hub,
-            persist: { pattern, action in try policy.persistRule(pattern: pattern, action: action) },
+            persist: { pattern, port, action in try policy.persistRule(pattern: pattern, port: port, action: action) },
             log: logger,
             enricher: enricher
         )
@@ -57,8 +60,11 @@ final class NetRuntime: Sendable {
 
     /// Policy, ask, resolution and private-destination check for a proxied connection to `host:port`.
     /// `hint` is what the listener saw (original address, server name, protocol); it goes to the ask's details.
+    /// With `destination` (an IP literal) the connection goes there, the address the program chose, instead of to a
+    /// resolution of `host`; the private-destination guard still applies.
     func authorize(
-        host rawHost: String, port: UInt16, kind: ConnectionKind, clientPort: UInt16?, hint: ConnectionHint = ConnectionHint()
+        host rawHost: String, port: UInt16, kind: ConnectionKind, clientPort: UInt16?, hint: ConnectionHint = ConnectionHint(),
+        destination: String? = nil
     ) async -> GateResult {
         let host = HostName.normalize(rawHost)
         let snapshot = policy.snapshot
@@ -84,7 +90,19 @@ final class NetRuntime: Sendable {
         result.owner = await attributed
         result.inspect = verdict.inspect && inspection.isAvailable
 
-        if let override = engine.override(for: host) {
+        if let destination {
+            if engine.refusesDestination(destination) {
+                result.decision = .denied
+                result.reason = "\(destination) is a private destination"
+                return result
+            }
+            guard let address = try? SocketAddress(ipAddress: destination, port: Int(port)) else {
+                result.verdict = .fail
+                result.reason = "invalid address \(destination)"
+                return result
+            }
+            result.addresses = [address]
+        } else if let override = engine.override(for: host) {
             // An explicit override is the user's choice and exempt from the private-destination guard.
             guard let address = try? SocketAddress(ipAddress: override.address, port: Int(port)) else {
                 result.verdict = .fail

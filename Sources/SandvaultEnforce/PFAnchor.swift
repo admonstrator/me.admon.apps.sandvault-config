@@ -7,6 +7,8 @@ import SandvaultCore
 /// Translation rules come first, as pf requires inside an anchor. A packet re-routed with `route-to (lo0 ...)` is
 /// evaluated again as "out on lo0" with its original, non-loopback destination; therefore the localhost policy
 /// targets loopback destinations only and the re-routed flow gets its own pass rule.
+/// With `NetworkPolicy.routeAllTCP` in proxy-only mode, IPv4 TCP on every other port to a public address goes to
+/// netd's transparent TCP listener (D37); loopback and private networks are never re-routed on those ports.
 public enum PFAnchorGenerator {
     static let loopback = "{ 127.0.0.0/8 ::1 }"
     static let tcpUDP = "proto { tcp udp }"
@@ -61,11 +63,12 @@ public enum PFAnchorGenerator {
             ])
 
         case .proxyOnly:
-            groups.append(translation(ports))
+            groups.append(translation(ports) + (policy.routeAllTCP ? otherPortsTranslation(ports) : []))
             groups.append(reroute(user))
             groups.append(netd(ports, user))
             groups.append(contentsOf: try exceptions(policy.portExceptions, user))
             groups.append(localhost(policy, state.dynamicLocalPorts, user))
+            if policy.routeAllTCP { groups.append(otherPortsReroute(user)) }
             groups.append([
                 "# Everything else of the sandbox user is refused (IPv4 and IPv6).",
                 "block return out log quick \(tcpUDP) from any to any \(user)",
@@ -83,6 +86,33 @@ public enum PFAnchorGenerator {
             "rdr pass on lo0 inet proto tcp from any to ! 127.0.0.0/8 port 80 -> 127.0.0.1 port \(ports.transparentHTTP)",
             "rdr pass on lo0 inet proto tcp from any to ! 127.0.0.0/8 port 443 -> 127.0.0.1 port \(ports.transparentTLS)",
             "rdr pass on lo0 inet \(tcpUDP) from any to ! 127.0.0.0/8 port 53 -> 127.0.0.1 port \(ports.dns)",
+        ]
+    }
+
+    /// IPv4 ranges that keep their destination on other ports: loopback, this network, private, link-local, CGNAT and
+    /// multicast. This Mac's own addresses are among them, so local traffic to them is never handed to netd.
+    static var direct: String {
+        let ranges = PrivateNetworks.loopback + PrivateNetworks.unroutable + PrivateNetworks.lan
+        return list(ranges.filter { $0.family == .ipv4 }.map(format))
+    }
+
+    /// After the web and DNS translations: pf uses the first matching translation rule.
+    static func otherPortsTranslation(_ ports: ProxyPorts) -> [String] {
+        [
+            "# TCP on every other port goes to the transparent TCP listener, except to loopback and private networks.",
+            "no rdr on lo0 inet proto tcp from any to \(direct)",
+            "rdr pass on lo0 inet proto tcp from any to any -> 127.0.0.1 port \(ports.transparentTCP)",
+        ]
+    }
+
+    /// After the exceptions and the localhost policy, which win; before the catch-all refusal.
+    static func otherPortsReroute(_ user: String) -> [String] {
+        [
+            "# Other TCP ports (route-all TCP): private networks stay refused, IPv4 to public addresses is re-routed to netd.",
+            "block return out log quick inet proto tcp from any to \(direct) \(user)",
+            "pass out quick on ! lo0 route-to (lo0 127.0.0.1) inet proto tcp from any to any \(user) keep state",
+            "# The re-routed packet again, as \"out on lo0\" with its original destination.",
+            "pass out quick on lo0 inet proto tcp from any to ! 127.0.0.0/8 \(user) keep state",
         ]
     }
 

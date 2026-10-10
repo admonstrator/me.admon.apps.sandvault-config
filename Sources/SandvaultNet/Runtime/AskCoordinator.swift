@@ -14,8 +14,20 @@ public struct ProcessOwner: Sendable, Equatable {
     public var name: String
 }
 
+/// What asks and remembered answers are keyed by: web ports and DNS share one per host, every other port has its own
+/// (`8947` and `22` on one address are two asks).
+struct AskKey: Hashable, Sendable {
+    var host: String
+    var port: UInt16?
+
+    init(host: String, port: UInt16?) {
+        self.host = host
+        self.port = port.flatMap { PolicyEngine.webPorts.contains($0) ? nil : $0 }
+    }
+}
+
 /// Holds connections whose host matched an `ask` until a control client answers or the timeout passes.
-/// Concurrent asks for the same host share one `AskRequest`. Answers are remembered for `graceSeconds`,
+/// Concurrent asks for the same `AskKey` share one `AskRequest`. Answers are remembered for `graceSeconds`,
 /// so the DNS query that raised an ask and the connection that follows it see the same decision.
 /// Before an ask is published, the enricher gets `AskDetailSettings.budgetSeconds` to fill `AskRequest.details`;
 /// the timeout starts when the ask is published.
@@ -36,16 +48,16 @@ actor AskCoordinator {
     static let graceSeconds: TimeInterval = 30
 
     private let hub: ControlHub
-    private let persist: @Sendable (_ pattern: String, _ action: DomainAction) throws -> DomainRule
+    private let persist: @Sendable (_ pattern: String, _ port: UInt16?, _ action: DomainAction) throws -> DomainRule
     private let log: @Sendable (String) -> Void
     private let enricher: AskEnriching
     private var pending: [UUID: Pending] = [:]
-    private var byHost: [String: UUID] = [:]
-    private var grants: [String: Grant] = [:]
+    private var byKey: [AskKey: UUID] = [:]
+    private var grants: [AskKey: Grant] = [:]
 
     init(
         hub: ControlHub,
-        persist: @escaping @Sendable (_ pattern: String, _ action: DomainAction) throws -> DomainRule,
+        persist: @escaping @Sendable (_ pattern: String, _ port: UInt16?, _ action: DomainAction) throws -> DomainRule,
         log: @escaping @Sendable (String) -> Void,
         enricher: AskEnriching = NoAskEnrichment()
     ) {
@@ -59,21 +71,22 @@ actor AskCoordinator {
     func decide(
         host: String, port: UInt16?, kind: ConnectionKind, owner: ProcessOwner?, policy: NetworkPolicy, hint: ConnectionHint = ConnectionHint()
     ) async -> AskResolution {
-        if let grant = activeGrant(host) { return grant }
+        let key = AskKey(host: host, port: port)
+        if let grant = activeGrant(key) { return grant }
         guard hub.hasSubscribers(.asks) else { return Self.fallback(policy, reason: "no client is answering asks") }
         let id = await open(host: host, port: port, kind: kind, owner: owner, policy: policy, hint: hint)
         return await withCheckedContinuation { continuation in
             if pending[id] != nil {
                 pending[id]!.waiters.append(continuation)
             } else {
-                continuation.resume(returning: activeGrant(host) ?? Self.fallback(policy, reason: "ask expired"))
+                continuation.resume(returning: activeGrant(key) ?? Self.fallback(policy, reason: "ask expired"))
             }
         }
     }
 
     /// Raises (or joins) an ask without waiting, for DNS. Returns a resolution only when one applies right now.
     func raise(host: String, kind: ConnectionKind, owner: ProcessOwner?, policy: NetworkPolicy) async -> AskResolution? {
-        if let grant = activeGrant(host) { return grant }
+        if let grant = activeGrant(AskKey(host: host, port: nil)) { return grant }
         guard hub.hasSubscribers(.asks) else { return Self.fallback(policy, reason: "no client is answering asks") }
         _ = await open(host: host, port: nil, kind: kind, owner: owner, policy: policy, hint: ConnectionHint())
         return nil
@@ -84,22 +97,25 @@ actor AskCoordinator {
             throw SandvaultError.invalidInput("no pending ask with id \(answer.id.uuidString.lowercased())")
         }
         let host = entry.request.host
-        byHost[host] = nil
+        let key = AskKey(host: host, port: entry.request.port)
+        byKey[key] = nil
         entry.timeout?.cancel()
 
         let allowed = answer.decision == .allowOnce || answer.decision == .allowAlways
         var reason = "answered \(answer.decision.rawValue)"
         if answer.decision == .allowAlways || answer.decision == .denyAlways {
             let pattern = RegistrableDomain.rulePattern(for: host, scope: answer.scope)
+            // `.hostAndPort` limits the rule to the ask's port; DNS asks have none, so their rule covers every port.
+            let port = answer.scope == .hostAndPort ? entry.request.port : nil
             do {
-                let rule = try persist(pattern, allowed ? .allow : .deny)
-                reason += ", saved rule \(rule.pattern)"
+                let rule = try persist(pattern, port, allowed ? .allow : .deny)
+                reason += ", saved rule \(rule.displayPattern)"
             } catch {
                 log("cannot save rule \(pattern): \(error)")
             }
         }
         let resolution = AskResolution(allowed: allowed, decision: allowed ? .askedAllowed : .askedDenied, reason: reason)
-        grants[host] = Grant(resolution: resolution, until: Date().addingTimeInterval(Self.graceSeconds))
+        grants[key] = Grant(resolution: resolution, until: Date().addingTimeInterval(Self.graceSeconds))
         for waiter in entry.waiters { waiter.resume(returning: resolution) }
         hub.publish(.askResolved(id: answer.id, decision: resolution.decision), topic: .asks)
     }
@@ -119,7 +135,7 @@ actor AskCoordinator {
             hub.publish(.askResolved(id: id, decision: .timedOut), topic: .asks)
         }
         pending.removeAll()
-        byHost.removeAll()
+        byKey.removeAll()
     }
 
     // MARK: - Internals
@@ -128,14 +144,15 @@ actor AskCoordinator {
     private func open(
         host: String, port: UInt16?, kind: ConnectionKind, owner: ProcessOwner?, policy: NetworkPolicy, hint: ConnectionHint
     ) async -> UUID {
-        if let id = byHost[host] { return id }
+        let key = AskKey(host: host, port: port)
+        if let id = byKey[key] { return id }
         let timeout = max(1, policy.askTimeoutSeconds)
         var request = AskRequest(
             host: host, port: port, kind: kind, pid: owner?.pid, process: owner?.name, expiresAt: Date().addingTimeInterval(TimeInterval(timeout))
         )
         let id = request.id
         pending[id] = Pending(request: request)
-        byHost[host] = id
+        byKey[key] = id
 
         let input = AskEnrichmentInput(host: host, port: port, kind: kind, owner: owner, hint: hint)
         let enricher = self.enricher
@@ -179,16 +196,16 @@ actor AskCoordinator {
 
     private func expire(_ id: UUID, policy: NetworkPolicy) {
         guard let entry = pending.removeValue(forKey: id) else { return }
-        byHost[entry.request.host] = nil
+        byKey[AskKey(host: entry.request.host, port: entry.request.port)] = nil
         let resolution = Self.fallback(policy, reason: "ask timed out")
         for waiter in entry.waiters { waiter.resume(returning: resolution) }
         hub.publish(.askResolved(id: id, decision: .timedOut), topic: .asks)
     }
 
-    private func activeGrant(_ host: String) -> AskResolution? {
-        guard let grant = grants[host] else { return nil }
+    private func activeGrant(_ key: AskKey) -> AskResolution? {
+        guard let grant = grants[key] else { return nil }
         if grant.until < Date() {
-            grants[host] = nil
+            grants[key] = nil
             return nil
         }
         return grant.resolution

@@ -30,11 +30,11 @@ public final class PolicyStore: @unchecked Sendable {
         return config
     }
 
-    /// Re-reads the file, adds or updates the rule for `pattern`, saves, and swaps the policy.
-    public func persistRule(pattern: String, action: DomainAction) throws -> DomainRule {
+    /// Re-reads the file, adds or updates the rule for `pattern` and `port`, saves, and swaps the policy.
+    public func persistRule(pattern: String, port: UInt16? = nil, action: DomainAction) throws -> DomainRule {
         try writeLock.withLock {
             var config = try store.load()
-            let rule = try config.network.upsertDomainRule(pattern: pattern, action: action, note: "added from an ask")
+            let rule = try config.network.upsertDomainRule(pattern: pattern, action: action, note: "added from an ask", port: port)
             try store.save(config)
             swap(config)
             return rule

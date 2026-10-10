@@ -672,3 +672,55 @@ and asks netd to reload, as the firewall and proxy settings do. `AppEnvironment.
 **Only a Mac can confirm:** that the SwiftUI layer compiles against the macOS 26 SDK (glass button styles,
 `glassEffect` in a clear borderless panel), the look of two-line `Toggle` items in the menu, `NSWorkspace` icons for
 command-line executables, and the shadow of the borderless panel.
+## Phase 4 · Transparent TCP (D37)
+
+**pf.** In proxy-only mode with `NetworkPolicy.routeAllTCP` (`PFAnchorGenerator.otherPortsTranslation` and
+`otherPortsReroute`), the anchor adds after the web and DNS translations a `no rdr` for loopback and private IPv4
+ranges and a catch-all `rdr pass on lo0 inet proto tcp ... -> 127.0.0.1 port <transparentTCP>` (pf takes the first
+matching translation). The filter rules come after the exceptions and the localhost policy, so both still win: a
+refusal of private IPv4 destinations, the `route-to (lo0 127.0.0.1)` for the rest of the sandbox user's IPv4 TCP, and
+the pass for the re-routed packet as "out on lo0". Private networks (RFC 1918, CGNAT, link-local, multicast, this
+network) are neither translated nor re-routed: `rdr` cannot match a user, and this Mac's own addresses on lo0 are in
+those ranges, so host processes reaching their own LAN, VPN or Tailscale address are never handed to netd. They stay
+refused for the sandbox as before (a port exception opens one). IPv6 on other ports and UDP other than 53 meet the
+catch-all refusal. With `routeAllTCP` off, and in every other mode, the anchor is byte-identical to before.
+
+**Listener.** `TCPRouter` (Sources/SandvaultNet/Proxy/TCPRouter.swift) on `ProxyPorts.transparentTCP` (18444) buffers
+the client's first bytes for at most 300 ms or 16 KiB. `TCPPeek.classify` reads a TLS ClientHello with
+`ClientHelloParser` (`.tls`, SNI as `.tls` name), an HTTP request line (`.plain`, the `Host` header as `.http` name), or
+decides at once that the bytes are something else (`.unknown`); silence until the deadline is `.unknown` too, so
+server-speaks-first protocols like SSH are decided without data and then spliced. The original destination comes
+from `runtime.originalDestination` (lsof by client port); unknown or loopback destinations are refused and recorded.
+The host it decides on is the SNI name when present, else the address; the port is the original port. The hint
+(address, server name, source, encryption) goes to `authorize(..., hint:, destination:)`; `destination` makes
+`authorize` connect to the address the program chose rather than to a resolution of the name, with the
+private-destination guard still applied. Allowed: connect, replay the buffered bytes, `Tunnel.glue`, count and record.
+Records use `ConnectionKind.transparentTLS` for TLS and the new `.transparentTCP` otherwise (`displayName` "tcp").
+`NetdOptions.transparentTCPUpstream` replaces the destination in tests, like the upstream ports of the other
+transparent listeners.
+
+**Policy.** `DomainRule.port` limits a rule to one port and never matches DNS; at equal pattern specificity a rule
+with a port beats one without, then deny beats allow beats ask. `PolicyEngine.decidesEveryPort` (proxy-only with
+`routeAllTCP`) lets every port follow the rules and the default action, so `ask` applies to port 8947; a portless
+allow still allows every port and a portless ask or deny covers every port. Without it, other ports need an explicit
+allow as before. `upsertDomainRule` keys on pattern and port; `removeDomainRule` takes `host:port` (`[v6]:port`) for a
+rule with a port, a bare pattern for the rule without one. `DomainRule.displayPattern` is the `host:port` form used in
+reasons, svctl and saved-rule messages.
+
+**Asks.** `AskKey`: web ports and DNS share one ask and one remembered answer per host, other ports have one per host
+and port. `answer()` with `.hostAndPort` saves the rule with the ask's port through `persist(pattern, port, action)`
+and `PolicyStore.persistRule(pattern:port:action:)`; `.host` and `.domain` save portless rules as before.
+
+**svctl.** `svctl proxy allow|deny|ask <pattern> --port N`, `svctl proxy rules` and `remove` show and take
+`host:port`, `svctl asks --answer <id> allow-always --port` answers with `.hostAndPort`, `svctl proxy status` lists the
+tcp port.
+
+**Verified off the Mac:** anchor text (goldens `pf-proxy-only-route-all-tcp.conf`, `pf-proxy-only-allowall-route-all-tcp.conf`,
+order tests, unchanged goldens with the flag off), the engine matrix for port rules, ask keying, and integration
+tests through the real listener on Linux with a fake attributor: allow and splice, deny by port rule, unknown and
+loopback destinations, server-speaks-first, an ask answered with `.hostAndPort`, and a ClientHello naming the ask.
+
+**Only a Mac can confirm:** that `pfctl -n` accepts the `no rdr` list and the catch-all `rdr`, that a `route-to`'d
+flow on an arbitrary port arrives at 18444 with lsof naming its original destination. Known gap: a host process
+connecting to this Mac's own public IPv4 address (rare: a public address directly on an interface) on lo0 is caught
+by the catch-all `rdr`, and netd refuses it as an unknown destination.

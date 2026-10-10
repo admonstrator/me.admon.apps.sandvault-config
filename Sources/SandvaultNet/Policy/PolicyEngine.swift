@@ -21,8 +21,10 @@ public struct PolicyVerdict: Sendable, Equatable {
 /// Pure decision logic for proxy, transparent listeners and DNS.
 ///
 /// Matching: an exact name beats `*.domain` (which also matches the apex), a longer suffix beats a shorter one,
-/// `*` comes last; at equal specificity `deny` beats `allow` beats `ask`. No match yields `defaultAction`.
-/// Ports other than 80 and 443 need an explicit `allow` rule; `ask` never applies to them.
+/// `*` comes last; at equal specificity a rule with a port beats one without, then `deny` beats `allow` beats `ask`.
+/// A rule with a port matches only that port (never DNS). No match yields `defaultAction`.
+/// Ports other than 80 and 443 need an explicit `allow` rule and `ask` never applies to them, except in proxy-only
+/// mode with `routeAllTCP` (D37): there every port follows the rules and the default action like the web ports.
 /// In `FirewallMode.watch` only `deny` rules refuse; everything else is allowed, on every port.
 public struct PolicyEngine: Sendable {
     public let policy: NetworkPolicy
@@ -40,13 +42,17 @@ public struct PolicyEngine: Sendable {
 
     public static let webPorts: Set<UInt16> = [80, 443]
 
-    /// The most specific matching rule.
-    public func rule(for host: String) -> DomainRule? {
+    /// Whether ports other than 80 and 443 follow the rules and the default action like the web ports.
+    public var decidesEveryPort: Bool { policy.mode == .proxyOnly && policy.routeAllTCP }
+
+    /// The most specific matching rule; `port` is `nil` for DNS, where only rules without a port match.
+    public func rule(for host: String, port: UInt16? = nil) -> DomainRule? {
         let host = HostName.normalize(host)
         return rules
-            .filter { $0.pattern.matches(host) }
+            .filter { $0.pattern.matches(host) && ($0.rule.port == nil || $0.rule.port == port) }
             .max { lhs, rhs in
                 if lhs.pattern.specificity != rhs.pattern.specificity { return lhs.pattern.specificity < rhs.pattern.specificity }
+                if (lhs.rule.port == nil) != (rhs.rule.port == nil) { return lhs.rule.port == nil }
                 return Self.strength(lhs.rule.action) < Self.strength(rhs.rule.action)
             }?
             .rule
@@ -58,15 +64,15 @@ public struct PolicyEngine: Sendable {
         guard HostName.isValid(host) else {
             return PolicyVerdict(action: .deny, rule: nil, inspect: false, reason: "invalid host name")
         }
-        let rule = rule(for: host)
+        let rule = rule(for: host, port: port)
         let inspect = (rule?.inspect ?? false) && policy.inspection.enabled && !HostName.isIPLiteral(host)
-        let ruleReason = rule.map { "rule \($0.pattern) (\($0.action.rawValue))" }
+        let ruleReason = rule.map { "rule \($0.displayPattern) (\($0.action.rawValue))" }
 
         if policy.mode == .watch {
             if rule?.action == .deny { return PolicyVerdict(action: .deny, rule: rule, inspect: false, reason: ruleReason!) }
             return PolicyVerdict(action: .allow, rule: rule, inspect: inspect, reason: ruleReason ?? "watch mode (allow)")
         }
-        if let port, !Self.webPorts.contains(port) {
+        if let port, !Self.webPorts.contains(port), !decidesEveryPort {
             switch rule?.action {
             case .allow?: return PolicyVerdict(action: .allow, rule: rule, inspect: inspect, reason: ruleReason!)
             case .deny?: return PolicyVerdict(action: .deny, rule: rule, inspect: false, reason: ruleReason!)
