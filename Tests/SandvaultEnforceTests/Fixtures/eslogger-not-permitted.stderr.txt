@@ -1,0 +1,1 @@
+eslogger: ERROR: Failed to create ES client: ES_NEW_CLIENT_RESULT_ERR_NOT_PERMITTED (the responsible process lacks Full Disk Access)
