@@ -110,13 +110,15 @@ import Testing
         let slow = enricher(reverse: FakeReverse(delay: 5, name: nil), programs: StubbornPrograms(delay: 3, program: nil))
         let asks = AskCoordinator(hub: hub, persist: { DomainRule(pattern: $0, action: $2, port: $1) }, log: { _ in }, enricher: slow)
         var policy = NetworkPolicy()
-        policy.askDetails.budgetSeconds = 1
+        // The enricher stops its parts at 80 % of the budget; 3 s leaves 0.6 s for its answer to reach the
+        // coordinator while the whole suite runs in parallel (1 s left 0.2 s and failed on a busy macOS runner).
+        policy.askDetails.budgetSeconds = 3
         async let result = asks.decide(
             host: "185.142.236.41", port: 8947, kind: .transparentTLS, owner: ProcessOwner(pid: 1, name: "python3"), policy: policy,
             hint: Self.oddInput.hint
         )
         var request: AskRequest?
-        for _ in 0..<400 where request == nil {
+        for _ in 0..<1000 where request == nil {
             request = await asks.pendingRequests().first
             if request == nil { try await Task.sleep(nanoseconds: 5_000_000) }
         }
