@@ -18,6 +18,8 @@ public struct NetdOptions: Sendable {
     /// Where the transparent listeners connect (80 and 443 outside tests).
     public var transparentHTTPUpstreamPort = 80
     public var transparentTLSUpstreamPort = 443
+    /// Where the transparent TCP listener connects instead of the original destination; `nil` outside tests.
+    public var transparentTCPUpstream: SocketAddress?
     public var upstreamTrustRoots: NIOSSLTrustRoots = .default
     public var connectionLogPath: String
     public var caDirectory: String
@@ -39,7 +41,7 @@ public struct NetdOptions: Sendable {
     }
 }
 
-/// sandvault-netd: explicit proxy, transparent HTTP/TLS listeners, DNS forwarder, policy, connection log
+/// sandvault-netd: explicit proxy, transparent HTTP/TLS/TCP listeners, DNS forwarder, policy, connection log
 /// and control socket, composed from the seams of the other modules.
 public final class NetDaemon: Sendable, ControlService {
     public let options: NetdOptions
@@ -66,7 +68,7 @@ public final class NetDaemon: Sendable, ControlService {
         runtime = NetRuntime(
             policy: policy, resolver: resolver, attributor: attributor, log: ConnectionLog(path: options.connectionLogPath),
             hub: ControlHub(), inspection: inspection, transparentHTTPPort: options.transparentHTTPUpstreamPort,
-            transparentTLSPort: options.transparentTLSUpstreamPort, logger: logger
+            transparentTLSPort: options.transparentTLSUpstreamPort, transparentTCPUpstream: options.transparentTCPUpstream, logger: logger
         )
         if let localPorts, let applier {
             refresher = LocalPortRefresher(source: localPorts, applier: applier, log: logger)
@@ -96,14 +98,15 @@ public final class NetDaemon: Sendable, ControlService {
             let explicit = try await ProxyListeners.bind(.explicitProxy, host: host, port: Int(wanted.explicitProxy), group: group, runtime: runtime)
             let http = try await ProxyListeners.bind(.transparentHTTP, host: host, port: Int(wanted.transparentHTTP), group: group, runtime: runtime)
             let tls = try await ProxyListeners.bind(.transparentTLS, host: host, port: Int(wanted.transparentTLS), group: group, runtime: runtime)
-            channels += [explicit, http, tls]
+            let otherPorts = try await ProxyListeners.bind(.transparentTCP, host: host, port: Int(wanted.transparentTCP), group: group, runtime: runtime)
+            channels += [explicit, http, tls, otherPorts]
             let dns = DNSService(runtime: runtime, upstream: try dnsUpstream())
             let (udp, tcp) = try await bindDNS(host: host, port: Int(wanted.dns), service: dns)
             channels += [udp, tcp]
             let dnsPort = udp.localAddress?.port ?? Int(wanted.dns)
             let bound = ProxyPorts(
                 explicitProxy: Self.port(of: explicit), transparentHTTP: Self.port(of: http),
-                transparentTLS: Self.port(of: tls), dns: UInt16(dnsPort)
+                transparentTLS: Self.port(of: tls), dns: UInt16(dnsPort), transparentTCP: Self.port(of: otherPorts)
             )
             state.withLock {
                 $0.channels = channels
@@ -111,7 +114,7 @@ public final class NetDaemon: Sendable, ControlService {
                 $0.startedAt = Date()
             }
             logger(
-                "listening on \(host): proxy \(bound.explicitProxy), http \(bound.transparentHTTP), tls \(bound.transparentTLS), dns \(bound.dns); control \(options.socketPath)"
+                "listening on \(host): proxy \(bound.explicitProxy), http \(bound.transparentHTTP), tls \(bound.transparentTLS), tcp \(bound.transparentTCP), dns \(bound.dns); control \(options.socketPath)"
             )
         } catch {
             for channel in channels { try? await channel.close() }
@@ -270,7 +273,7 @@ public final class NetDaemon: Sendable, ControlService {
 private final class LockedState: @unchecked Sendable {
     struct Values {
         var channels: [Channel] = []
-        var bound = ProxyPorts(explicitProxy: 0, transparentHTTP: 0, transparentTLS: 0, dns: 0)
+        var bound = ProxyPorts(explicitProxy: 0, transparentHTTP: 0, transparentTLS: 0, dns: 0, transparentTCP: 0)
         var startedAt = Date()
         var loop: Task<Void, Never>?
         var environmentProblem: String?

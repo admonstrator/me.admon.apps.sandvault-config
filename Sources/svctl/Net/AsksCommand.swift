@@ -12,6 +12,7 @@ struct NetAsksCommand: AsyncParsableCommand {
             otherwise the ask fallback applies at once.
               svctl asks --follow
               svctl asks --answer 1a2b3c4d allow-always --domain
+              svctl asks --answer 5e6f7a8b deny-always --port
             """
     )
 
@@ -19,6 +20,7 @@ struct NetAsksCommand: AsyncParsableCommand {
     @Option(help: "Answer the pending ask whose id starts with this.") var answer: String?
     @Argument(help: "With --answer: allow-once, allow-always, deny-once or deny-always.") var decision: String?
     @Flag(help: "With an *-always answer: save the rule for *.<domain> instead of the exact host.") var domain = false
+    @Flag(help: "With an *-always answer: save the rule for the exact host and only the ask's port.") var port = false
     @Flag(help: "Watch for asks and their resolution until interrupted.") var follow = false
 
     static let decisions: [String: AskDecision] = [
@@ -31,8 +33,9 @@ struct NetAsksCommand: AsyncParsableCommand {
                 throw ValidationError("--answer needs a decision: allow-once, allow-always, deny-once or deny-always")
             }
             guard !follow else { throw ValidationError("--answer and --follow cannot be combined") }
-        } else if decision != nil || domain {
-            throw ValidationError("a decision and --domain only go with --answer <id-prefix>")
+            guard !(domain && port) else { throw ValidationError("--domain and --port cannot be combined") }
+        } else if decision != nil || domain || port {
+            throw ValidationError("a decision, --domain and --port only go with --answer <id-prefix>")
         }
     }
 
@@ -45,10 +48,13 @@ struct NetAsksCommand: AsyncParsableCommand {
             guard matches.count == 1, let ask = matches.first else {
                 throw SandvaultError.invalidInput(matches.isEmpty ? "no pending ask matches '\(prefix)'" : "'\(prefix)' matches several asks")
             }
-            try await client.answer(AskAnswer(id: ask.id, decision: decision, scope: domain ? .domain : .host))
+            let scope: AskScope = domain ? .domain : port ? .hostAndPort : .host
+            try await client.answer(AskAnswer(id: ask.id, decision: decision, scope: scope))
             if global.json { return try Output.json(["id": ask.id.uuidString.lowercased(), "decision": decision.rawValue]) }
-            let rule = decision == .allowAlways || decision == .denyAlways
-                ? " (rule \(RegistrableDomain.rulePattern(for: ask.host, scope: domain ? .domain : .host)))" : ""
+            let pattern = DomainRule(
+                pattern: RegistrableDomain.rulePattern(for: ask.host, scope: scope), action: .allow, port: scope == .hostAndPort ? ask.port : nil
+            ).displayPattern
+            let rule = decision == .allowAlways || decision == .denyAlways ? " (rule \(pattern))" : ""
             Output.line("\(text) \(ask.host)\(rule)")
             return
         }

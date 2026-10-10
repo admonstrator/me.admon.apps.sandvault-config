@@ -2,28 +2,36 @@ import Foundation
 import SandvaultCore
 
 // Config mutations shared by svctl, the ask flow and the app. Patterns are validated and stored normalized;
-// one rule per pattern (setting a pattern again replaces its action).
+// one rule per pattern and port (setting them again replaces the action).
 
 extension NetworkPolicy {
-    /// Adds a rule or updates the rule with the same pattern. `inspect: nil` keeps an existing rule's flag.
+    /// Adds a rule or updates the rule with the same pattern and port. `inspect: nil` keeps an existing rule's flag.
     @discardableResult
-    public mutating func upsertDomainRule(pattern: String, action: DomainAction, inspect: Bool? = nil, note: String? = nil, now: Date = Date()) throws -> DomainRule {
+    public mutating func upsertDomainRule(
+        pattern: String, action: DomainAction, inspect: Bool? = nil, note: String? = nil, now: Date = Date(), port: UInt16? = nil
+    ) throws -> DomainRule {
         let normalized = try DomainPattern(pattern).description
-        if let index = domainRules.firstIndex(where: { (try? DomainPattern($0.pattern).description) == normalized }) {
+        if port == 0 { throw SandvaultError.invalidInput("rule port 0") }
+        if let index = domainRules.firstIndex(where: { (try? DomainPattern($0.pattern).description) == normalized && $0.port == port }) {
             domainRules[index].action = action
             if let inspect { domainRules[index].inspect = inspect }
             if let note { domainRules[index].note = note }
             return domainRules[index]
         }
-        let rule = DomainRule(pattern: normalized, action: action, inspect: inspect ?? false, note: note, createdAt: now)
+        let rule = DomainRule(pattern: normalized, action: action, inspect: inspect ?? false, note: note, createdAt: now, port: port)
         domainRules.append(rule)
         return rule
     }
 
-    /// Removes the rule whose id starts with `selector` (unique) or whose pattern equals it.
+    /// Removes the rule whose id starts with `selector` (unique), or whose pattern equals it: `host:port`
+    /// (`[v6]:port`) names a rule with that port, a bare pattern the rule without one.
     @discardableResult
     public mutating func removeDomainRule(selector: String) throws -> DomainRule {
-        let index = try PolicySelector.index(of: selector, in: domainRules.map { ($0.id, $0.pattern) }, kind: "rule")
+        if let key = DomainRule.key(selector),
+           let index = domainRules.firstIndex(where: { (try? DomainPattern($0.pattern).description) == key.pattern && $0.port == key.port }) {
+            return domainRules.remove(at: index)
+        }
+        let index = try PolicySelector.index(of: selector, in: domainRules.map { ($0.id, $0.displayPattern) }, kind: "rule")
         return domainRules.remove(at: index)
     }
 
@@ -48,6 +56,22 @@ extension NetworkPolicy {
     public mutating func removeDnsOverride(selector: String) throws -> DnsOverride {
         let index = try PolicySelector.index(of: selector, in: dnsOverrides.map { ($0.id, $0.pattern) }, kind: "override")
         return dnsOverrides.remove(at: index)
+    }
+}
+
+extension DomainRule {
+    /// `example.com:22` (`[::1]:22`) for a rule with a port, the pattern alone otherwise.
+    public var displayPattern: String {
+        guard let port else { return pattern }
+        return (pattern.contains(":") ? "[\(pattern)]" : pattern) + ":\(port)"
+    }
+
+    /// Normalized pattern and port of `example.com`, `*.example.com:22` or `[::1]:8080`; `nil` when it is neither.
+    public static func key(_ text: String) -> (pattern: String, port: UInt16?)? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        if let pattern = try? DomainPattern(trimmed) { return (pattern.description, nil) }
+        guard let (host, port) = HostName.splitHostPort(trimmed), let port, let pattern = try? DomainPattern(host) else { return nil }
+        return (pattern.description, UInt16(port))
     }
 }
 

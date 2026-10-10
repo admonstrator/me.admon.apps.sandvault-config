@@ -44,7 +44,7 @@ struct NetProxyCommand: AsyncParsableCommand {
             if global.json { return try Output.json(report) }
             if let netd {
                 Output.line("netd: running since \(NetCLI.timestamp(netd.startedAt)), version \(netd.version)")
-                Output.line("  ports: proxy \(netd.ports.explicitProxy), http \(netd.ports.transparentHTTP), tls \(netd.ports.transparentTLS), dns \(netd.ports.dns)")
+                Output.line("  ports: proxy \(netd.ports.explicitProxy), http \(netd.ports.transparentHTTP), tls \(netd.ports.transparentTLS), tcp \(netd.ports.transparentTCP), dns \(netd.ports.dns)")
                 Output.line("  \(netd.activeConnections) active, \(netd.allowedCount) allowed, \(netd.deniedCount) denied, \(netd.pendingAsks) pending asks")
                 if let fingerprint = netd.caFingerprint { Output.line("  CA: \(fingerprint)") }
             } else {
@@ -71,19 +71,19 @@ struct NetProxyCommand: AsyncParsableCommand {
                 Output.line("no rules")
             } else {
                 Output.table(["ID", "PATTERN", "ACTION", "INSPECT", "NOTE"], policy.domainRules.map {
-                    [NetCLI.shortID($0.id), $0.pattern, $0.action.rawValue, $0.inspect ? "yes" : "", $0.note ?? ""]
+                    [NetCLI.shortID($0.id), $0.displayPattern, $0.action.rawValue, $0.inspect ? "yes" : "", $0.note ?? ""]
                 })
             }
             Output.line("default: \(policy.defaultAction.rawValue)")
         }
     }
 
-    static func setRule(_ global: GlobalOptions, pattern: String, action: DomainAction, inspect: Bool?) async throws {
+    static func setRule(_ global: GlobalOptions, pattern: String, action: DomainAction, inspect: Bool?, port: UInt16?) async throws {
         let (rule, reloaded) = try await NetCLI.edit(global) { config in
-            try config.network.upsertDomainRule(pattern: pattern, action: action, inspect: inspect)
+            try config.network.upsertDomainRule(pattern: pattern, action: action, inspect: inspect, port: port)
         }
         if global.json { return try Output.json(rule) }
-        Output.line("\(action.rawValue) \(rule.pattern)\(rule.inspect ? " (inspect)" : "") [\(NetCLI.shortID(rule.id))]; \(NetCLI.reloadNote(reloaded))")
+        Output.line("\(action.rawValue) \(rule.displayPattern)\(rule.inspect ? " (inspect)" : "") [\(NetCLI.shortID(rule.id))]; \(NetCLI.reloadNote(reloaded))")
         if rule.inspect, try !global.configStore.load().network.inspection.enabled {
             Output.line("note: inspection is off; turn it on with `svctl proxy inspection on`")
         }
@@ -94,9 +94,14 @@ struct NetProxyCommand: AsyncParsableCommand {
         @OptionGroup var global: GlobalOptions
         @Argument(help: "example.com, *.example.com (subdomains and the apex) or *.") var pattern: String
         @Flag(help: "Decrypt and log HTTP details for matching hosts (needs `svctl proxy inspection on`).") var inspect = false
+        @Option(help: "Only this port (without it the rule covers every port the policy lets rules decide).") var port: UInt16?
+
+        func validate() throws {
+            if port == 0 { throw ValidationError("port must be 1-65535") }
+        }
 
         func run() async throws {
-            try await NetProxyCommand.setRule(global, pattern: pattern, action: .allow, inspect: inspect)
+            try await NetProxyCommand.setRule(global, pattern: pattern, action: .allow, inspect: inspect, port: port)
         }
     }
 
@@ -104,9 +109,14 @@ struct NetProxyCommand: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Deny a host, `*.domain` or `*`.")
         @OptionGroup var global: GlobalOptions
         @Argument(help: "example.com, *.example.com or *.") var pattern: String
+        @Option(help: "Only this port (without it the rule covers every port the policy lets rules decide).") var port: UInt16?
+
+        func validate() throws {
+            if port == 0 { throw ValidationError("port must be 1-65535") }
+        }
 
         func run() async throws {
-            try await NetProxyCommand.setRule(global, pattern: pattern, action: .deny, inspect: false)
+            try await NetProxyCommand.setRule(global, pattern: pattern, action: .deny, inspect: false, port: port)
         }
     }
 
@@ -114,21 +124,26 @@ struct NetProxyCommand: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Ask before connecting to a host, `*.domain` or `*`.")
         @OptionGroup var global: GlobalOptions
         @Argument(help: "example.com, *.example.com or *.") var pattern: String
+        @Option(help: "Only this port (without it the rule covers every port the policy lets rules decide).") var port: UInt16?
+
+        func validate() throws {
+            if port == 0 { throw ValidationError("port must be 1-65535") }
+        }
 
         func run() async throws {
-            try await NetProxyCommand.setRule(global, pattern: pattern, action: .ask, inspect: nil)
+            try await NetProxyCommand.setRule(global, pattern: pattern, action: .ask, inspect: nil, port: port)
         }
     }
 
     struct Remove: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Remove a rule by id prefix or pattern.")
         @OptionGroup var global: GlobalOptions
-        @Argument(help: "The start of the rule id (see `svctl proxy rules`) or its pattern.") var selector: String
+        @Argument(help: "The start of the rule id (see `svctl proxy rules`), its pattern, or `pattern:port` for a rule with a port.") var selector: String
 
         func run() async throws {
             let (rule, reloaded) = try await NetCLI.edit(global) { try $0.network.removeDomainRule(selector: selector) }
             if global.json { return try Output.json(rule) }
-            Output.line("removed \(rule.action.rawValue) \(rule.pattern) [\(NetCLI.shortID(rule.id))]; \(NetCLI.reloadNote(reloaded))")
+            Output.line("removed \(rule.action.rawValue) \(rule.displayPattern) [\(NetCLI.shortID(rule.id))]; \(NetCLI.reloadNote(reloaded))")
         }
     }
 

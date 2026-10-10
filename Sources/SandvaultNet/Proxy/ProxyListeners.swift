@@ -3,9 +3,9 @@ import NIOHTTP1
 import NIOPosix
 import SandvaultCore
 
-/// Binds the three proxy listeners. Each accepted connection starts with a byte counter.
+/// Binds the proxy listeners. Each accepted connection starts with a byte counter.
 enum ProxyListeners {
-    enum Kind: Sendable { case explicitProxy, transparentHTTP, transparentTLS }
+    enum Kind: Sendable { case explicitProxy, transparentHTTP, transparentTLS, transparentTCP }
 
     static func bind(_ kind: Kind, host: String, port: Int, group: EventLoopGroup, runtime: NetRuntime) async throws -> Channel {
         try await ServerBootstrap(group: group)
@@ -31,6 +31,8 @@ enum ProxyListeners {
                         try sync.addHandler(HTTPForwardHandler(runtime: runtime, mode: .transparent, counter: counter))
                     case .transparentTLS:
                         try sync.addHandler(SNIRouter(runtime: runtime, counter: counter))
+                    case .transparentTCP:
+                        try sync.addHandler(TCPRouter(runtime: runtime, counter: counter))
                     }
                 }
             }

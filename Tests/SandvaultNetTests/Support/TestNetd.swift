@@ -22,6 +22,7 @@ struct TestNetd {
         upstreamDNS: String? = nil,
         transparentHTTPPort: Int = 80,
         transparentTLSPort: Int = 443,
+        transparentTCPUpstream: SocketAddress? = nil,
         trustRoots: NIOSSLTrustRoots = .default,
         createCA: Bool = false
     ) async throws -> TestNetd {
@@ -31,9 +32,10 @@ struct TestNetd {
         // Short path: Unix socket paths are limited to 104 bytes on macOS.
         let socketPath = "/tmp/svn-\(UUID().uuidString.prefix(8)).sock"
         var options = NetdOptions(paths: layout.paths, socketPath: socketPath, upstreamDNS: upstreamDNS ?? "127.0.0.1:9")
-        options.ports = ProxyPorts(explicitProxy: 0, transparentHTTP: 0, transparentTLS: 0, dns: 0)
+        options.ports = ProxyPorts(explicitProxy: 0, transparentHTTP: 0, transparentTLS: 0, dns: 0, transparentTCP: 0)
         options.transparentHTTPUpstreamPort = transparentHTTPPort
         options.transparentTLSUpstreamPort = transparentTLSPort
+        options.transparentTCPUpstream = transparentTCPUpstream
         options.upstreamTrustRoots = trustRoots
         options.manageEnvironmentBlock = false
         options.refreshInterval = 60
@@ -125,4 +127,23 @@ struct FixedAttributor: ProcessAttributor {
 
     func process(forLocalPort port: UInt16, proto: TransportProtocol) async -> (pid: Int32, name: String)? { process }
     func destination(forLocalPort port: UInt16, proto: TransportProtocol) async -> (address: String, port: UInt16)? { destination }
+}
+
+/// Attributes every port to one process and to the destination set last (the next connection's original destination).
+final class SwitchableAttributor: ProcessAttributor, @unchecked Sendable {
+    private let lock = NSLock()
+    private var current: (address: String, port: UInt16)?
+    let process: (pid: Int32, name: String)?
+
+    init(process: (pid: Int32, name: String)?, destination: (address: String, port: UInt16)?) {
+        self.process = process
+        current = destination
+    }
+
+    func set(_ destination: (address: String, port: UInt16)?) { lock.withLock { current = destination } }
+
+    func process(forLocalPort port: UInt16, proto: TransportProtocol) async -> (pid: Int32, name: String)? { process }
+    func destination(forLocalPort port: UInt16, proto: TransportProtocol) async -> (address: String, port: UInt16)? {
+        lock.withLock { current }
+    }
 }

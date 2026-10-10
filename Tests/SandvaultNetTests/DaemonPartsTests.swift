@@ -148,7 +148,7 @@ import Testing
 @Suite(.timeLimit(.minutes(1))) struct AskCoordinatorTests {
     final class Saved: @unchecked Sendable {
         let lock = NSLock()
-        var rules: [(String, DomainAction)] = []
+        var rules: [(String, DomainAction, UInt16?)] = []
     }
 
     func coordinator(subscribed: Bool, saved: Saved = Saved()) -> (AskCoordinator, ControlHub) {
@@ -160,9 +160,9 @@ import Testing
         }
         let coordinator = AskCoordinator(
             hub: hub,
-            persist: { pattern, action in
-                saved.lock.withLock { saved.rules.append((pattern, action)) }
-                return DomainRule(pattern: pattern, action: action)
+            persist: { pattern, port, action in
+                saved.lock.withLock { saved.rules.append((pattern, action, port)) }
+                return DomainRule(pattern: pattern, action: action, port: port)
             },
             log: { _ in }
         )

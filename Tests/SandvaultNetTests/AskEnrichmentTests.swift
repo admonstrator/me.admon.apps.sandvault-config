@@ -17,7 +17,7 @@ import Testing
         let id = UUID()
         hub.add(id) { _ in }
         hub.subscribe(id, topics: [.asks])
-        return AskCoordinator(hub: hub, persist: { pattern, action in DomainRule(pattern: pattern, action: action) }, log: { _ in }, enricher: enricher)
+        return AskCoordinator(hub: hub, persist: { pattern, port, action in DomainRule(pattern: pattern, action: action, port: port) }, log: { _ in }, enricher: enricher)
     }
 
     func firstPending(_ asks: AskCoordinator) async throws -> AskRequest? {
