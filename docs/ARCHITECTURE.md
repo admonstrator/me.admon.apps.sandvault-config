@@ -786,3 +786,62 @@ reports their size. Files and programs: `FileActivityEvent`, `ActivityRecordingS
 helper subcommand `activity-record` that prints `ActivityStreamLine`s, and the app-side `ActivityRecording` protocol
 (`AppEnvironment.activity`, `NoActivityRecorder` until the live one is wired). The sections below describe the web
 recording in netd, the recorder and the Activity and learn mode pages.
+
+## Phase 5 · Activity recorder (D44, D45)
+
+```
+app / svctl ── sudo -n <helper> activity-record --json ──► svctl-helper (root)
+   ▲                                                          │ resolves the sandbox uid (dscl, then id)
+   │ ActivityStreamLine per line                              │ runs /usr/bin/eslogger exec open close create
+   │ (.started, .event, .failed)                              │      write rename unlink --format json
+   │                                                          │ ESLoggerParser: keeps euid or ruid == sandbox uid
+LiveActivityRecorder ── ActivityFilter ── ActivityStore (activity.jsonl, 0600) ── yields kept events
+```
+
+**Helper (Sources/SandvaultEnforce/Helper/ActivityRecord.swift, ESLoggerParser.swift).** `activity-record --json` is
+in `unattendedArguments`, so the sudoers rule allows it after a helper reinstall. `recordActivity(emit:)` resolves the
+uid like `pf-apply` (from `SUDO_USER`, never the caller's own uid), prints `.started(uid:)`, then one `.event` per
+eslogger line whose acting process (`process.audit_token`) has the sandbox uid as effective or real uid; everything
+else is dropped as root. The parser lives in Enforce because svctl-helper does not link Observe. It reads the event
+object's key (not `event_type`), `open.fflag & FWRITE`, `close.modified`, `create`/`rename` destinations
+(`existing_file` or `new_path` dir + filename), `exec.target.executable.path` and `exec.args`; nanosecond `time`
+strings are parsed by hand. A cheap check for the uid's digits skips most system-wide lines before JSON decoding.
+eslogger's stderr decides the failure: `NOT_PERMITTED` / Full Disk Access → `.needsFullDiskAccess`, otherwise
+`.unavailable("eslogger exited N: <last stderr line>")`; the helper exits non-zero after `.failed`. An exit 0 or by a
+signal (Ctrl-C reaches the whole process group) is a clean stop.
+
+**Stopping (Sources/svctl-helper/Helper.swift).** SIGTERM, SIGINT and SIGHUP get a handler that writes to a pipe; a
+thread reading it cancels the recording task, which cancels the line stream and terminates eslogger. SIGPIPE gets an
+empty handler, so a closed stdout shows as EPIPE from write(2) and ends the loop. Handlers rather than SIG_IGN: caught
+signals return to the default in eslogger after exec, ignored ones would be inherited.
+
+**Streaming with stderr (Sources/SandvaultCore/CommandRunner.swift, additive).** `CommandRunner.linesWithStderr(_:bufferLimit:)`
+fails with `commandFailed` carrying the last 16 KB of stderr and holds at most `bufferLimit` unread lines (newer lines
+are dropped while the consumer is behind: 20 000 in the helper, 10 000 in the app), so nothing buffers without bound.
+`ProcessCommandRunner` starts the child from a dedicated thread with an empty signal mask: pool threads block SIGTERM
+and a child inheriting that mask ignored `terminate()` (seen on Linux, covered by a test). The protocol default falls
+back to `lines`; `FakeCommandRunner` gains `.stream(lines:exitCode:stderr:)`. `lines` is unchanged.
+
+**App side (Sources/SandvaultObserve/Activity/).** `LiveActivityRecorder(paths:runner:)` (or `environment:`) runs the
+argv above with no timeout, decodes each line, passes events through `ActivityFilter` and appends kept ones to
+`AppPaths.activityLog` before yielding them. Failures: a `.failed` line is thrown as is; a non-zero exit without one is
+sudo refusing (`password is required`, `command not found`, not in sudoers, or no output at all) → `.needsHelper`; a
+`HelperResult` line saying `unknown subcommand` (helper older than the rule) → `.needsHelper`; anything else
+`.unavailable`. `ActivityFilter` is a value type driven by event timestamps: with `hideSystemFiles` reads (open not
+for writing, close without change) under /System, /usr, /Library, /private/var/db, /bin, /sbin, /dev and the Preboot
+cryptexes (dyld cache) are dropped; with `openAndClose` everything else is kept; otherwise exec, create, rename and
+delete are kept, closes only when `modified`, and opens and writes once per program, file and minute (writes are
+deduplicated like opens: the close with `modified` already says the file changed). `ActivityStore` (actor) appends with
+O_APPEND (svctl and the app may record at once), reads back oldest first, and rewrites the file atomically (0600)
+without entries older than the retention and without lines that do not decode.
+
+**svctl.** `svctl activity record [--all] [--no-store]` records in the foreground with the configured settings
+(`--all`: every open/close and system reads) and prints `time  process(pid)  verb  path`; `svctl activity show
+[--since 10m]` prints stored events; `svctl activity clear` deletes the log. `--json` prints events as JSON.
+
+**Only a Mac can confirm:** eslogger's JSON field names and nesting for the seven events (the fixture is synthetic),
+in particular `exec.args`, `open.fflag`, `close.modified` and the `existing_file` / `new_path` destination keys; the
+stderr text and exit code without Full Disk Access, and which process TCC holds responsible when the app starts
+`sudo -n helper` (app, sudo or helper); that `ProcessCommandRunner` on macOS also passes a blocked SIGTERM to children
+(the empty mask fixes it either way); that sudo relays SIGTERM from the app to the helper; event volume and the drop
+rate of the 20 000-line buffer during a large `npm install`.

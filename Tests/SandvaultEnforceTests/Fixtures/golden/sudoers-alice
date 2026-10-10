@@ -5,4 +5,5 @@ alice ALL=(root) NOPASSWD: /Library/PrivilegedHelperTools/me.admon.apps.sandvaul
     /Library/PrivilegedHelperTools/me.admon.apps.sandvault-config.helper pf-apply --json --release-panic, \
     /Library/PrivilegedHelperTools/me.admon.apps.sandvault-config.helper pf-disable --json, \
     /Library/PrivilegedHelperTools/me.admon.apps.sandvault-config.helper panic --json, \
-    /Library/PrivilegedHelperTools/me.admon.apps.sandvault-config.helper status --json
+    /Library/PrivilegedHelperTools/me.admon.apps.sandvault-config.helper status --json, \
+    /Library/PrivilegedHelperTools/me.admon.apps.sandvault-config.helper activity-record --json

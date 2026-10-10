@@ -86,9 +86,18 @@ public protocol CommandRunner: Sendable {
 
     /// Streams stdout line by line (for `log stream`, `nettop -L 0`). Cancelling the consuming task terminates the process.
     func lines(_ invocation: CommandInvocation) -> AsyncThrowingStream<String, Error>
+
+    /// Like `lines`, but a non-zero exit fails with `commandFailed` carrying the end of stderr, and at most
+    /// `bufferLimit` unread lines are held: while the consumer is behind, newer lines are dropped.
+    func linesWithStderr(_ invocation: CommandInvocation, bufferLimit: Int) -> AsyncThrowingStream<String, Error>
 }
 
 extension CommandRunner {
+    /// Runners that cannot capture stderr fall back to `lines`.
+    public func linesWithStderr(_ invocation: CommandInvocation, bufferLimit: Int) -> AsyncThrowingStream<String, Error> {
+        lines(invocation)
+    }
+
     /// Runs and throws `SandvaultError.commandFailed` on a non-zero exit.
     public func checked(_ invocation: CommandInvocation) async throws -> CommandResult {
         let result = try await run(invocation)
@@ -165,6 +174,84 @@ public struct ProcessCommandRunner: CommandRunner {
         }
     }
 
+    /// Bytes of stderr `linesWithStderr` keeps (the end of the output).
+    public static let stderrTailBytes = 16 * 1024
+
+    public func linesWithStderr(_ invocation: CommandInvocation, bufferLimit: Int) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream(bufferingPolicy: .bufferingOldest(max(1, bufferLimit))) { continuation in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: invocation.executable)
+            process.arguments = invocation.arguments
+            if let environment = invocation.environment { process.environment = environment }
+            let out = Pipe(), err = Pipe()
+            process.standardOutput = out
+            process.standardError = err
+            process.standardInput = FileHandle.nullDevice
+            let state = StreamState()
+
+            continuation.onTermination = { _ in
+                state.cancel()
+                guard process.isRunning else { return }
+                process.terminate()
+                let pid = process.processIdentifier
+                DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
+                    if process.isRunning { kill(pid, SIGKILL) }
+                }
+            }
+
+            // One dedicated thread starts the process, reads stdout until EOF and reaps it, so the last line is
+            // delivered before the stream finishes. It starts the child with no blocked signals: pool threads
+            // block SIGTERM, and a child inheriting that mask would ignore `terminate()`.
+            Thread {
+                do {
+                    guard try state.start({ try Self.withEmptySignalMask { try process.run() } }) else {
+                        continuation.finish()
+                        return
+                    }
+                } catch {
+                    continuation.finish(throwing: SandvaultError.commandNotRunnable(invocation.description, "\(error)"))
+                    return
+                }
+                let tail = StderrTail(limit: Self.stderrTailBytes)
+                let stderrDone = DispatchSemaphore(value: 0)
+                Thread {
+                    let handle = err.fileHandleForReading
+                    while true {
+                        let chunk = handle.availableData
+                        if chunk.isEmpty { break }
+                        tail.append(chunk)
+                    }
+                    stderrDone.signal()
+                }.start()
+
+                let buffer = LineBuffer()
+                let handle = out.fileHandleForReading
+                while true {
+                    let chunk = handle.availableData
+                    if chunk.isEmpty { break }
+                    for line in buffer.append(chunk) { continuation.yield(line) }
+                }
+                for line in buffer.flush() { continuation.yield(line) }
+                process.waitUntilExit()
+                stderrDone.wait()
+                if process.terminationStatus == 0 || process.terminationReason == .uncaughtSignal {
+                    continuation.finish()
+                } else {
+                    continuation.finish(throwing: SandvaultError.commandFailed(invocation.description, process.terminationStatus, tail.text))
+                }
+            }.start()
+        }
+    }
+
+    /// Runs `body` with every signal unblocked on this thread, then restores the mask.
+    static func withEmptySignalMask<T>(_ body: () throws -> T) rethrows -> T {
+        var empty = sigset_t(), saved = sigset_t()
+        sigemptyset(&empty)
+        pthread_sigmask(SIG_SETMASK, &empty, &saved)
+        defer { pthread_sigmask(SIG_SETMASK, &saved, nil) }
+        return try body()
+    }
+
     static func runBlocking(_ invocation: CommandInvocation) throws -> CommandResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: invocation.executable)
@@ -233,6 +320,46 @@ private final class Collected: @unchecked Sendable {
     func setStderr(_ data: Data) { lock.withLock { err = data } }
 }
 
+/// Whether a stream was cancelled before its process started; the process is never started after that.
+private final class StreamState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    /// `false` when already cancelled.
+    func start(_ run: () throws -> Void) throws -> Bool {
+        try lock.withLock {
+            guard !cancelled else { return false }
+            try run()
+            return true
+        }
+    }
+
+    /// Waits for a start in progress, so the caller sees whether the process runs.
+    func cancel() {
+        lock.withLock { cancelled = true }
+    }
+}
+
+/// The last `limit` bytes of a stream.
+private final class StderrTail: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+    let limit: Int
+
+    init(limit: Int) {
+        self.limit = limit
+    }
+
+    func append(_ chunk: Data) {
+        lock.withLock {
+            data.append(chunk)
+            if data.count > limit { data.removeFirst(data.count - limit) }
+        }
+    }
+
+    var text: String { lock.withLock { String(decoding: data, as: UTF8.self) } }
+}
+
 /// Splits a byte stream into UTF-8 lines; the last partial line is kept until more data or `flush`.
 public final class LineBuffer: @unchecked Sendable {
     private let lock = NSLock()
@@ -267,6 +394,9 @@ public final class FakeCommandRunner: CommandRunner, @unchecked Sendable {
         case result(CommandResult)
         case lines([String])
         case failure(SandvaultError)
+        /// `lines` yields the lines, then fails with `commandFailed` on a non-zero exit; only
+        /// `linesWithStderr` carries `stderr`, as with the real runner.
+        case stream(lines: [String], exitCode: Int32, stderr: String)
     }
 
     private let lock = NSLock()
@@ -301,11 +431,21 @@ public final class FakeCommandRunner: CommandRunner, @unchecked Sendable {
         case .result(let result): return result
         case .lines(let lines): return CommandResult(exitCode: 0, stdout: lines.joined(separator: "\n") + "\n")
         case .failure(let error): throw error
+        case .stream(let lines, let exitCode, let stderr):
+            return CommandResult(exitCode: exitCode, stdout: lines.map { $0 + "\n" }.joined(), stderr: stderr)
         case nil: throw SandvaultError.commandNotRunnable(invocation.description, "no fake response registered")
         }
     }
 
     public func lines(_ invocation: CommandInvocation) -> AsyncThrowingStream<String, Error> {
+        stream(invocation, keepsStderr: false)
+    }
+
+    public func linesWithStderr(_ invocation: CommandInvocation, bufferLimit: Int) -> AsyncThrowingStream<String, Error> {
+        stream(invocation, keepsStderr: true)
+    }
+
+    private func stream(_ invocation: CommandInvocation, keepsStderr: Bool) -> AsyncThrowingStream<String, Error> {
         let response = response(for: invocation)
         return AsyncThrowingStream { continuation in
             switch response {
@@ -319,6 +459,13 @@ public final class FakeCommandRunner: CommandRunner, @unchecked Sendable {
                 continuation.finish()
             case .failure(let error):
                 continuation.finish(throwing: error)
+            case .stream(let lines, let exitCode, let stderr):
+                for line in lines { continuation.yield(line) }
+                if exitCode == 0 {
+                    continuation.finish()
+                } else {
+                    continuation.finish(throwing: SandvaultError.commandFailed(invocation.description, exitCode, keepsStderr ? stderr : ""))
+                }
             case nil:
                 continuation.finish(throwing: SandvaultError.commandNotRunnable(invocation.description, "no fake response registered"))
             }

@@ -70,7 +70,10 @@ import Testing
         for invocation in fake.invocations {
             #expect(allowed.contains(invocation.argv), "\(invocation.argv) is not in the sudoers rule")
         }
-        #expect(Set(fake.invocations.map(\.argv)) == allowed)
+        // The activity recorder (SandvaultObserve) sends the streaming argv; its own test checks it against this list.
+        let streaming = Self.sudo + [HelperSubcommand.activityRecord.rawValue, "--json"]
+        #expect(Set(fake.invocations.map(\.argv)) == allowed.subtracting([streaming]))
+        #expect(allowed.contains(streaming))
     }
 
     @Test func refusesOffMacOS() async throws {
