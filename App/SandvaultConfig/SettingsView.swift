@@ -13,6 +13,7 @@ struct SettingsView: View {
             Form {
                 HelperSection(settings: settings)
                 NetdSection(settings: settings, netd: netd)
+                ConnectionRequestsSection(settings: settings)
                 HandoffDefaultsSection(settings: settings)
                 AppSection(settings: settings, setExpertMode: setExpertMode)
             }
@@ -71,6 +72,153 @@ struct NetdSection: View {
                 Button("Install") { Task { await settings.installNetd() } }
                     .disabled(settings.bundled.netd == nil || !settings.netdSupported || settings.isBusy)
             }
+        }
+    }
+}
+
+/// What netd looks up for a connection request, the assessment and the safer default (D38-D41).
+struct ConnectionRequestsSection: View {
+    let settings: SettingsModel
+
+    @State private var countries = ""
+
+    var body: some View {
+        Section {
+            ForEach(AskDetailSwitch.lookupsBeforeNetwork, id: \.self) { setting in
+                DetailToggle(setting: setting, isOn: binding(setting))
+            }
+            Picker(selection: network) {
+                ForEach(NetworkLookupMode.allCases, id: \.self) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            } label: {
+                DetailLabel("Network and country", note: "Online reveals the address to the registry.", symbol: "server.rack", color: .green)
+            }
+            if settings.askDetails.network != .off {
+                Text(settings.askDetails.network.explanation)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            if settings.askDetails.network == .offline {
+                NetworkDatabaseRow(settings: settings)
+            }
+            ForEach(AskDetailSwitch.lookupsAfterNetwork, id: \.self) { setting in
+                DetailToggle(setting: setting, isOn: binding(setting))
+            }
+        } header: {
+            Text("Connection requests")
+        } footer: {
+            Text("netd collects these details before the request appears; whatever takes longer than \(String(format: "%.1f", settings.askDetails.budgetSeconds)) s is left out.")
+        }
+
+        Section {
+            ForEach(AskDetailSwitch.judgement, id: \.self) { setting in
+                DetailToggle(setting: setting, isOn: binding(setting))
+                    .disabled(setting == .saferDefault && !settings.isOn(.assessment))
+            }
+            LabeledContent {
+                TextField("Marked countries", text: $countries, prompt: Text(verbatim: "RU, KP"))
+                    .labelsHidden()
+                    .multilineTextAlignment(.trailing)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(maxWidth: 180)
+                    .onSubmit { Task { await settings.setMarkedCountries(countries) } }
+            } label: {
+                DetailLabel("Marked countries", note: "ISO codes, e.g. RU. Adds points, never decides alone.", symbol: "flag", color: .pink)
+            }
+        }
+        .onAppear { countries = settings.markedCountriesText }
+        .onChange(of: settings.markedCountriesText) { _, text in countries = text }
+    }
+
+    private func binding(_ setting: AskDetailSwitch) -> Binding<Bool> {
+        Binding<Bool>(
+            get: { settings.isOn(setting) },
+            set: { on in Task { await settings.setAskDetail(setting, on) } }
+        )
+    }
+
+    private var network: Binding<NetworkLookupMode> {
+        Binding<NetworkLookupMode>(get: { settings.askDetails.network }, set: { mode in Task { await settings.setNetworkLookup(mode) } })
+    }
+}
+
+/// Status of the offline table and the button that downloads or updates it.
+private struct NetworkDatabaseRow: View {
+    let settings: SettingsModel
+
+    var body: some View {
+        LabeledContent {
+            HStack(spacing: 8) {
+                if settings.isUpdatingDatabase {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Button(settings.networkDatabaseActionTitle) { Task { await settings.updateNetworkDatabase() } }
+                    .disabled(settings.isUpdatingDatabase)
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Network database")
+                Text(settings.networkDatabaseSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .task { await settings.refreshNetworkDatabase() }
+    }
+}
+
+/// A settings row label: a white symbol on a coloured square, a title and a one-line note.
+private struct DetailLabel: View {
+    let title: String
+    let note: String
+    let symbol: String
+    let color: Color
+
+    init(_ title: String, note: String, symbol: String, color: Color) {
+        self.title = title
+        self.note = note
+        self.symbol = symbol
+        self.color = color
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(color, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+private struct DetailToggle: View {
+    let setting: AskDetailSwitch
+    let isOn: Binding<Bool>
+
+    private var color: Color {
+        switch setting {
+        case .name: .blue
+        case .reverseDNS: .indigo
+        case .port: .gray
+        case .program: .orange
+        case .history: .purple
+        case .assessment: .red
+        case .saferDefault: .gray
+        }
+    }
+
+    var body: some View {
+        Toggle(isOn: isOn) {
+            DetailLabel(setting.title, note: setting.note, symbol: setting.symbolName, color: color)
         }
     }
 }

@@ -4,7 +4,8 @@ import SandvaultCore
 import SandvaultEnforce
 import SandvaultNet
 
-/// Settings screen: helper and netd installation with the bundled executables, hand-off defaults, polling.
+/// Settings screen: helper and netd installation with the bundled executables, hand-off defaults, polling, and what
+/// netd looks up for a connection request (D38-D41).
 @MainActor @Observable
 public final class SettingsModel {
     public private(set) var helperInstalled = false
@@ -12,6 +13,9 @@ public final class SettingsModel {
     public private(set) var netdAgentError: String?
     public private(set) var preferences: AppPreferences
     public private(set) var isBusy = false
+    /// The offline network table; `nil` until the first refresh.
+    public private(set) var networkDatabase: NetworkDatabaseStatus?
+    public private(set) var isUpdatingDatabase = false
     public var message: UserMessage?
     /// Called after the helper or netd changed (overview and firewall refresh, netd link retries).
     @ObservationIgnored public var onSetupChanged: (@MainActor () async -> Void)?
@@ -20,14 +24,16 @@ public final class SettingsModel {
     @ObservationIgnored private let helperSetup: HelperInstalling
     @ObservationIgnored private let agent: NetdAgentControl
     @ObservationIgnored private let store: PreferencesStore
+    @ObservationIgnored private let database: NetworkDatabaseService
     @ObservationIgnored public let bundled: BundledTools
     @ObservationIgnored public let environment: SandvaultEnvironment
 
     public init(
         editor: ConfigEditor, helperSetup: HelperInstalling, agent: NetdAgentControl, preferences: PreferencesStore,
-        bundled: BundledTools, environment: SandvaultEnvironment
+        bundled: BundledTools, environment: SandvaultEnvironment, networkDatabase: NetworkDatabaseService
     ) {
         self.editor = editor
+        self.database = networkDatabase
         self.helperSetup = helperSetup
         self.agent = agent
         self.store = preferences
@@ -41,6 +47,7 @@ public final class SettingsModel {
 
     public func refresh() async {
         helperInstalled = helperSetup.isInstalled
+        networkDatabase = await database.status()
         guard agent.platformSupported else {
             netdAgent = nil
             netdAgentError = SandvaultError.unsupportedPlatform("LaunchAgents (launchd) exist only on macOS").description
@@ -143,6 +150,86 @@ public final class SettingsModel {
         store.save(preferences)
     }
 
+    // MARK: Connection requests (D38-D41)
+
+    public var askDetails: AskDetailSettings { editor.config.network.askDetails }
+
+    public func isOn(_ setting: AskDetailSwitch) -> Bool {
+        askDetails[keyPath: setting.keyPath]
+    }
+
+    public func setAskDetail(_ setting: AskDetailSwitch, _ on: Bool) async {
+        await editAskDetails("Turn \(setting.title) \(on ? "on" : "off")") { $0[keyPath: setting.keyPath] = on }
+    }
+
+    public func setNetworkLookup(_ mode: NetworkLookupMode) async {
+        await editAskDetails("Change the network lookup") { $0.network = mode }
+    }
+
+    /// The marked countries as the text field shows them: `RU, KP`.
+    public var markedCountriesText: String { askDetails.markedCountries.joined(separator: ", ") }
+
+    /// Saves `RU, kp ir` as `["RU", "KP", "IR"]`; an invalid code saves nothing and says which one.
+    public func setMarkedCountries(_ text: String) async {
+        do {
+            let codes = try Self.countryCodes(text)
+            await editAskDetails("Save the marked countries") { $0.markedCountries = codes }
+        } catch {
+            message = UserMessage(error: error, action: "Save the marked countries")
+        }
+    }
+
+    /// ISO 3166-1 alpha-2 codes separated by commas or spaces, upper-cased, without repeats.
+    public static func countryCodes(_ text: String) throws -> [String] {
+        let separators = CharacterSet(charactersIn: ",;").union(.whitespacesAndNewlines)
+        var codes: [String] = []
+        for part in text.components(separatedBy: separators) where !part.isEmpty {
+            let code = part.uppercased()
+            guard code.count == 2, code.unicodeScalars.allSatisfy({ ("A"..."Z").contains($0) }), knownRegions?.contains(code) ?? true else {
+                throw SandvaultError.invalidInput("\(part) is not a two-letter ISO country code (e.g. RU, KP)")
+            }
+            if !codes.contains(code) { codes.append(code) }
+        }
+        return codes
+    }
+
+    /// The two-letter region codes the system knows; `nil` where it lists none, then any two letters pass.
+    private static let knownRegions: Set<String>? = {
+        let codes = Locale.Region.isoRegions.map(\.identifier).filter { $0.count == 2 }
+        return codes.isEmpty ? nil : Set(codes)
+    }()
+
+    /// `Installed · 2026-10-09 · 512,034 ranges`, or `Not installed`.
+    public var networkDatabaseSummary: String {
+        guard let status = networkDatabase else { return "Unknown" }
+        guard status.installed else { return "Not installed" }
+        var parts = ["Installed"]
+        if let date = status.updatedAt { parts.append(Format.day(date)) }
+        if status.ranges > 0 { parts.append(Format.grouped(status.ranges) + " ranges") }
+        return parts.joined(separator: " · ")
+    }
+
+    public var networkDatabaseActionTitle: String { networkDatabase?.installed == true ? "Update" : "Download" }
+
+    public func refreshNetworkDatabase() async {
+        networkDatabase = await database.status()
+    }
+
+    /// Downloads the table (iptoasn.com) through the service; netd reads the new file on its next lookup.
+    public func updateNetworkDatabase() async {
+        guard !isUpdatingDatabase else { return }
+        isUpdatingDatabase = true
+        defer { isUpdatingDatabase = false }
+        do {
+            let status = try await database.update()
+            networkDatabase = status
+            message = .success("Network database updated", detail: status.ranges > 0 ? Format.grouped(status.ranges) + " address ranges" : nil)
+        } catch {
+            message = UserMessage(error: error, action: "Update the network database")
+            networkDatabase = await database.status()
+        }
+    }
+
     /// Puts the bundled svctl on PATH (needs an administrator for /usr/local/bin).
     public var svctlLinkCommand: String? {
         bundled.svctl.map { "sudo ln -sf \(AdministratorScript.shellQuote($0)) /usr/local/bin/svctl" }
@@ -180,6 +267,16 @@ public final class SettingsModel {
         await onSetupChanged?()
     }
 
+    /// netd does the lookups, so it reloads after every change.
+    private func editAskDetails(_ action: String, _ change: (inout AskDetailSettings) -> Void) async {
+        do {
+            let edit = try await editor.edit { change(&$0.network.askDetails) }
+            message = edit.netdReloaded == false ? .info("Saved", detail: netdReloadNote(false)) : nil
+        } catch {
+            message = UserMessage(error: error, action: action)
+        }
+    }
+
     private func editHandoff(_ action: String, _ change: (inout HandoffSettings) -> Void) async {
         do {
             try await editor.edit(reloadNetd: false) { change(&$0.handoff) }
@@ -187,6 +284,64 @@ public final class SettingsModel {
             message = UserMessage(error: error, action: action)
         }
     }
+}
+
+/// The on/off settings of Settings > Connection requests, in the order the section shows them.
+public enum AskDetailSwitch: String, CaseIterable, Sendable {
+    case name, reverseDNS, port, program, history, assessment, saferDefault
+
+    var keyPath: WritableKeyPath<AskDetailSettings, Bool> {
+        switch self {
+        case .name: \.name
+        case .reverseDNS: \.reverseDNS
+        case .port: \.port
+        case .program: \.program
+        case .history: \.history
+        case .assessment: \.assessment
+        case .saferDefault: \.saferDefault
+        }
+    }
+
+    public var title: String {
+        switch self {
+        case .name: "Domain"
+        case .reverseDNS: "Reverse DNS"
+        case .port: "Port"
+        case .program: "Program signature"
+        case .history: "History"
+        case .assessment: "Assessment"
+        case .saferDefault: "Safer default"
+        }
+    }
+
+    public var note: String {
+        switch self {
+        case .name: "From DNS answers and TLS. Local."
+        case .reverseDNS: "Asks your DNS server."
+        case .port: "Built-in list of services. Local."
+        case .program: "Signer and folder. Local."
+        case .history: "Earlier connections. Local."
+        case .assessment: "Uses only the details above."
+        case .saferDefault: "Return denies a suspicious request."
+        }
+    }
+
+    public var symbolName: String {
+        switch self {
+        case .name: "globe"
+        case .reverseDNS: "mappin.and.ellipse"
+        case .port: "number"
+        case .program: "checkmark.seal"
+        case .history: "clock"
+        case .assessment: "checkmark.shield"
+        case .saferDefault: "lock"
+        }
+    }
+
+    /// The lookups above the network picker, those below it, and the judgement.
+    public static let lookupsBeforeNetwork: [AskDetailSwitch] = [.name, .reverseDNS, .port]
+    public static let lookupsAfterNetwork: [AskDetailSwitch] = [.program, .history]
+    public static let judgement: [AskDetailSwitch] = [.assessment, .saferDefault]
 }
 
 // MARK: - Administrator commands
