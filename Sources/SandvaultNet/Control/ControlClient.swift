@@ -123,6 +123,15 @@ public final class ControlClient: @unchecked Sendable {
         return records
     }
 
+    public func content(id: UUID) async throws -> (StoredContent, Data) {
+        guard case .content(let meta, let data) = try Self.check(await request(.content(id: id))) else { throw Self.unexpected() }
+        return (meta, data)
+    }
+
+    public func clearContent() async throws {
+        _ = try Self.check(await request(.clearContent))
+    }
+
     // MARK: - Internals
 
     fileprivate func receive(_ event: ControlEvent) {
@@ -167,7 +176,8 @@ public final class ControlClient: @unchecked Sendable {
         case .status: return { if case .status = $0 { true } else if case .error = $0 { true } else { false } }
         case .recent: return { if case .recent = $0 { true } else if case .error = $0 { true } else { false } }
         case .pendingAsks: return { if case .pending = $0 { true } else if case .error = $0 { true } else { false } }
-        case .subscribe, .reloadConfig, .answer:
+        case .content: return { if case .content = $0 { true } else if case .error = $0 { true } else { false } }
+        case .subscribe, .reloadConfig, .answer, .clearContent:
             return { if case .ack = $0 { true } else if case .error = $0 { true } else { false } }
         }
     }

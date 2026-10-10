@@ -28,6 +28,8 @@ public enum HelperSubcommand: String, Codable, Sendable, CaseIterable {
     case install
     /// Reverse `install`: firewall off, profile block removed, files deleted.
     case uninstall
+    /// Run `eslogger` for the sandbox user's uid and print `ActivityStreamLine`s until terminated (D44).
+    case activityRecord = "activity-record"
 }
 
 /// The desired state the helper enforces; also persisted root-owned in `AppPaths.rootStateDir` for `restore`.

@@ -50,6 +50,7 @@ public struct PrivilegedHelper: Sendable {
             case .restore: return try await restore()
             case .install: return try await install(try installEnvironment(options), source: options.source)
             case .uninstall: return await uninstall(try installEnvironment(options))
+            case .activityRecord: throw SandvaultError.notImplemented("activity-record")
             }
         } catch {
             return HelperResult(ok: false, message: "\(error)")

@@ -132,7 +132,7 @@ public final class NetdLink {
             if !pendingAsks.contains(where: { $0.id == ask.id }) { pendingAsks.append(ask) }
         case .askResolved(let id, _):
             pendingAsks.removeAll { $0.id == id }
-        case .hello, .recent, .pending, .ack, .error:
+        case .hello, .recent, .pending, .content, .ack, .error:
             break
         }
     }

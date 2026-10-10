@@ -89,6 +89,10 @@ public struct AppPaths: Sendable, Equatable, Codable {
     public var controlSocketFallback: String { "\(environment.hostHome)/.local/state/sandvault-config/control.sock" }
     public var logDir: String { "\(appSupportDir)/logs" }
     public var connectionLog: String { "\(logDir)/connections.jsonl" }
+    /// Request and response bodies netd kept, one file per `StoredContent.id` (D43).
+    public var httpContentDir: String { "\(logDir)/http-content" }
+    /// `FileActivityEvent`s the app recorded, JSON Lines (D45).
+    public var activityLog: String { "\(logDir)/activity.jsonl" }
     /// CA key and certificate for TLS inspection (key file mode 0600).
     public var caDir: String { "\(appSupportDir)/ca" }
     public var profileBackupDir: String { "\(appSupportDir)/backups" }

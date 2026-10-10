@@ -190,13 +190,33 @@ public struct HTTPSummary: Codable, Sendable, Equatable, Hashable {
     /// Header pairs in order, sensitive values already redacted.
     public var requestHeaders: [[String]]
     public var responseHeaders: [[String]]
+    /// When the request line arrived (D42); `nil` in records written before.
+    public var startedAt: Date?
+    /// Until the response ended.
+    public var durationMs: Int?
+    /// Body sizes on the wire.
+    public var requestBytes: Int64?
+    public var responseBytes: Int64?
+    /// Kept bodies, only with `WebRecordingSettings.contents` (D43).
+    public var requestContent: StoredContent?
+    public var responseContent: StoredContent?
 
-    public init(method: String, url: String, status: Int? = nil, requestHeaders: [[String]] = [], responseHeaders: [[String]] = []) {
+    public init(
+        method: String, url: String, status: Int? = nil, requestHeaders: [[String]] = [], responseHeaders: [[String]] = [],
+        startedAt: Date? = nil, durationMs: Int? = nil, requestBytes: Int64? = nil, responseBytes: Int64? = nil,
+        requestContent: StoredContent? = nil, responseContent: StoredContent? = nil
+    ) {
         self.method = method
         self.url = url
         self.status = status
         self.requestHeaders = requestHeaders
         self.responseHeaders = responseHeaders
+        self.startedAt = startedAt
+        self.durationMs = durationMs
+        self.requestBytes = requestBytes
+        self.responseBytes = responseBytes
+        self.requestContent = requestContent
+        self.responseContent = responseContent
     }
 }
 

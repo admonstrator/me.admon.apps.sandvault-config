@@ -77,7 +77,20 @@ public protocol NetdClient: AnyObject, Sendable {
     func pendingAsks() async throws -> [AskRequest]
     func recent(limit: Int) async throws -> [ConnectionRecord]
     func reloadConfig() async throws
+    /// A stored request or response body (D43).
+    func content(id: UUID) async throws -> (StoredContent, Data)
+    func clearContent() async throws
     func close()
+}
+
+extension NetdClient {
+    public func content(id: UUID) async throws -> (StoredContent, Data) {
+        throw SandvaultError.notImplemented("stored contents")
+    }
+
+    public func clearContent() async throws {
+        throw SandvaultError.notImplemented("stored contents")
+    }
 }
 
 public protocol NetdConnector: Sendable {
@@ -240,6 +253,8 @@ public struct AppEnvironment: Sendable {
     public var sandbox: SandboxService
     /// The offline address-to-network table netd reads for asks (D39).
     public var networkDatabase: NetworkDatabaseService
+    /// Records files and programs the sandbox touches (D44).
+    public var activity: ActivityRecording
 
     public init(
         environment: SandvaultEnvironment, paths: AppPaths, runner: CommandRunner, configStore: ConfigStore,
@@ -249,7 +264,7 @@ public struct AppEnvironment: Sendable {
         policy: PolicyControl, profiles: ProfileSource, sandboxUID: SandboxUIDSource, localPorts: LocalPortSource,
         helperSetup: HelperInstalling, netd: NetdConnector, netdAgent: NetdAgentControl, ca: CAControl,
         handoff: HandoffService, repos: RepoService, tools: ToolService, migration: MigrationService, keys: KeyService,
-        sandbox: SandboxService, networkDatabase: NetworkDatabaseService
+        sandbox: SandboxService, networkDatabase: NetworkDatabaseService, activity: ActivityRecording = NoActivityRecorder()
     ) {
         self.environment = environment
         self.paths = paths
@@ -279,6 +294,7 @@ public struct AppEnvironment: Sendable {
         self.keys = keys
         self.sandbox = sandbox
         self.networkDatabase = networkDatabase
+        self.activity = activity
     }
 
     /// The real thing: the factories of Observe, Enforce, Net and Workflow over one `ProcessCommandRunner`.

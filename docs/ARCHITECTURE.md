@@ -776,3 +776,13 @@ answers fill the name cache and the history, and a PTR query reaches the upstrea
 **Only a Mac can confirm:** that `ps -o comm=` prints absolute paths for the sandbox user's processes and that netd
 (host user) may run `codesign` on them; the exact codesign output (the fixtures are synthetic); RDAP answers of the
 real registries (fixtures synthetic); the real iptoasn file through `svctl net database update`.
+
+## Phase 5 · Recording (contract)
+
+The shapes for D42-D46 are in Sources/SandvaultCore/Recording.swift. Web: `HTTPSummary` gains timing, body sizes and
+optional `StoredContent` for request and response; `NetworkPolicy.recording` (`WebRecordingSettings`) decides what
+netd keeps, `ControlRequest.content(id:)` / `.clearContent` serve and delete kept bodies, `NetdStatus.storedContentBytes`
+reports their size. Files and programs: `FileActivityEvent`, `ActivityRecordingSettings` in `AppConfig.activity`, the
+helper subcommand `activity-record` that prints `ActivityStreamLine`s, and the app-side `ActivityRecording` protocol
+(`AppEnvironment.activity`, `NoActivityRecorder` until the live one is wired). The sections below describe the web
+recording in netd, the recorder and the Activity and learn mode pages.

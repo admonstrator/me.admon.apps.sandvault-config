@@ -109,3 +109,39 @@ import Testing
         #expect(AskAssessment.level(for: 6) == .suspicious)
     }
 }
+
+@Suite struct RecordingContractTests {
+    @Test func oldFilesDecodeWithTheNewDefaults() throws {
+        let config = try JSONDecoder().decode(AppConfig.self, from: Data(#"{"version":1,"network":{"mode":"proxyOnly"}}"#.utf8))
+        #expect(config.activity == ActivityRecordingSettings())
+        #expect(!config.activity.enabled && config.activity.hideSystemFiles)
+        #expect(config.network.recording == WebRecordingSettings())
+        #expect(config.network.recording.requests && !config.network.recording.contents)
+        let summary = try JSONDecoder().decode(HTTPSummary.self, from: Data(#"{"method":"GET","url":"http://a.test/","requestHeaders":[],"responseHeaders":[]}"#.utf8))
+        #expect(summary.startedAt == nil && summary.responseContent == nil)
+        // Empty optional fields stay out of the log lines.
+        #expect(!String(decoding: try JSONEncoder().encode(summary), as: UTF8.self).contains("Content"))
+    }
+
+    @Test func contentAndActivityRoundTrip() throws {
+        let content = StoredContent(contentType: "application/json", size: 2_000_000, storedBytes: 1_048_576, binary: false)
+        #expect(content.truncated)
+        #expect(!StoredContent(contentType: nil, size: 3, storedBytes: 3, binary: true).truncated)
+        let event = ControlEvent.content(content, Data("{}".utf8))
+        #expect(try JSONDecoder().decode(ControlEvent.self, from: try JSONEncoder().encode(event)) == event)
+        let request = ControlRequest.content(id: content.id)
+        #expect(try JSONDecoder().decode(ControlRequest.self, from: try JSONEncoder().encode(request)) == request)
+
+        let lines: [ActivityStreamLine] = [
+            .started(uid: 502),
+            .event(FileActivityEvent(timestamp: Date(timeIntervalSince1970: 10), kind: .rename, path: "/a", destination: "/b", pid: 7, process: "node")),
+            .event(FileActivityEvent(timestamp: Date(timeIntervalSince1970: 11), kind: .exec, path: "/usr/bin/git", pid: 8, process: "git", arguments: ["git", "status"])),
+            .failed(.needsFullDiskAccess),
+            .failed(.unavailable("eslogger missing")),
+        ]
+        for line in lines {
+            #expect(try JSONDecoder().decode(ActivityStreamLine.self, from: try JSONEncoder().encode(line)) == line)
+        }
+        #expect(HelperSubcommand(rawValue: "activity-record") == .activityRecord)
+    }
+}

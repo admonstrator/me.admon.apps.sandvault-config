@@ -76,11 +76,13 @@ public struct NetdStatus: Codable, Sendable, Equatable {
     public var inspectionEnabled: Bool
     /// SHA-256 fingerprint of the inspection CA, when one exists.
     public var caFingerprint: String?
+    /// Bytes under `AppPaths.httpContentDir`.
+    public var storedContentBytes: Int64?
 
     public init(
         version: String = BundleIdentity.version, startedAt: Date, ports: ProxyPorts, mode: FirewallMode,
         activeConnections: Int = 0, allowedCount: Int = 0, deniedCount: Int = 0, pendingAsks: Int = 0,
-        inspectionEnabled: Bool = false, caFingerprint: String? = nil
+        inspectionEnabled: Bool = false, caFingerprint: String? = nil, storedContentBytes: Int64? = nil
     ) {
         self.version = version
         self.startedAt = startedAt
@@ -92,6 +94,7 @@ public struct NetdStatus: Codable, Sendable, Equatable {
         self.pendingAsks = pendingAsks
         self.inspectionEnabled = inspectionEnabled
         self.caFingerprint = caFingerprint
+        self.storedContentBytes = storedContentBytes
     }
 }
 
@@ -106,6 +109,10 @@ public enum ControlRequest: Codable, Sendable, Equatable {
     /// Most recent records from the in-memory ring buffer.
     case recent(limit: Int)
     case pendingAsks
+    /// The bytes of one `StoredContent` (D43).
+    case content(id: UUID)
+    /// Delete every stored content.
+    case clearContent
 }
 
 /// Server to client.
@@ -117,6 +124,7 @@ public enum ControlEvent: Codable, Sendable, Equatable {
     case ask(AskRequest)
     case pending([AskRequest])
     case askResolved(id: UUID, decision: ConnectionDecision)
+    case content(StoredContent, Data)
     case ack
     case error(String)
 }

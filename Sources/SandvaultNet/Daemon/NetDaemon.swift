@@ -216,6 +216,8 @@ public final class NetDaemon: Sendable, ControlService {
             return .recent(runtime.log.recent(limit: limit))
         case .pendingAsks:
             return .pending(await runtime.asks.pendingRequests())
+        case .content, .clearContent:
+            return .error("stored contents are not implemented yet")
         }
     }
 

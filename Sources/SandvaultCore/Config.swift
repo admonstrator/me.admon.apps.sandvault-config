@@ -24,6 +24,8 @@ public struct AppConfig: Codable, Sendable, Equatable {
     public var handoff: HandoffSettings
     public var tools: [ToolGrant]
     public var repos: [HandoffRecord]
+    /// Recording files and programs (D44, D45).
+    public var activity: ActivityRecordingSettings
 
     public init(
         version: Int = AppConfig.currentVersion,
@@ -31,7 +33,8 @@ public struct AppConfig: Codable, Sendable, Equatable {
         network: NetworkPolicy = NetworkPolicy(),
         handoff: HandoffSettings = HandoffSettings(),
         tools: [ToolGrant] = [],
-        repos: [HandoffRecord] = []
+        repos: [HandoffRecord] = [],
+        activity: ActivityRecordingSettings = ActivityRecordingSettings()
     ) {
         self.version = version
         self.sandbox = sandbox
@@ -39,9 +42,10 @@ public struct AppConfig: Codable, Sendable, Equatable {
         self.handoff = handoff
         self.tools = tools
         self.repos = repos
+        self.activity = activity
     }
 
-    enum CodingKeys: String, CodingKey { case version, sandbox, network, handoff, tools, repos }
+    enum CodingKeys: String, CodingKey { case version, sandbox, network, handoff, tools, repos, activity }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -51,6 +55,7 @@ public struct AppConfig: Codable, Sendable, Equatable {
         handoff = try c.value(.handoff, default: HandoffSettings())
         tools = try c.value(.tools, default: [])
         repos = try c.value(.repos, default: [])
+        activity = try c.value(.activity, default: ActivityRecordingSettings())
     }
 }
 
@@ -392,6 +397,8 @@ public struct NetworkPolicy: Codable, Sendable, Equatable {
     public var routeAllTCP: Bool
     /// What netd looks up for an ask (D38-D41).
     public var askDetails: AskDetailSettings
+    /// Which web requests and contents netd keeps (D42, D43).
+    public var recording: WebRecordingSettings
 
     public init(
         mode: FirewallMode = .off,
@@ -407,7 +414,8 @@ public struct NetworkPolicy: Codable, Sendable, Equatable {
         ports: ProxyPorts = ProxyPorts(),
         inspection: InspectionSettings = InspectionSettings(),
         routeAllTCP: Bool = true,
-        askDetails: AskDetailSettings = AskDetailSettings()
+        askDetails: AskDetailSettings = AskDetailSettings(),
+        recording: WebRecordingSettings = WebRecordingSettings()
     ) {
         self.mode = mode
         self.defaultAction = defaultAction
@@ -423,11 +431,12 @@ public struct NetworkPolicy: Codable, Sendable, Equatable {
         self.inspection = inspection
         self.routeAllTCP = routeAllTCP
         self.askDetails = askDetails
+        self.recording = recording
     }
 
     enum CodingKeys: String, CodingKey {
         case mode, defaultAction, askTimeoutSeconds, askFallback, domainRules, dnsOverrides, portExceptions
-        case blockLAN, localhost, blockPrivateDestinations, ports, inspection, routeAllTCP, askDetails
+        case blockLAN, localhost, blockPrivateDestinations, ports, inspection, routeAllTCP, askDetails, recording
     }
 
     public init(from decoder: Decoder) throws {
@@ -447,6 +456,7 @@ public struct NetworkPolicy: Codable, Sendable, Equatable {
         inspection = try c.value(.inspection, default: d.inspection)
         routeAllTCP = try c.value(.routeAllTCP, default: d.routeAllTCP)
         askDetails = try c.value(.askDetails, default: d.askDetails)
+        recording = try c.value(.recording, default: d.recording)
     }
 }
 
