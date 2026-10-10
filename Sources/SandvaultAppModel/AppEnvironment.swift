@@ -329,7 +329,8 @@ public struct AppEnvironment: Sendable {
             migration: Workflow.makeMigrationService(environment: environment, runner: runner),
             keys: Workflow.makeKeyService(environment: environment, runner: runner),
             sandbox: Workflow.makeSandboxService(environment: environment, runner: runner),
-            networkDatabase: NetworkDatabaseStore(path: paths.networkDatabase, runner: runner)
+            networkDatabase: NetworkDatabaseStore(path: paths.networkDatabase, runner: runner),
+            activity: LiveActivityRecorder(paths: paths, runner: runner)
         )
     }
 }

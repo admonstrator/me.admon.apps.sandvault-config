@@ -23,6 +23,17 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   Zahlenkacheln, Startzeilen für Standard-Agent, Shell und Hand-off, blockierten Hosts mit „Allow“ beim Überfahren
   und „Emergency Stop…“ mit Bestätigung in der Fläche. Im Expert mode steht zusätzlich die Firewall-Modus-Auswahl.
   Das Menüleisten-Symbol ist jetzt die Tresortür, mit der Zahl wartender Anfragen daneben.
+- **Web-Verkehr ansehen:** Activity hat die Ansichten Hosts, Web traffic und Files & programs. Web traffic zeigt
+  jede Anfrage mit Programm, Adresse, Status, Größe und Dauer, auf Klick die Header und auf Wunsch den Inhalt
+  („Keep contents“, bis 1 MB je Anfrage, 7 Tage). Verschlüsselte Seiten ohne „Look inside HTTPS“ stehen mit Schloss
+  und Größe da. `svctl netlog --requests`, `svctl netlog content <id>`.
+- **Dateien und Programme aufzeichnen:** Einschaltbar. Zeigt je Programm, was gelesen, geändert, angelegt, gelöscht
+  und gestartet wurde; „Everything“ listet jedes Öffnen und Schließen. Heikle Orte (SSH, Schlüsselbund, andere
+  Benutzerordner) stehen rot oben. Läuft, solange die App läuft, und braucht einmal Full Disk Access.
+  `svctl activity record|show|clear`.
+- **Lernmodus in ganzen Sätzen:** „claude wanted to create and change files in ~/Documents/Notes“, dazu höchstens
+  zwei Erlaubnis-Knöpfe und „Keep Blocked“, beides mit Undo. Die Rohzeile steht unter Details.
+- **Einstellungen:** neuer Bereich Recording mit allen Schaltern, Aufbewahrungsdauer, Platzbedarf und „Clear“.
 - **Verbindungsanfragen mit Details:** Das Anfragefenster zeigt sechs Kacheln (Name, Port, Netzwerk,
   Verschlüsselung, Verlauf, Programm), eine Einschätzung (normal, ungewöhnlich, verdächtig) mit Begründung je
   Kachel und die Restzeit als Ring. Eine Knopfzeile: links „Merken“ (Nur dieses Mal, Immer für Adresse und Port, …),
@@ -73,6 +84,9 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   - Der geführte Gerätetest scheiterte vorher an `--follow --suggest`, das die CLI ablehnte.
 
 ### Bekannte Grenzen
+- Anfragen einer langen Keep-Alive-Verbindung erscheinen in Web traffic erst, wenn die Verbindung endet.
+- Die Dateiaufnahme beruht auf dem Ausgabeformat von `eslogger`, das hier nur nachgebildet ist; die ersten echten
+  Aufnahmen auf dem Mac können Korrekturen am Parser nötig machen.
 - Private Netze (LAN, VPN, Tailscale) laufen weiterhin nicht über netd und brauchen eine Port-Ausnahme; pf kann an
   der Stelle nicht nach Benutzer unterscheiden.
 - Die lokale Netzwerktabelle kennt nur IPv4.
