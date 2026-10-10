@@ -128,13 +128,15 @@ public final class FirewallModel {
     }
 
     @discardableResult
-    public func upsertDomainRule(pattern: String, action: DomainAction, inspect: Bool? = nil) async -> Bool {
+    public func upsertDomainRule(pattern: String, action: DomainAction, inspect: Bool? = nil, port: UInt16? = nil) async -> Bool {
         let now = clock.now()
-        return await editProxy("Save rule") { try $0.upsertDomainRule(pattern: pattern, action: action, inspect: inspect, now: now) }
+        return await editProxy("Save rule") {
+            try $0.upsertDomainRule(pattern: pattern, action: action, inspect: inspect, now: now, port: port)
+        }
     }
 
     public func setInspect(_ rule: DomainRule, _ inspect: Bool) async {
-        await upsertDomainRule(pattern: rule.pattern, action: rule.action, inspect: inspect)
+        await upsertDomainRule(pattern: rule.pattern, action: rule.action, inspect: inspect, port: rule.port)
     }
 
     public func removeDomainRule(_ id: UUID) async {

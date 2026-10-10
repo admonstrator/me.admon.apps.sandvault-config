@@ -139,6 +139,24 @@ import Testing
         #expect(network.dnsOverrides.isEmpty)
     }
 
+    @Test func editingAPortRuleKeepsItsPort() async throws {
+        let world = TestWorld()
+        defer { world.cleanUp() }
+        let firewall = world.model().firewall
+
+        #expect(await firewall.upsertDomainRule(pattern: "example.com", action: .ask))
+        #expect(await firewall.upsertDomainRule(pattern: "example.com", action: .allow, port: 22))
+        var rule = try #require(try world.store.load().network.domainRules.first { $0.port == 22 })
+        await firewall.setInspect(rule, true)
+        #expect(await firewall.upsertDomainRule(pattern: rule.pattern, action: .deny, port: rule.port))
+
+        let rules = try world.store.load().network.domainRules
+        #expect(rules.count == 2)
+        rule = try #require(rules.first { $0.port == 22 })
+        #expect(rule.action == .deny && rule.inspect)
+        #expect(rules.first { $0.port == nil }?.action == .ask)
+    }
+
     @Test func exceptionsValidateThePort() async throws {
         let world = TestWorld()
         defer { world.cleanUp() }

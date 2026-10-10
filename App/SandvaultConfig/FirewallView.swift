@@ -233,7 +233,7 @@ struct DomainRuleRow: View {
 
     var body: some View {
         HStack {
-            Text(rule.pattern)
+            Text(rule.port.map { "\(rule.pattern) port \($0)" } ?? rule.pattern)
                 .font(.system(.body, design: .monospaced))
             if let note = rule.note {
                 Text(note).foregroundStyle(.secondary)
@@ -260,7 +260,7 @@ struct DomainRuleRow: View {
     private var action: Binding<DomainAction> {
         Binding<DomainAction>(
             get: { rule.action },
-            set: { action in Task { await firewall.upsertDomainRule(pattern: rule.pattern, action: action) } }
+            set: { action in Task { await firewall.upsertDomainRule(pattern: rule.pattern, action: action, port: rule.port) } }
         )
     }
 
