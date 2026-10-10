@@ -37,7 +37,8 @@ public final class ControlClient: @unchecked Sendable {
                 .connectTimeout(.seconds(3))
                 .channelInitializer { channel in
                     channel.eventLoop.makeCompletedFuture {
-                        try channel.pipeline.syncOperations.addHandler(ByteToMessageHandler(LineFrameDecoder()))
+                        // A served content can be up to `ContentStore.maxBodyBytes`, base64 in one line.
+                        try channel.pipeline.syncOperations.addHandler(ByteToMessageHandler(LineFrameDecoder(maxLength: 32 << 20)))
                         try channel.pipeline.syncOperations.addHandler(ControlClientHandler(client: client))
                     }
                 }

@@ -18,13 +18,15 @@ struct GateResult: Sendable {
     var owner: ProcessOwner?
 }
 
-/// Shared state of the listeners: policy, asks, resolution, attribution, logging and TLS material.
+/// Shared state of the listeners: policy, asks, resolution, attribution, logging, kept contents and TLS material.
 final class NetRuntime: Sendable {
     let policy: PolicyStore
     let asks: AskCoordinator
     let resolver: HostResolver
     let attributor: ProcessAttributor
     let log: ConnectionLog
+    /// Request and response bodies kept with `WebRecordingSettings.contents` (D43).
+    let contents: ContentStore
     let hub: ControlHub
     let counters = NetdCounters()
     let inspection: InspectionService
@@ -36,7 +38,7 @@ final class NetRuntime: Sendable {
     let logger: @Sendable (String) -> Void
 
     init(
-        policy: PolicyStore, resolver: HostResolver, attributor: ProcessAttributor, log: ConnectionLog, hub: ControlHub,
+        policy: PolicyStore, resolver: HostResolver, attributor: ProcessAttributor, log: ConnectionLog, contents: ContentStore, hub: ControlHub,
         inspection: InspectionService, transparentHTTPPort: Int, transparentTLSPort: Int, enricher: AskEnriching = NoAskEnrichment(),
         transparentTCPUpstream: SocketAddress? = nil, logger: @escaping @Sendable (String) -> Void
     ) {
@@ -44,6 +46,7 @@ final class NetRuntime: Sendable {
         self.resolver = resolver
         self.attributor = attributor
         self.log = log
+        self.contents = contents
         self.hub = hub
         self.inspection = inspection
         self.transparentHTTPPort = transparentHTTPPort

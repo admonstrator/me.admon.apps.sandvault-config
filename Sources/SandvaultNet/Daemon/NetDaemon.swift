@@ -22,6 +22,8 @@ public struct NetdOptions: Sendable {
     public var transparentTCPUpstream: SocketAddress?
     public var upstreamTrustRoots: NIOSSLTrustRoots = .default
     public var connectionLogPath: String
+    /// Kept request and response bodies (D43).
+    public var contentDirectory: String
     public var caDirectory: String
     /// Seconds between firewall refreshes and status events.
     public var refreshInterval: Double = 5
@@ -36,6 +38,7 @@ public struct NetdOptions: Sendable {
         self.bindHost = bindHost
         self.upstreamDNS = upstreamDNS
         connectionLogPath = paths.connectionLog
+        contentDirectory = paths.httpContentDir
         caDirectory = paths.caDir
         sharedFiles = SharedFiles(environment: paths.environment)
     }
@@ -72,7 +75,7 @@ public final class NetDaemon: Sendable, ControlService {
         self.enricher = enricher
         runtime = NetRuntime(
             policy: policy, resolver: resolver, attributor: attributor, log: ConnectionLog(path: options.connectionLogPath),
-            hub: ControlHub(), inspection: inspection, transparentHTTPPort: options.transparentHTTPUpstreamPort,
+            contents: ContentStore(directory: options.contentDirectory, log: logger), hub: ControlHub(), inspection: inspection, transparentHTTPPort: options.transparentHTTPUpstreamPort,
             transparentTLSPort: options.transparentTLSUpstreamPort, enricher: enricher,
             transparentTCPUpstream: options.transparentTCPUpstream, logger: logger
         )
@@ -137,6 +140,7 @@ public final class NetDaemon: Sendable, ControlService {
         }
 
         syncEnvironmentBlock(config)
+        pruneContents(config.network.recording, force: true)
         let loop = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.tick()
@@ -183,7 +187,8 @@ public final class NetDaemon: Sendable, ControlService {
         return NetdStatus(
             startedAt: startedAt, ports: bound, mode: config.network.mode, activeConnections: counts.active,
             allowedCount: counts.allowed, deniedCount: counts.denied, pendingAsks: await runtime.asks.pendingCount,
-            inspectionEnabled: config.network.inspection.enabled, caFingerprint: runtime.inspection.fingerprint
+            inspectionEnabled: config.network.inspection.enabled, caFingerprint: runtime.inspection.fingerprint,
+            storedContentBytes: runtime.contents.totalBytes
         )
     }
 
@@ -216,8 +221,19 @@ public final class NetDaemon: Sendable, ControlService {
             return .recent(runtime.log.recent(limit: limit))
         case .pendingAsks:
             return .pending(await runtime.asks.pendingRequests())
-        case .content, .clearContent:
-            return .error("stored contents are not implemented yet")
+        case .content(let id):
+            // Only the UUID reaches the store, which builds the path itself.
+            guard let (meta, data) = runtime.contents.content(id: id) else {
+                return .error("no stored content \(id.uuidString.lowercased())")
+            }
+            return .content(meta, data)
+        case .clearContent:
+            do {
+                try runtime.contents.clear()
+                return .ack
+            } catch {
+                return .error("cannot clear stored contents: \(error)")
+            }
         }
     }
 
@@ -226,10 +242,26 @@ public final class NetDaemon: Sendable, ControlService {
     private func tick() async {
         let config = runtime.policy.snapshot.config
         await refresher?.tick(config: config)
+        pruneContents(config.network.recording)
         if runtime.hub.hasSubscribers(.status) {
             runtime.hub.publish(.status(await status()), topic: .status)
         }
     }
+
+    /// Deletes kept contents past their retention: at start, then at most every `contentPruneInterval` seconds.
+    private func pruneContents(_ recording: WebRecordingSettings, force: Bool = false) {
+        let now = Date()
+        let due = state.withLock { values -> Bool in
+            guard force || values.lastPrune.map({ now.timeIntervalSince($0) >= Self.contentPruneInterval }) ?? true else { return false }
+            values.lastPrune = now
+            return true
+        }
+        guard due else { return }
+        let removed = runtime.contents.prune(retentionDays: recording.retentionDays, now: now)
+        if removed > 0 { logger("removed \(removed) stored content files older than \(max(1, recording.retentionDays)) days") }
+    }
+
+    static let contentPruneInterval: Double = 600
 
     /// Writes or removes the `.zshenv` block; a repeated failure is logged once.
     private func syncEnvironmentBlock(_ config: AppConfig) {
@@ -301,6 +333,7 @@ private final class LockedState: @unchecked Sendable {
         var startedAt = Date()
         var loop: Task<Void, Never>?
         var environmentProblem: String?
+        var lastPrune: Date?
     }
 
     private let lock = NSLock()

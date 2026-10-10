@@ -320,6 +320,8 @@ import Testing
             let summary = try #require(record.http.first)
             #expect(summary.method == "GET" && summary.status == 200)
             #expect(summary.url == "https://secure.test:\(origin.port)/inspected?x=1")
+            #expect(summary.startedAt != nil && summary.durationMs != nil && summary.requestBytes == 0)
+            #expect(summary.responseBytes == Int64("secure saw GET /inspected?x=1".utf8.count))
             #expect(summary.requestHeaders.contains(["Authorization", "<redacted>"]))
             #expect(summary.responseHeaders.contains(["Set-Cookie", "<redacted>"]))
             #expect(!(try String(contentsOfFile: netd.layout.paths.connectionLog, encoding: .utf8)).contains("topsecret"))
