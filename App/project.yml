@@ -25,12 +25,12 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: "26.0"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
-    # Automatic signing with Aaron's team for every target (CI builds with CODE_SIGNING_ALLOWED=NO).
-    # No App Sandbox: the app runs sudo, launchctl and osascript.
+    # Automatic signing with Aaron's team and the hardened runtime for every target, as distribution requires
+    # (CI builds with CODE_SIGNING_ALLOWED=NO). No App Sandbox: the app runs sudo, launchctl and osascript.
     CODE_SIGN_IDENTITY: "Apple Development"
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: 5CVUCAZ4AV
-    ENABLE_HARDENED_RUNTIME: NO
+    ENABLE_HARDENED_RUNTIME: YES
     ENABLE_APP_SANDBOX: NO
 
 targets:
@@ -47,7 +47,6 @@ targets:
     settings:
       base:
         PRODUCT_NAME: SandvaultConfig
-        ENABLE_HARDENED_RUNTIME: YES
         INFOPLIST_KEY_NSAppleEventsUsageDescription: Sandvault Config opens a terminal window to run sv.
         PRODUCT_BUNDLE_IDENTIFIER: me.admon.apps.sandvault-config
         GENERATE_INFOPLIST_FILE: YES

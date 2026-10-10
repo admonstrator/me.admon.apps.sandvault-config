@@ -608,8 +608,8 @@ osascript's output; a cancelled password dialog (-128) is reported as cancelled.
 
 **Bundle and project.** `App/project.yml` (XcodeGen; the `.xcodeproj` is generated, D2): the local package
 (`packages: SandvaultConfig: path: ..`), scheme `SandvaultConfig`, Swift 6, macOS 26, automatic signing with team `5CVUCAZ4AV` for
-every target, hardened runtime on the app with the `com.apple.security.automation.apple-events` entitlement (osascript
-drives the terminals), no App Sandbox. `svctl`, `svctl-helper` and `sandvault-netd` are XcodeGen `tool` targets (`BundledSvctl`,
+every target, hardened runtime on every target (distribution requires it for the embedded tools too), the
+`com.apple.security.automation.apple-events` entitlement on the app (osascript drives the terminals), no App Sandbox. `svctl`, `svctl-helper` and `sandvault-netd` are XcodeGen `tool` targets (`BundledSvctl`,
 `BundledHelper`, `BundledNetd`: target and module names differ from the package's executable targets; `productName`
 and `PRODUCT_NAME` give the product names, since XcodeGen names the product reference after `productName`) whose
 sources are `../Sources/<name>` and which link the package's library products; the app embeds them with a copy-files

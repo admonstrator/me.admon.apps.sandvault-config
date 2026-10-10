@@ -23,8 +23,8 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
 
 ### Behoben
 - `xcodegen generate` schaltete die automatische Signierung jedes Mal ab. `project.yml` signiert jetzt alle Targets
-  automatisch mit dem Team `5CVUCAZ4AV`, die App mit Hardened Runtime und der Berechtigung für Apple Events (für
-  Terminal, iTerm2 und Ghostty). Mindestversion ist macOS 26.
+  automatisch mit dem Team `5CVUCAZ4AV` und mit Hardened Runtime, die App zusätzlich mit der Berechtigung für Apple
+  Events (für Terminal, iTerm2 und Ghostty). Mindestversion ist macOS 26.
 - Ghostty öffnete beim Start aus der App (Sitzung, Rebuild, Hand-off) nur die normale Shell oder ein leeres Fenster,
   ohne sv. Die App öffnet Ghostty jetzt wie Terminal per AppleScript (ab Ghostty 1.3): neues Fenster, Befehl eintippen,
   Enter. macOS fragt beim ersten Mal nach der Erlaubnis, Ghostty zu steuern.
