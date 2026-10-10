@@ -32,7 +32,7 @@ public enum RegistrableDomain {
     public static func rulePattern(for rawHost: String, scope: AskScope) -> String {
         let host = HostName.normalize(rawHost)
         switch scope {
-        case .host:
+        case .host, .hostAndPort:
             return host
         case .domain:
             let domain = of(host)

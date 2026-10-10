@@ -216,17 +216,23 @@ public struct DomainRule: Codable, Sendable, Equatable, Hashable, Identifiable {
     public var inspect: Bool
     public var note: String?
     public var createdAt: Date
+    /// Only this port. `nil`: every port the policy lets rules decide (80 and 443, and any port for `allow`).
+    public var port: UInt16?
 
-    public init(id: UUID = UUID(), pattern: String, action: DomainAction, inspect: Bool = false, note: String? = nil, createdAt: Date = Date()) {
+    public init(
+        id: UUID = UUID(), pattern: String, action: DomainAction, inspect: Bool = false, note: String? = nil, createdAt: Date = Date(),
+        port: UInt16? = nil
+    ) {
         self.id = id
         self.pattern = pattern
         self.action = action
         self.inspect = inspect
         self.note = note
         self.createdAt = createdAt
+        self.port = port
     }
 
-    enum CodingKeys: String, CodingKey { case id, pattern, action, inspect, note, createdAt }
+    enum CodingKeys: String, CodingKey { case id, pattern, action, inspect, note, createdAt, port }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -236,6 +242,7 @@ public struct DomainRule: Codable, Sendable, Equatable, Hashable, Identifiable {
         inspect = try c.value(.inspect, default: false)
         note = try c.decodeIfPresent(String.self, forKey: .note)
         createdAt = try c.value(.createdAt, default: Date(timeIntervalSince1970: 0))
+        port = try c.decodeIfPresent(UInt16.self, forKey: .port)
     }
 }
 
@@ -309,17 +316,23 @@ public struct ProxyPorts: Codable, Sendable, Equatable, Hashable {
     public var transparentHTTP: UInt16
     public var transparentTLS: UInt16
     public var dns: UInt16
+    /// Transparent listener for TCP on every other port (`NetworkPolicy.routeAllTCP`).
+    public var transparentTCP: UInt16
 
-    public init(explicitProxy: UInt16 = 18080, transparentHTTP: UInt16 = 18081, transparentTLS: UInt16 = 18443, dns: UInt16 = 18053) {
+    public init(
+        explicitProxy: UInt16 = 18080, transparentHTTP: UInt16 = 18081, transparentTLS: UInt16 = 18443, dns: UInt16 = 18053,
+        transparentTCP: UInt16 = 18444
+    ) {
         self.explicitProxy = explicitProxy
         self.transparentHTTP = transparentHTTP
         self.transparentTLS = transparentTLS
         self.dns = dns
+        self.transparentTCP = transparentTCP
     }
 
-    public var all: [UInt16] { [explicitProxy, transparentHTTP, transparentTLS, dns] }
+    public var all: [UInt16] { [explicitProxy, transparentHTTP, transparentTLS, dns, transparentTCP] }
 
-    enum CodingKeys: String, CodingKey { case explicitProxy, transparentHTTP, transparentTLS, dns }
+    enum CodingKeys: String, CodingKey { case explicitProxy, transparentHTTP, transparentTLS, dns, transparentTCP }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -328,6 +341,7 @@ public struct ProxyPorts: Codable, Sendable, Equatable, Hashable {
         transparentHTTP = try c.value(.transparentHTTP, default: d.transparentHTTP)
         transparentTLS = try c.value(.transparentTLS, default: d.transparentTLS)
         dns = try c.value(.dns, default: d.dns)
+        transparentTCP = try c.value(.transparentTCP, default: d.transparentTCP)
     }
 }
 
@@ -373,6 +387,11 @@ public struct NetworkPolicy: Codable, Sendable, Equatable {
     public var blockPrivateDestinations: Bool
     public var ports: ProxyPorts
     public var inspection: InspectionSettings
+    /// In proxy-only mode, hand TCP on every port other than 53, 80 and 443 to netd (rules and asks) instead of
+    /// refusing it in pf (D37). UDP other than DNS stays refused.
+    public var routeAllTCP: Bool
+    /// What netd looks up for an ask (D38-D41).
+    public var askDetails: AskDetailSettings
 
     public init(
         mode: FirewallMode = .off,
@@ -386,7 +405,9 @@ public struct NetworkPolicy: Codable, Sendable, Equatable {
         localhost: LocalhostPolicy = .sandboxAndHelpers,
         blockPrivateDestinations: Bool = true,
         ports: ProxyPorts = ProxyPorts(),
-        inspection: InspectionSettings = InspectionSettings()
+        inspection: InspectionSettings = InspectionSettings(),
+        routeAllTCP: Bool = true,
+        askDetails: AskDetailSettings = AskDetailSettings()
     ) {
         self.mode = mode
         self.defaultAction = defaultAction
@@ -400,11 +421,13 @@ public struct NetworkPolicy: Codable, Sendable, Equatable {
         self.blockPrivateDestinations = blockPrivateDestinations
         self.ports = ports
         self.inspection = inspection
+        self.routeAllTCP = routeAllTCP
+        self.askDetails = askDetails
     }
 
     enum CodingKeys: String, CodingKey {
         case mode, defaultAction, askTimeoutSeconds, askFallback, domainRules, dnsOverrides, portExceptions
-        case blockLAN, localhost, blockPrivateDestinations, ports, inspection
+        case blockLAN, localhost, blockPrivateDestinations, ports, inspection, routeAllTCP, askDetails
     }
 
     public init(from decoder: Decoder) throws {
@@ -422,6 +445,8 @@ public struct NetworkPolicy: Codable, Sendable, Equatable {
         blockPrivateDestinations = try c.value(.blockPrivateDestinations, default: d.blockPrivateDestinations)
         ports = try c.value(.ports, default: d.ports)
         inspection = try c.value(.inspection, default: d.inspection)
+        routeAllTCP = try c.value(.routeAllTCP, default: d.routeAllTCP)
+        askDetails = try c.value(.askDetails, default: d.askDetails)
     }
 }
 

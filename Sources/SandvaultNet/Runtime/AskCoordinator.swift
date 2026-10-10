@@ -17,11 +17,15 @@ public struct ProcessOwner: Sendable, Equatable {
 /// Holds connections whose host matched an `ask` until a control client answers or the timeout passes.
 /// Concurrent asks for the same host share one `AskRequest`. Answers are remembered for `graceSeconds`,
 /// so the DNS query that raised an ask and the connection that follows it see the same decision.
+/// Before an ask is published, the enricher gets `AskDetailSettings.budgetSeconds` to fill `AskRequest.details`;
+/// the timeout starts when the ask is published.
 actor AskCoordinator {
     private struct Pending {
         var request: AskRequest
         var waiters: [CheckedContinuation<AskResolution, Never>] = []
         var timeout: Task<Void, Never>?
+        /// False while the enricher runs; clients only ever see published asks.
+        var published = false
     }
 
     private struct Grant {
@@ -34,6 +38,7 @@ actor AskCoordinator {
     private let hub: ControlHub
     private let persist: @Sendable (_ pattern: String, _ action: DomainAction) throws -> DomainRule
     private let log: @Sendable (String) -> Void
+    private let enricher: AskEnriching
     private var pending: [UUID: Pending] = [:]
     private var byHost: [String: UUID] = [:]
     private var grants: [String: Grant] = [:]
@@ -41,18 +46,22 @@ actor AskCoordinator {
     init(
         hub: ControlHub,
         persist: @escaping @Sendable (_ pattern: String, _ action: DomainAction) throws -> DomainRule,
-        log: @escaping @Sendable (String) -> Void
+        log: @escaping @Sendable (String) -> Void,
+        enricher: AskEnriching = NoAskEnrichment()
     ) {
         self.hub = hub
         self.persist = persist
         self.log = log
+        self.enricher = enricher
     }
 
     /// Waits for an answer (or the timeout); without a subscribed client the fallback applies at once.
-    func decide(host: String, port: UInt16?, kind: ConnectionKind, owner: ProcessOwner?, policy: NetworkPolicy) async -> AskResolution {
+    func decide(
+        host: String, port: UInt16?, kind: ConnectionKind, owner: ProcessOwner?, policy: NetworkPolicy, hint: ConnectionHint = ConnectionHint()
+    ) async -> AskResolution {
         if let grant = activeGrant(host) { return grant }
         guard hub.hasSubscribers(.asks) else { return Self.fallback(policy, reason: "no client is answering asks") }
-        let id = open(host: host, port: port, kind: kind, owner: owner, policy: policy)
+        let id = await open(host: host, port: port, kind: kind, owner: owner, policy: policy, hint: hint)
         return await withCheckedContinuation { continuation in
             if pending[id] != nil {
                 pending[id]!.waiters.append(continuation)
@@ -63,10 +72,10 @@ actor AskCoordinator {
     }
 
     /// Raises (or joins) an ask without waiting, for DNS. Returns a resolution only when one applies right now.
-    func raise(host: String, kind: ConnectionKind, owner: ProcessOwner?, policy: NetworkPolicy) -> AskResolution? {
+    func raise(host: String, kind: ConnectionKind, owner: ProcessOwner?, policy: NetworkPolicy) async -> AskResolution? {
         if let grant = activeGrant(host) { return grant }
         guard hub.hasSubscribers(.asks) else { return Self.fallback(policy, reason: "no client is answering asks") }
-        _ = open(host: host, port: nil, kind: kind, owner: owner, policy: policy)
+        _ = await open(host: host, port: nil, kind: kind, owner: owner, policy: policy, hint: ConnectionHint())
         return nil
     }
 
@@ -96,7 +105,7 @@ actor AskCoordinator {
     }
 
     func pendingRequests() -> [AskRequest] {
-        pending.values.map(\.request).sorted { $0.createdAt < $1.createdAt }
+        pending.values.filter(\.published).map(\.request).sorted { $0.createdAt < $1.createdAt }
     }
 
     var pendingCount: Int { pending.count }
@@ -115,24 +124,57 @@ actor AskCoordinator {
 
     // MARK: - Internals
 
-    private func open(host: String, port: UInt16?, kind: ConnectionKind, owner: ProcessOwner?, policy: NetworkPolicy) -> UUID {
+    /// Reserves the ask (so concurrent connections join it), waits for the details, then publishes it.
+    private func open(
+        host: String, port: UInt16?, kind: ConnectionKind, owner: ProcessOwner?, policy: NetworkPolicy, hint: ConnectionHint
+    ) async -> UUID {
         if let id = byHost[host] { return id }
         let timeout = max(1, policy.askTimeoutSeconds)
-        let now = Date()
-        let request = AskRequest(
-            host: host, port: port, kind: kind, pid: owner?.pid, process: owner?.name,
-            createdAt: now, expiresAt: now.addingTimeInterval(TimeInterval(timeout))
+        var request = AskRequest(
+            host: host, port: port, kind: kind, pid: owner?.pid, process: owner?.name, expiresAt: Date().addingTimeInterval(TimeInterval(timeout))
         )
         let id = request.id
+        pending[id] = Pending(request: request)
+        byHost[host] = id
+
+        let input = AskEnrichmentInput(host: host, port: port, kind: kind, owner: owner, hint: hint)
+        let enricher = self.enricher
+        let settings = policy.askDetails
+        request.details = await Self.within(settings.budgetSeconds) { await enricher.details(for: input, settings: settings) }
+
+        let now = Date()
+        request.createdAt = now
+        request.expiresAt = now.addingTimeInterval(TimeInterval(timeout))
         let timer = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(timeout) * 1_000_000_000)
             guard !Task.isCancelled else { return }
             await self?.expire(id, policy: policy)
         }
-        pending[id] = Pending(request: request, timeout: timer)
-        byHost[host] = id
+        guard pending[id] != nil else {
+            timer.cancel()
+            return id
+        }
+        pending[id]!.request = request
+        pending[id]!.timeout = timer
+        pending[id]!.published = true
         hub.publish(.ask(request), topic: .asks)
         return id
+    }
+
+    /// The work's result, or `nil` when it takes longer than `seconds` (the work is cancelled then).
+    static func within(_ seconds: Double, _ work: @escaping @Sendable () async -> AskDetails?) async -> AskDetails? {
+        enum Outcome: Sendable { case done(AskDetails?), late }
+        return await withTaskGroup(of: Outcome.self) { group in
+            group.addTask { .done(await work()) }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+                return .late
+            }
+            let first = await group.next() ?? .late
+            group.cancelAll()
+            if case .done(let details) = first { return details }
+            return nil
+        }
     }
 
     private func expire(_ id: UUID, policy: NetworkPolicy) {

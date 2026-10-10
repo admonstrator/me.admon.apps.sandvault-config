@@ -35,7 +35,8 @@ final class NetRuntime: Sendable {
 
     init(
         policy: PolicyStore, resolver: HostResolver, attributor: ProcessAttributor, log: ConnectionLog, hub: ControlHub,
-        inspection: InspectionService, transparentHTTPPort: Int, transparentTLSPort: Int, logger: @escaping @Sendable (String) -> Void
+        inspection: InspectionService, transparentHTTPPort: Int, transparentTLSPort: Int, enricher: AskEnriching = NoAskEnrichment(),
+        logger: @escaping @Sendable (String) -> Void
     ) {
         self.policy = policy
         self.resolver = resolver
@@ -49,12 +50,16 @@ final class NetRuntime: Sendable {
         asks = AskCoordinator(
             hub: hub,
             persist: { pattern, action in try policy.persistRule(pattern: pattern, action: action) },
-            log: logger
+            log: logger,
+            enricher: enricher
         )
     }
 
     /// Policy, ask, resolution and private-destination check for a proxied connection to `host:port`.
-    func authorize(host rawHost: String, port: UInt16, kind: ConnectionKind, clientPort: UInt16?) async -> GateResult {
+    /// `hint` is what the listener saw (original address, server name, protocol); it goes to the ask's details.
+    func authorize(
+        host rawHost: String, port: UInt16, kind: ConnectionKind, clientPort: UInt16?, hint: ConnectionHint = ConnectionHint()
+    ) async -> GateResult {
         let host = HostName.normalize(rawHost)
         let snapshot = policy.snapshot
         let engine = snapshot.engine
@@ -71,7 +76,7 @@ final class NetRuntime: Sendable {
         case .ask:
             let owner = await attributed
             result.owner = owner
-            let resolution = await asks.decide(host: host, port: port, kind: kind, owner: owner, policy: snapshot.policy)
+            let resolution = await asks.decide(host: host, port: port, kind: kind, owner: owner, policy: snapshot.policy, hint: hint)
             result.decision = resolution.decision
             result.reason = resolution.reason
             guard resolution.allowed else { return result }

@@ -628,3 +628,12 @@ signatures (a scratch harness, not in the repository).
 `Contents/MacOS`, the `osascript` password dialog and the helper's JSON passing through `do shell script`, floating ask
 panels over full-screen apps, notification actions from an `LSUIElement` app, `MenuBarExtra` window `onAppear`/`onDisappear` as the polling trigger, and drag and drop of Finder
 folders onto the menu bar window.
+
+## Phase 4 · Connection requests with details (contract)
+
+An ask carries `AskRequest.details` (Sources/SandvaultCore/AskDetails.swift): name and its source, reverse name,
+port service, network owner and country, encryption, history, program signature and an assessment of signals with
+points (D37-D41). netd fills them through an `AskEnriching` before it publishes the ask (`AskCoordinator.open`
+reserves the ask, waits at most `AskDetailSettings.budgetSeconds`, then starts the timeout and publishes); listeners
+pass what they saw as a `ConnectionHint` to `NetRuntime.authorize`. The sections below describe the transparent TCP
+listener, the lookups and the panel.

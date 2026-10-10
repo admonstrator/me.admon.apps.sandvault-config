@@ -68,3 +68,44 @@ import Testing
         #expect(CheckReport(checks: []).worst == .ok)
     }
 }
+
+@Suite struct AskDetailsContractTests {
+    @Test func oldFilesDecodeWithTheNewDefaults() throws {
+        let policy = try JSONDecoder().decode(NetworkPolicy.self, from: Data(#"{"mode":"proxyOnly","ports":{"dns":5353}}"#.utf8))
+        #expect(policy.routeAllTCP)
+        #expect(policy.askDetails == AskDetailSettings())
+        #expect(policy.ports.transparentTCP == 18444 && policy.ports.dns == 5353)
+        #expect(policy.ports.all.contains(18444))
+        let rule = try JSONDecoder().decode(DomainRule.self, from: Data(#"{"pattern":"a.test","action":"allow"}"#.utf8))
+        #expect(rule.port == nil)
+        // A rule without a port is written without the key, so existing files stay as they are.
+        #expect(!String(decoding: try JSONEncoder().encode(rule), as: UTF8.self).contains("port"))
+    }
+
+    @Test func detailsRoundTrip() throws {
+        let details = AskDetails(
+            address: "185.142.236.41", name: AskName(name: nil, source: .none), reverseName: "vps-41.example-host.ru",
+            service: KnownService(port: 8947, name: nil),
+            network: AskNetwork(asn: 48282, owner: "Example Hosting", country: "RU", kind: .hosting, source: .offline),
+            encryption: .unknown, history: AskHistory(allowed: 0, denied: 0, lastSeen: nil),
+            program: AskProgram(path: "/tmp/x/python3", signature: .developer(team: nil), inTemporaryFolder: true),
+            assessment: AskAssessment(level: .suspicious, score: 8, signals: [
+                .init(detail: .port, effect: .minus, points: 2, text: "Port 8947 is in no list of known services."),
+            ])
+        )
+        let request = AskRequest(host: "185.142.236.41", port: 8947, kind: .transparentTLS, expiresAt: Date(timeIntervalSince1970: 60), details: details)
+        let decoded = try JSONDecoder().decode(AskRequest.self, from: try JSONEncoder().encode(request))
+        #expect(decoded == request)
+        let rule = DomainRule(pattern: "185.142.236.41", action: .allow, port: 8947)
+        #expect(try JSONDecoder().decode(DomainRule.self, from: try JSONEncoder().encode(rule)).port == 8947)
+    }
+
+    @Test func scopeOptionsAndLevels() {
+        #expect(AskScope.options(port: 443, hasDomain: true) == [.host, .domain])
+        #expect(AskScope.options(port: nil, hasDomain: false) == [.host])
+        #expect(AskScope.options(port: 8947, hasDomain: true) == [.hostAndPort, .host])
+        #expect(AskAssessment.level(for: 2) == .normal)
+        #expect(AskAssessment.level(for: 3) == .unusual)
+        #expect(AskAssessment.level(for: 6) == .suspicious)
+    }
+}

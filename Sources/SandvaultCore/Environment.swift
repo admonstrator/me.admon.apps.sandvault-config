@@ -92,6 +92,8 @@ public struct AppPaths: Sendable, Equatable, Codable {
     /// CA key and certificate for TLS inspection (key file mode 0600).
     public var caDir: String { "\(appSupportDir)/ca" }
     public var profileBackupDir: String { "\(appSupportDir)/backups" }
+    /// Address-to-network table for offline lookups in asks (`NetworkDatabaseService`), tab-separated.
+    public var networkDatabase: String { "\(appSupportDir)/ip2asn-v4.tsv" }
 
     /// The control socket path that fits the platform limit.
     public var effectiveControlSocket: String {

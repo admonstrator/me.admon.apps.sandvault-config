@@ -67,3 +67,13 @@ Numbered decisions, one table per phase. Briefs and reports are measured against
 | D34 | ICMP | pf cannot match ICMP to a user and `ping` is setuid root: it is shown (process list, real user), not filtered. Only an exec rule stops it |
 | D35 | App for end users | Simple window by default (Overview, Activity, Repos & Hand-off, Settings) with four protection levels applied without a rule preview; expert mode shows every page |
 | D36 | Managing the sandbox | One sandbox per macOS user, as sv defines it. The app creates, rebuilds and deletes it only through `sv build`, `sv --rebuild build` and `sv uninstall` in a terminal window, where sv asks for the password; it never edits accounts itself. A rebuild from the app is followed by `svctl rules apply` (D31 still refuses `--rebuild` as a session option) |
+
+## Phase 4 · Connection requests with details (2026-10-10)
+
+| No. | Question | Decision |
+|---|---|---|
+| D37 | Other ports in Ask | In proxy-only mode pf hands every TCP port other than 53, 80 and 443 to netd's transparent TCP listener (`ProxyPorts.transparentTCP`, `NetworkPolicy.routeAllTCP`, default on); netd finds the original destination as for TLS without SNI and decides with rules and asks. `DomainRule.port` limits a rule to one port; `AskScope.hostAndPort` saves such a rule. UDP other than DNS stays refused |
+| D38 | Who collects the details | netd, before it publishes the ask, within `AskDetailSettings.budgetSeconds` (1.5 s); each lookup can be turned off in Settings and whatever is late is left out. The app only displays `AskRequest.details` |
+| D39 | Lookups and privacy | Name (DNS answers through netd, SNI, Host), port list, program signature and history stay on the Mac. Reverse DNS asks the upstream DNS server. Network owner and country: an offline table (iptoasn.com, downloaded on request to `AppPaths.networkDatabase`) or RDAP online, which reveals the address to the registry |
+| D40 | Assessment | Points per signal, each with a sentence and the detail it belongs to; below 3 normal, 3 to 5 unusual, 6 and more suspicious. Countries count only when the user marked them (empty by default) and never on their own |
+| D41 | Panel | One row at the bottom: a menu for how long the answer counts (just once or a rule for the offered scopes), then Deny and Allow of equal size. Details as tiles, red for signals against; with the safer default a suspicious request makes Deny the default button |

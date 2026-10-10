@@ -20,6 +20,8 @@ public enum AskScope: String, Codable, Sendable, CaseIterable {
     case host
     /// Rule for `*.<registrable domain>`.
     case domain
+    /// Rule for exactly this host or address and only this port (`DomainRule.port`).
+    case hostAndPort
 }
 
 public struct AskRequest: Codable, Sendable, Equatable, Hashable, Identifiable {
@@ -31,10 +33,12 @@ public struct AskRequest: Codable, Sendable, Equatable, Hashable, Identifiable {
     public var process: String?
     public var createdAt: Date
     public var expiresAt: Date
+    /// What netd found out about the destination; `nil` from older netd versions or with every detail turned off.
+    public var details: AskDetails?
 
     public init(
         id: UUID = UUID(), host: String, port: UInt16?, kind: ConnectionKind, pid: Int32? = nil, process: String? = nil,
-        createdAt: Date = Date(), expiresAt: Date
+        createdAt: Date = Date(), expiresAt: Date, details: AskDetails? = nil
     ) {
         self.id = id
         self.host = host
@@ -44,6 +48,7 @@ public struct AskRequest: Codable, Sendable, Equatable, Hashable, Identifiable {
         self.process = process
         self.createdAt = createdAt
         self.expiresAt = expiresAt
+        self.details = details
     }
 }
 
