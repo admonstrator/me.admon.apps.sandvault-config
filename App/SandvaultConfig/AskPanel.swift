@@ -28,6 +28,14 @@ final class AskPanelController {
         sync(pending)
     }
 
+    /// Every open panel to the front, oldest ask on top.
+    func showAll() {
+        NSApplication.shared.activate()
+        for ask in asks.pending.reversed() {
+            panels[ask.id]?.makeKeyAndOrderFront(nil)
+        }
+    }
+
     private func sync(_ pending: [AskRequest]) {
         let ids = Set(pending.map(\.id))
         for (id, panel) in panels where !ids.contains(id) {

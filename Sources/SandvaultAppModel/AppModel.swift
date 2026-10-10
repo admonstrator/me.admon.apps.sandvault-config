@@ -260,7 +260,8 @@ public final class AppModel {
     public var menuBar: MenuBarSummary {
         MenuBarSummary(
             mode: editor.config.network.mode, panicActive: firewall.panicActive, netdRunning: netd.isConnected,
-            snapshot: processes.snapshot, records: netd.records, pendingAsks: asks.pending.count, now: environment.clock.now()
+            snapshot: processes.snapshot, records: netd.records, pendingAsks: asks.pending.count, now: environment.clock.now(),
+            protection: firewall.protection, pendingHosts: asks.pending.map(\.host)
         )
     }
 }
@@ -273,7 +274,13 @@ public struct MenuBarSummary: Sendable, Equatable {
     public var processes: Int
     public var deniedLastHour: Int
     public var pendingAsks: Int
+    /// Hosts of the waiting asks, oldest first, each once.
+    public var pendingHosts: [String]
     public var netdRunning: Bool
+    public var mode: FirewallMode
+    public var panicActive: Bool
+    /// The simple window's level, `nil` for a combination only expert mode sets.
+    public var protection: ProtectionLevel?
     /// Hosts denied in the last hour, most recent first (at most `recentLimit`).
     public var recentDenied: [DeniedHost]
 
@@ -281,13 +288,18 @@ public struct MenuBarSummary: Sendable, Equatable {
 
     public init(
         mode: FirewallMode, panicActive: Bool, netdRunning: Bool, snapshot: ProcessSnapshot?, records: [ConnectionRecord],
-        pendingAsks: Int, now: Date
+        pendingAsks: Int, now: Date, protection: ProtectionLevel? = nil, pendingHosts: [String] = []
     ) {
         (symbolName, stateTitle) = Self.state(mode: mode, panicActive: panicActive, netdRunning: netdRunning, pendingAsks: pendingAsks)
         sessions = snapshot?.sessions.count ?? 0
         processes = snapshot?.processes.count ?? 0
         self.pendingAsks = pendingAsks
+        var seen: Set<String> = []
+        self.pendingHosts = pendingHosts.filter { seen.insert($0).inserted }
         self.netdRunning = netdRunning
+        self.mode = mode
+        self.panicActive = panicActive
+        self.protection = protection
 
         let since = now.addingTimeInterval(-3600)
         let denied = records.filter { $0.decision.blocked && $0.timestamp >= since }
@@ -300,6 +312,35 @@ public struct MenuBarSummary: Sendable, Equatable {
             hosts[record.host] = entry
         }
         recentDenied = Array(hosts.values.sorted { ($0.lastSeen, $1.host) > ($1.lastSeen, $0.host) }.prefix(Self.recentLimit))
+    }
+
+    /// netd carries the sandbox's web and DNS in this mode, but it is not running.
+    public var netdMissing: Bool { mode.needsNetd && !netdRunning }
+
+    /// The line next to the title of the menu bar window: waiting asks, an emergency stop, else level and sessions.
+    public var statusText: String {
+        if pendingAsks > 0 { return "\(pendingAsks) waiting" }
+        if panicActive { return "Emergency stop" }
+        let level = protection?.statusWord ?? mode.displayName
+        let count = switch sessions {
+        case 0: "no sessions"
+        case 1: "1 session"
+        default: "\(sessions) sessions"
+        }
+        return "\(level) · \(count)"
+    }
+
+    /// The dot before `statusText`.
+    public var statusTint: Tint {
+        if panicActive { return .red }
+        if pendingAsks > 0 || netdMissing { return .orange }
+        return mode == .off ? .gray : .green
+    }
+
+    /// The sentence under the level buttons.
+    public var explanation: String {
+        if panicActive { return "Emergency stop: the sandbox has no network. Choose a level to end it." }
+        return protection?.explanation ?? mode.explanation
     }
 
     /// Symbol and title, in priority order: blocked, waiting asks, netd missing where it carries the web, then the mode.

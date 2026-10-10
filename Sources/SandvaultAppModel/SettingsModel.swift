@@ -92,6 +92,17 @@ public final class SettingsModel {
         await runAgent("Restart netd", success: "netd restarted") { try await self.agent.restart() }
     }
 
+    /// One step for the menu bar: kickstart a loaded agent that runs this app's netd, else install it (which also
+    /// replaces an agent pointing at another binary).
+    public func startNetd() async {
+        await refresh()
+        if netdAgent?.loaded == true && !netdExecutableMismatch {
+            await restartNetd()
+        } else {
+            await installNetd()
+        }
+    }
+
     public var netdAgentSummary: String {
         guard let agent = netdAgent else { return netdAgentError ?? "unknown" }
         guard agent.installed else { return "not installed" }

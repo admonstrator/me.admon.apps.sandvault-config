@@ -18,6 +18,11 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   und `sv uninstall` auf. Pro macOS-Benutzer gibt es weiterhin genau eine Sandbox, so wie sv sie anlegt.
 - **Dock:** Die App hat ein Symbol und erscheint standardmäßig im Dock (abschaltbar in den Einstellungen). Das
   Dock-Menü und das Menüleisten-Fenster starten Shell und Standard-Agent direkt.
+- **Menüleisten-Fenster neu gestaltet:** im Stil des Kontrollzentrums mit vier runden Schutzstufen-Knöpfen und
+  einem Satz zur gewählten Stufe, Hinweiskarten für wartende Anfragen (Review) und gestopptes netd (Start), drei
+  Zahlenkacheln, Startzeilen für Standard-Agent, Shell und Hand-off, blockierten Hosts mit „Allow“ beim Überfahren
+  und „Emergency Stop…“ mit Bestätigung in der Fläche. Im Expert mode steht zusätzlich die Firewall-Modus-Auswahl.
+  Das Menüleisten-Symbol ist jetzt die Tresortür, mit der Zahl wartender Anfragen daneben.
 - **Aktivität:** eine Liste mit Hosts (Allow, Block), direkten Verbindungen ohne Hostnamen und laufenden
   ping/traceroute.
 

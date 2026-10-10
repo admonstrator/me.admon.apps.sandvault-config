@@ -68,6 +68,38 @@ import Testing
         #expect(symbol(.blocked) == "xmark.shield.fill")
     }
 
+    @Test func menuBarStatusLine() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func summary(
+            _ mode: FirewallMode, _ level: ProtectionLevel?, panic: Bool = false, netd: Bool = true, hosts: [String] = []
+        ) -> MenuBarSummary {
+            MenuBarSummary(
+                mode: mode, panicActive: panic, netdRunning: netd, snapshot: nil, records: [], pendingAsks: hosts.count,
+                now: now, protection: level, pendingHosts: hosts
+            )
+        }
+        #expect(summary(.watch, .watch).statusText == "Watching · no sessions")
+        #expect(summary(.watch, .watch).statusTint == .green)
+        #expect(summary(.off, .off).statusTint == .gray)
+        #expect(summary(.open, nil).statusText == "Open · no sessions")
+        #expect(summary(.open, nil).explanation == FirewallMode.open.explanation)
+        #expect(summary(.proxyOnly, .ask).explanation == ProtectionLevel.ask.explanation)
+
+        let waiting = summary(.proxyOnly, .ask, hosts: ["a.example", "b.example", "a.example"])
+        #expect(waiting.statusText == "3 waiting")
+        #expect(waiting.statusTint == .orange)
+        #expect(waiting.pendingHosts == ["a.example", "b.example"])
+
+        #expect(summary(.watch, .watch, netd: false).netdMissing)
+        #expect(summary(.watch, .watch, netd: false).statusTint == .orange)
+        #expect(!summary(.open, nil, netd: false).netdMissing)
+
+        let stopped = summary(.blocked, .blockAll, panic: true)
+        #expect(stopped.statusText == "Emergency stop")
+        #expect(stopped.statusTint == .red)
+        #expect(stopped.explanation.hasPrefix("Emergency stop"))
+    }
+
     @Test func menuBarSymbolFollowsModeNetdAndAsks() async throws {
         let world = TestWorld()
         defer { world.cleanUp() }

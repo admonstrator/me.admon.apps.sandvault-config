@@ -39,6 +39,18 @@ import Testing
         await #expect(throws: SandvaultError.self) { try await linux.install(source: source, user: "alice") }
     }
 
+    @Test func startNetdInstallsOnceThenRestarts() async throws {
+        let world = TestWorld()
+        defer { world.cleanUp() }
+        let settings = world.model().settings
+        world.agent.loadsOnInstall.set(true)
+
+        await settings.startNetd()
+        #expect(world.agent.calls.get() == ["install /Applications/Sandvault Config.app/Contents/MacOS/sandvault-netd"])
+        await settings.startNetd()
+        #expect(world.agent.calls.get().last == "restart")
+    }
+
     @Test func settingsUseTheBundledExecutables() async throws {
         let world = TestWorld()
         defer { world.cleanUp() }

@@ -241,6 +241,8 @@ final class FakeNetdConnector: NetdConnector, @unchecked Sendable {
 
 final class FakeAgent: NetdAgentControl, @unchecked Sendable {
     let calls = Locked<[String]>([])
+    /// Whether `status` reports an installed agent as loaded.
+    let loadsOnInstall = Locked(false)
     var platformSupported: Bool { true }
 
     func install(executable: String) async throws { calls.mutate { $0.append("install \(executable)") } }
@@ -250,6 +252,7 @@ final class FakeAgent: NetdAgentControl, @unchecked Sendable {
     func status() async throws -> NetdLaunchAgent.Status {
         var status = NetdLaunchAgent.parsePrint("")
         status.installed = calls.get().contains { $0.hasPrefix("install") }
+        status.loaded = status.installed && loadsOnInstall.get()
         status.plistPath = "/Users/alice/Library/LaunchAgents/\(AppPaths.netdLabel).plist"
         return status
     }

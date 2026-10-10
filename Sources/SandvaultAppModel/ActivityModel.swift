@@ -187,6 +187,16 @@ public enum ProtectionLevel: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// How the menu bar window names the state this level puts the sandbox in.
+    public var statusWord: String {
+        switch self {
+        case .off: "Unprotected"
+        case .watch: "Watching"
+        case .ask: "Asking"
+        case .blockAll: "Network blocked"
+        }
+    }
+
     public var explanation: String {
         switch self {
         case .off: "The sandbox reaches the network directly. Only addresses are visible."

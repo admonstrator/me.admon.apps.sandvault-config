@@ -29,6 +29,13 @@ enum AppRuntime {
     static let model = AppModel(environment: .live(bundled: .inMainBundle()))
     /// Opens the main window; registered by a view, because only SwiftUI can open a `Window` scene.
     static var openMainWindow: (() -> Void)?
+    /// The panels of the waiting asks; the app delegate creates them at launch.
+    static var askPanels: AskPanelController?
+
+    /// Brings every waiting ask's panel to the front (Review in the menu bar window).
+    static func showAskPanels() {
+        askPanels?.showAll()
+    }
 
     static func showMainWindow(_ screen: Screen? = nil) {
         if let screen { model.select(screen) }
@@ -63,11 +70,9 @@ enum DockPresence {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var askPanels: AskPanelController?
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         let model = AppRuntime.model
-        askPanels = AskPanelController(asks: model.asks, notifier: AskNotifier(asks: model.asks))
+        AppRuntime.askPanels = AskPanelController(asks: model.asks, notifier: AskNotifier(asks: model.asks))
         model.start()
         if model.settings.preferences.showInDock { DockPresence.apply(true) }
     }
