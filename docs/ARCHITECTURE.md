@@ -511,7 +511,7 @@ profile and accepts the host-owned clone with `safe.directory=*`; how `otool` be
 
 ## 8 · App
 
-`SandvaultConfig.app` (macOS 14, `LSUIElement`, bundle id `me.admon.apps.sandvault-config`) is two layers (D24):
+`SandvaultConfig.app` (macOS 26, `LSUIElement`, bundle id `me.admon.apps.sandvault-config`) is two layers (D24):
 `SandvaultAppModel`, a package library with every piece of logic, `@MainActor @Observable` and free of SwiftUI and
 AppKit, so it builds and tests on Linux; and `App/SandvaultConfig/`, SwiftUI views plus a little AppKit glue that only
 place what the models expose. Views never run commands or read files; titles, summaries and formats come from the
@@ -607,8 +607,9 @@ osascript's output; a cancelled password dialog (-128) is reported as cancelled.
 (`SMAppService` is not used).
 
 **Bundle and project.** `App/project.yml` (XcodeGen; the `.xcodeproj` is generated, D2): the local package
-(`packages: SandvaultConfig: path: ..`), scheme `SandvaultConfig`, Swift 6, macOS 14, ad-hoc signing (`-`), no hardened
-runtime, no App Sandbox. `svctl`, `svctl-helper` and `sandvault-netd` are XcodeGen `tool` targets (`BundledSvctl`,
+(`packages: SandvaultConfig: path: ..`), scheme `SandvaultConfig`, Swift 6, macOS 26, automatic signing with team `5CVUCAZ4AV` for
+every target, hardened runtime on the app with the `com.apple.security.automation.apple-events` entitlement (osascript
+drives the terminals), no App Sandbox. `svctl`, `svctl-helper` and `sandvault-netd` are XcodeGen `tool` targets (`BundledSvctl`,
 `BundledHelper`, `BundledNetd`: target and module names differ from the package's executable targets; `productName`
 and `PRODUCT_NAME` give the product names, since XcodeGen names the product reference after `productName`) whose
 sources are `../Sources/<name>` and which link the package's library products; the app embeds them with a copy-files
@@ -625,6 +626,5 @@ signatures (a scratch harness, not in the repository).
 
 **Only a Mac can confirm:** that `xcodebuild` compiles the app against the real SDK (CI), the tools landing in
 `Contents/MacOS`, the `osascript` password dialog and the helper's JSON passing through `do shell script`, floating ask
-panels over full-screen apps, notification actions from an ad-hoc signed `LSUIElement` app (macOS may not deliver them
-without a signature), `MenuBarExtra` window `onAppear`/`onDisappear` as the polling trigger, and drag and drop of Finder
+panels over full-screen apps, notification actions from an `LSUIElement` app, `MenuBarExtra` window `onAppear`/`onDisappear` as the polling trigger, and drag and drop of Finder
 folders onto the menu bar window.

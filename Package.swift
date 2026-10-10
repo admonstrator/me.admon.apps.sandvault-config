@@ -5,7 +5,7 @@ let argumentParser: Target.Dependency = .product(name: "ArgumentParser", package
 
 let package = Package(
     name: "SandvaultConfig",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS("26.0")],
     products: [
         .library(name: "SandvaultCore", targets: ["SandvaultCore"]),
         .library(name: "SandvaultObserve", targets: ["SandvaultObserve"]),

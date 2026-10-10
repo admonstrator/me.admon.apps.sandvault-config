@@ -25,7 +25,7 @@ Das Repo ist leer. Upstream liegt zum Nachschlagen im Scratchpad (`…/scratchpa
 | D8 | Workflow | Repo-Übergabe an einen Agenten, Rückweg samt Repo-Status, Prozesse und Sessions, Konfig-Migration |
 | D9 | Root-Rechte | Root-eigener Helper unter `/Library/PrivilegedHelperTools/me.admon.apps.sandvault-config.helper`, freigegeben per sudoers-Regel `/etc/sudoers.d/60-sandvault-config-$USER` (wie `sv` es selbst macht). Einmalige Installation mit Admin-Passwort. Der Helper nimmt nur typisierte JSON-Daten an, nie fertigen SBPL- oder pf-Text |
 | D10 | Proxy-Technik | SwiftNIO + swift-nio-ssl + swift-certificates (laufen auf Linux, also hier testbar) |
-| D11 | Mindestversion | macOS 14, Swift-6-Sprachmodus |
+| D11 | Mindestversion | macOS 26 (seit 2026-10-10, vorher 14), Swift-6-Sprachmodus |
 | D12 | Später | Secret-Scan, Audit-Log, Network Extension, Lokalisierung, Signierung/Notarisierung, Lizenzdatei |
 
 ## Architektur

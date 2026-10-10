@@ -16,7 +16,7 @@ Numbered decisions, one table per phase. Briefs and reports are measured against
 | D8 | Workflow | Repository hand-off to an agent, way back and repo status, processes and sessions, config migration |
 | D9 | Root privileges | Root-owned helper at `/Library/PrivilegedHelperTools/me.admon.apps.sandvault-config.helper`, allowed by `/etc/sudoers.d/60-sandvault-config-$USER` (the way `sv` does it); installed once with an admin password; accepts typed JSON only, never SBPL or pf text |
 | D10 | Proxy technology | SwiftNIO + swift-nio-ssl + swift-certificates (run on Linux, testable here) |
-| D11 | Minimum version | macOS 14, Swift 6 language mode |
+| D11 | Minimum version | macOS 26 (raised from 14 on 2026-10-10), Swift 6 language mode |
 | D12 | Later | Secret scan, audit log, Network Extension, localization, signing/notarization, license file |
 
 ## Phase 0 · Contract (2026-10-09)

@@ -22,6 +22,9 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   ping/traceroute.
 
 ### Behoben
+- `xcodegen generate` schaltete die automatische Signierung jedes Mal ab. `project.yml` signiert jetzt alle Targets
+  automatisch mit dem Team `5CVUCAZ4AV`, die App mit Hardened Runtime und der Berechtigung für Apple Events (für
+  Terminal, iTerm2 und Ghostty). Mindestversion ist macOS 26.
 - Ghostty öffnete beim Start aus der App (Sitzung, Rebuild, Hand-off) nur die normale Shell oder ein leeres Fenster,
   ohne sv. Die App öffnet Ghostty jetzt wie Terminal per AppleScript (ab Ghostty 1.3): neues Fenster, Befehl eintippen,
   Enter. macOS fragt beim ersten Mal nach der Erlaubnis, Ghostty zu steuern.
@@ -119,4 +122,4 @@ macOS in der CI gebaut und getestet (387 Tests). Auf einem echten Mac ausgeführ
   sv-clone 1.32 lehnt lokale Repos ohne `origin` ab.
 - **Proxy:** Keine WebSocket-Upgrades, kein Backpressure bei Upload-Bodies, kein TLS-Alert bei einer Sperre auf
   dem transparenten Port.
-- **Signierung:** Die App ist ad-hoc signiert. Ob Mitteilungs-Aktionen ohne Developer-ID ankommen, ist offen.
+- **Signierung:** Automatisch mit Apple Development; notarisiert ist nichts. Ob Mitteilungs-Aktionen ankommen, ist offen.

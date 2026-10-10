@@ -27,8 +27,8 @@ Status: 0.1.0, built and unit-tested on Linux and macOS CI. Behaviour that depen
 
 ## Requirements
 
-- macOS 14 or later, sandvault 1.32 (`brew install sandvault`, then `sv build`)
-- Xcode 16 or later for the app, [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
+- macOS 26 or later, sandvault 1.32 (`brew install sandvault`, then `sv build`)
+- Xcode 26 or later for the app, [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
 
 ## Build
 
