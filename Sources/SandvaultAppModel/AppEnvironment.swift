@@ -238,6 +238,8 @@ public struct AppEnvironment: Sendable {
     public var migration: MigrationService
     public var keys: KeyService
     public var sandbox: SandboxService
+    /// The offline address-to-network table netd reads for asks (D39).
+    public var networkDatabase: NetworkDatabaseService
 
     public init(
         environment: SandvaultEnvironment, paths: AppPaths, runner: CommandRunner, configStore: ConfigStore,
@@ -247,7 +249,7 @@ public struct AppEnvironment: Sendable {
         policy: PolicyControl, profiles: ProfileSource, sandboxUID: SandboxUIDSource, localPorts: LocalPortSource,
         helperSetup: HelperInstalling, netd: NetdConnector, netdAgent: NetdAgentControl, ca: CAControl,
         handoff: HandoffService, repos: RepoService, tools: ToolService, migration: MigrationService, keys: KeyService,
-        sandbox: SandboxService
+        sandbox: SandboxService, networkDatabase: NetworkDatabaseService
     ) {
         self.environment = environment
         self.paths = paths
@@ -276,6 +278,7 @@ public struct AppEnvironment: Sendable {
         self.migration = migration
         self.keys = keys
         self.sandbox = sandbox
+        self.networkDatabase = networkDatabase
     }
 
     /// The real thing: the factories of Observe, Enforce, Net and Workflow over one `ProcessCommandRunner`.
@@ -309,7 +312,8 @@ public struct AppEnvironment: Sendable {
             tools: Workflow.makeToolService(environment: environment, runner: runner, configStore: store),
             migration: Workflow.makeMigrationService(environment: environment, runner: runner),
             keys: Workflow.makeKeyService(environment: environment, runner: runner),
-            sandbox: Workflow.makeSandboxService(environment: environment, runner: runner)
+            sandbox: Workflow.makeSandboxService(environment: environment, runner: runner),
+            networkDatabase: NetworkDatabaseStore(path: paths.networkDatabase, runner: runner)
         )
     }
 }

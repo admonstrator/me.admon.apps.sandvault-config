@@ -107,7 +107,7 @@ public final class AppModel {
         keys = KeysModel(service: environment.keys)
         settings = SettingsModel(
             editor: editor, helperSetup: environment.helperSetup, agent: environment.netdAgent, preferences: environment.preferences,
-            bundled: environment.bundled, environment: environment.environment
+            bundled: environment.bundled, environment: environment.environment, networkDatabase: environment.networkDatabase
         )
 
         sandbox = SandboxModel(

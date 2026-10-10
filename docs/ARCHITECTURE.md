@@ -637,3 +637,38 @@ points (D37-D41). netd fills them through an `AskEnriching` before it publishes 
 reserves the ask, waits at most `AskDetailSettings.budgetSeconds`, then starts the timeout and publishes); listeners
 pass what they saw as a `ConnectionHint` to `NetRuntime.authorize`. The sections below describe the transparent TCP
 listener, the lookups and the panel.
+
+## Phase 4 · Ask panel (D41)
+
+**Model.** `AsksModel.presentation(for:at:)` returns an `AskPresentation`: process name, the icon path (the enclosing
+`.app` bundle, else the executable), the signature seal, `address:port` or `host:port` (IPv6 in brackets, the name
+alone for a DNS lookup), a small line with the address and the reverse name, the verdict and up to six `AskTile`s in
+the order name, port, network, encryption, history, program. `AskFormat` builds them from `AskRequest.details`; a
+missing part leaves its tile out, and without details only header, ring and buttons remain. A tile's tone comes from
+the assessment's signals for its detail (any minus: red, else any plus: green symbol; reverse-name signals belong to
+the name tile), its sentence is the signals' text or a short description when there is no signal. The verdict strip
+maps normal, unusual and suspicious to `checkmark.shield`, `exclamationmark.shield` and `xmark.shield` with the score
+as tooltip. The app computes no assessment of its own (D38).
+
+**Answering.** The menu holds "Just once" and one "Always: <label>" per `AskScope.options(port:hasDomain:)`, with the
+rule's target as second line (`*.npmjs.org`, `185.142.236.41:8947`); labels say address or host, and "any port" for
+the wider choice on other ports. `AsksModel.decision(allow:remembered:)` maps menu choice plus button to the four
+`AskDecision`s; `answer(_:allow:)` sends it with the chosen scope. Notification actions keep the four decisions and
+use the most specific offered scope for "always". `prefersDeny` is true only with `askDetails.saferDefault` and a
+suspicious assessment; then Deny is red and the default button, otherwise Allow is.
+
+**Panel.** A borderless, non-activating `NSPanel` (it can become key when clicked) with a glass background, 380 pt
+wide. It comes to the front without taking the keyboard, so Return typed into a terminal never answers an ask; after
+a click, Return triggers the default button. The tile caption reserves two lines so a tap never resizes the panel.
+
+**Settings.** Settings > Connection requests: one toggle per `AskDetailSwitch` (Domain, Reverse DNS, Port, Program
+signature, History, Assessment, Safer default), the Network and country picker (Off, Offline, Online with the RDAP
+note), the database row for Offline (status, Download/Update through `NetworkDatabaseService.update()`, a spinner
+while it runs, errors as `UserMessage`) and the marked countries (two-letter codes, upper-cased, checked against
+`Locale.Region.isoRegions`). Every change goes through `ConfigEditor.edit`, which saves `NetworkPolicy.askDetails`
+and asks netd to reload, as the firewall and proxy settings do. `AppEnvironment.networkDatabase` is
+`NetworkDatabaseStore(path: paths.networkDatabase, runner:)` in the live wiring and a fake in tests.
+
+**Only a Mac can confirm:** that the SwiftUI layer compiles against the macOS 26 SDK (glass button styles,
+`glassEffect` in a clear borderless panel), the look of two-line `Toggle` items in the menu, `NSWorkspace` icons for
+command-line executables, and the shadow of the borderless panel.

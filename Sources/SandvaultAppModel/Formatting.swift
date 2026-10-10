@@ -59,6 +59,34 @@ public enum Format {
         port.map { "\(host):\($0)" } ?? host
     }
 
+    /// `just now`, `2 min ago`, `3 h ago`, `4 d ago`.
+    public static func ago(_ seconds: Int) -> String {
+        let s = max(0, seconds)
+        if s < 60 { return "just now" }
+        if s < 3600 { return "\(s / 60) min ago" }
+        if s < 86400 { return "\(s / 3600) h ago" }
+        return "\(s / 86400) d ago"
+    }
+
+    /// `2026-10-09` in the local time zone.
+    public static func day(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    /// `512,034` with a comma for thousands.
+    public static func grouped(_ value: Int) -> String {
+        let digits = String(abs(value))
+        var out = ""
+        for (index, character) in digits.enumerated() {
+            if index > 0 && (digits.count - index) % 3 == 0 { out.append(",") }
+            out.append(character)
+        }
+        return value < 0 ? "-" + out : out
+    }
+
     /// `14:03:27` in the local time zone.
     public static func time(_ date: Date) -> String {
         let formatter = DateFormatter()
@@ -122,6 +150,24 @@ extension AskDecision {
         case .allowAlways: "Allow always"
         case .denyOnce: "Deny once"
         case .denyAlways: "Deny always"
+        }
+    }
+}
+
+extension NetworkLookupMode {
+    public var displayName: String {
+        switch self {
+        case .off: "Off"
+        case .offline: "Offline"
+        case .online: "Online"
+        }
+    }
+
+    public var explanation: String {
+        switch self {
+        case .off: "No owner or country lookups."
+        case .offline: "A table downloaded once from iptoasn.com; lookups stay on this Mac."
+        case .online: "Asks the regional registry (RDAP), which learns the address."
         }
     }
 }

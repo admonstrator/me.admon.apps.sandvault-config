@@ -364,6 +364,23 @@ final class FakeSandbox: SandboxService, @unchecked Sendable {
     }
 }
 
+/// The offline network table: `update` fails with `failure` when set, else installs `next`.
+final class FakeNetworkDatabase: NetworkDatabaseService, @unchecked Sendable {
+    let current = Locked(NetworkDatabaseStatus(installed: false))
+    let next = Locked(NetworkDatabaseStatus(installed: true, updatedAt: Date(timeIntervalSince1970: 1_800_000_000), ranges: 512_034))
+    let failure = Locked<SandvaultError?>(nil)
+    let updates = Locked(0)
+
+    func status() async -> NetworkDatabaseStatus { current.get() }
+
+    func update() async throws -> NetworkDatabaseStatus {
+        updates.mutate { $0 += 1 }
+        if let failure = failure.get() { throw failure }
+        current.set(next.get())
+        return next.get()
+    }
+}
+
 final class MemoryPreferences: PreferencesStore, @unchecked Sendable {
     let stored = Locked(AppPreferences())
     func load() -> AppPreferences { stored.get() }
@@ -388,6 +405,7 @@ struct TestWorld {
     let workflow = FakeWorkflow()
     let sandbox = FakeSandbox()
     let preferences = MemoryPreferences()
+    let networkDatabase = FakeNetworkDatabase()
     var checks: [Check] = []
 
     init(checks: [Check] = []) {
@@ -409,7 +427,8 @@ struct TestWorld {
             policy: policy, profiles: ProfileInspector(profilePath: profilePath, recordPath: directory.appendingPathComponent("record.json").path),
             sandboxUID: FakeUID(), localPorts: FakePorts(), helperSetup: helperSetup,
             netd: netd, netdAgent: agent, ca: ca,
-            handoff: workflow, repos: workflow, tools: workflow, migration: workflow, keys: workflow, sandbox: sandbox
+            handoff: workflow, repos: workflow, tools: workflow, migration: workflow, keys: workflow, sandbox: sandbox,
+            networkDatabase: networkDatabase
         )
     }
 

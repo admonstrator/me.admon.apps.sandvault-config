@@ -4,7 +4,8 @@ import SandvaultCore
 import UserNotifications
 
 /// User notifications for asks raised while the app is in the background, with the four answers as actions.
-/// Action identifiers are `AskDecision` raw values; a plain click does nothing (the ask panel is on screen).
+/// Action identifiers are `AskDecision` raw values; an "always" action saves a rule for the most specific scope the
+/// panel offers. A plain click does nothing (the ask panel is on screen).
 @MainActor
 final class AskNotifier: NSObject, UNUserNotificationCenterDelegate {
     static let category = "me.admon.apps.sandvault-config.ask"
@@ -20,10 +21,11 @@ final class AskNotifier: NSObject, UNUserNotificationCenterDelegate {
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
-    func post(_ ask: AskRequest, detail: String) {
+    /// `title` and `body` come from `AsksModel` (destination, verdict, process and port).
+    func post(_ ask: AskRequest, title: String, body: String) {
         let content = UNMutableNotificationContent()
-        content.title = "Allow \(ask.host)?"
-        content.body = detail
+        content.title = title
+        content.body = body
         content.categoryIdentifier = Self.category
         content.userInfo = ["askID": ask.id.uuidString]
         let request = UNNotificationRequest(identifier: ask.id.uuidString, content: content, trigger: nil)

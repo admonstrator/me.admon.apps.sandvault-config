@@ -106,4 +106,90 @@ import Testing
         #expect(world.helperSetup.calls.get().isEmpty)
         #expect(world.agent.calls.get().isEmpty)
     }
+
+    @Test func connectionRequestSettingsRoundTripAndReloadNetd() async throws {
+        let world = TestWorld()
+        defer { world.cleanUp() }
+        let settings = world.model().settings
+        #expect(settings.askDetails == AskDetailSettings())
+
+        await settings.setAskDetail(.reverseDNS, false)
+        await settings.setAskDetail(.program, false)
+        await settings.setAskDetail(.saferDefault, false)
+        await settings.setNetworkLookup(.online)
+        await settings.setMarkedCountries("ru, kp  IR,ru")
+        #expect(settings.message == nil)
+
+        let saved = try world.store.load().network.askDetails
+        #expect(!saved.reverseDNS)
+        #expect(!saved.program)
+        #expect(!saved.saferDefault)
+        #expect(saved.name && saved.port && saved.history && saved.assessment)
+        #expect(saved.network == .online)
+        #expect(saved.markedCountries == ["RU", "KP", "IR"])
+        #expect(settings.askDetails == saved)
+        #expect(settings.markedCountriesText == "RU, KP, IR")
+        #expect(settings.isOn(.name) && !settings.isOn(.reverseDNS) && !settings.isOn(.saferDefault))
+        #expect(Set(AskDetailSwitch.lookupsBeforeNetwork + AskDetailSwitch.lookupsAfterNetwork + AskDetailSwitch.judgement) == Set(AskDetailSwitch.allCases))
+        #expect(world.netd.reloads.get() == 5)
+
+        await settings.setMarkedCountries("")
+        #expect(try world.store.load().network.askDetails.markedCountries.isEmpty)
+    }
+
+    @Test func invalidCountryCodesSaveNothing() async throws {
+        let world = TestWorld()
+        defer { world.cleanUp() }
+        let settings = world.model().settings
+        await settings.setMarkedCountries("RU")
+        await settings.setMarkedCountries("RU, Russia")
+        #expect(settings.message?.kind == .warning)
+        #expect(settings.message?.detail == "Russia is not a two-letter ISO country code (e.g. RU, KP)")
+        #expect(try world.store.load().network.askDetails.markedCountries == ["RU"])
+
+        #expect(throws: SandvaultError.self) { try SettingsModel.countryCodes("R1") }
+        #expect(throws: SandvaultError.self) { try SettingsModel.countryCodes("ZZ") }
+        #expect(try SettingsModel.countryCodes(" de;CH\nat ") == ["DE", "CH", "AT"])
+    }
+
+    @Test func savingWhileNetdIsDownSaysSo() async throws {
+        let world = TestWorld()
+        defer { world.cleanUp() }
+        world.netd.running.set(false)
+        let settings = world.model().settings
+        await settings.setNetworkLookup(.off)
+        #expect(try world.store.load().network.askDetails.network == .off)
+        #expect(settings.message?.kind == .info)
+        #expect(settings.message?.detail == "netd is not running; the change applies when it starts")
+    }
+
+    @Test func networkDatabaseDownloadAndFailure() async {
+        let world = TestWorld()
+        defer { world.cleanUp() }
+        let settings = world.model().settings
+        #expect(settings.networkDatabaseSummary == "Unknown")
+        await settings.refreshNetworkDatabase()
+        #expect(settings.networkDatabaseSummary == "Not installed")
+        #expect(settings.networkDatabaseActionTitle == "Download")
+
+        await settings.updateNetworkDatabase()
+        #expect(world.networkDatabase.updates.get() == 1)
+        #expect(!settings.isUpdatingDatabase)
+        #expect(settings.networkDatabase?.installed == true)
+        #expect(settings.networkDatabaseSummary == "Installed · \(Format.day(Date(timeIntervalSince1970: 1_800_000_000))) · 512,034 ranges")
+        #expect(settings.networkDatabaseActionTitle == "Update")
+        #expect(settings.message?.kind == .success)
+        #expect(settings.message?.title == "Network database updated")
+        #expect(settings.message?.detail == "512,034 address ranges")
+
+        world.networkDatabase.failure.set(.commandFailed("curl", 6, "Could not resolve host: iptoasn.com"))
+        await settings.updateNetworkDatabase()
+        #expect(settings.message?.kind == .error)
+        #expect(settings.message?.title == "Update the network database failed")
+        #expect(settings.networkDatabase?.installed == true)
+
+        world.networkDatabase.failure.set(.notImplemented("network database download"))
+        await settings.updateNetworkDatabase()
+        #expect(settings.message?.kind == .notAvailable)
+    }
 }
