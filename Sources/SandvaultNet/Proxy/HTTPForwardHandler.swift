@@ -1,3 +1,4 @@
+import Foundation
 import NIOCore
 import NIOHTTP1
 import NIOPosix
@@ -12,6 +13,7 @@ import SandvaultCore
 ///
 /// Requests that arrive while an exchange is running are queued and read is paused, so pipelined requests
 /// are answered in order. The upstream connection is reused while the target stays the same.
+/// Each exchange is timed and its bodies counted; with `WebRecordingSettings.contents` their first bytes are kept.
 final class HTTPForwardHandler: ChannelInboundHandler, RemovableChannelHandler {
     typealias InboundIn = HTTPServerRequestPart
     typealias OutboundOut = HTTPServerResponsePart
@@ -37,6 +39,28 @@ final class HTTPForwardHandler: ChannelInboundHandler, RemovableChannelHandler {
         var responseStarted = false
         var upstreamKeepAlive = true
         var clientKeepAlive: Bool { head.isKeepAlive }
+        /// The live setting when the request head arrived.
+        var recording: WebRecordingSettings
+        let startedAt = Date()
+        let clock = DispatchTime.now()
+        var request: BodyCapture
+        var response: BodyCapture?
+        var requestEnded = false
+        var responseEnded = false
+
+        init(head: HTTPRequestHead, summary: HTTPSummary, startCounts: (received: Int64, sent: Int64), recording: WebRecordingSettings) {
+            self.head = head
+            self.summary = summary
+            self.startCounts = startCounts
+            self.recording = recording
+            request = BodyCapture(headers: head.headers, limit: Self.keepLimit(recording))
+        }
+
+        /// Bytes to keep per body, `nil` when contents are not recorded.
+        static func keepLimit(_ recording: WebRecordingSettings) -> Int? {
+            guard recording.requests, recording.contents else { return nil }
+            return min(max(0, recording.maxContentBytes), ContentStore.maxBodyBytes)
+        }
     }
 
     private enum State { case idle, waiting, streaming, responding, closed }
@@ -112,8 +136,10 @@ final class HTTPForwardHandler: ChannelInboundHandler, RemovableChannelHandler {
                 case .head:
                     break
                 case .body(let buffer):
+                    exchange?.request.append(buffer)
                     channel.write(HTTPClientRequestPart.body(.byteBuffer(buffer)), promise: nil)
                 case .end(let trailers):
+                    exchange?.requestEnded = true
                     channel.writeAndFlush(HTTPClientRequestPart.end(trailers), promise: nil)
                     state = .responding
                     setReading(false, context: context)
@@ -127,8 +153,10 @@ final class HTTPForwardHandler: ChannelInboundHandler, RemovableChannelHandler {
     private func begin(_ head: HTTPRequestHead, context: ChannelHandlerContext) {
         state = .waiting
         setReading(false, context: context)
-        let redact = Set(runtime.policy.snapshot.policy.inspection.redactHeaders.map { $0.lowercased() })
+        let policy = runtime.policy.snapshot.policy
+        let redact = Set(policy.inspection.redactHeaders.map { $0.lowercased() })
         let startCounts = boundary
+        let recording = policy.recording
 
         switch mode {
         case .explicitProxy:
@@ -140,7 +168,7 @@ final class HTTPForwardHandler: ChannelInboundHandler, RemovableChannelHandler {
             }
             let outgoing = Self.outgoingHead(head, uri: url.originForm, host: url.authority)
             let summary = HTTPSummary(method: head.method.rawValue, url: url.display, requestHeaders: HTTPRewrite.summarize(head.headers, redact: redact))
-            exchange = Exchange(head: head, summary: summary, startCounts: startCounts)
+            exchange = Exchange(head: head, summary: summary, startCounts: startCounts, recording: recording)
             authorize(host: url.host, port: url.port, outgoing: outgoing, context: context)
 
         case .transparent:
@@ -155,7 +183,7 @@ final class HTTPForwardHandler: ChannelInboundHandler, RemovableChannelHandler {
                 method: head.method.rawValue, url: "http://\(hostHeader)\(head.uri)",
                 requestHeaders: HTTPRewrite.summarize(head.headers, redact: redact)
             )
-            exchange = Exchange(head: head, summary: summary, startCounts: startCounts)
+            exchange = Exchange(head: head, summary: summary, startCounts: startCounts, recording: recording)
             authorize(host: host, port: runtime.transparentHTTPPort, outgoing: outgoing, context: context)
 
         case .inspected(let host, let port, let addresses, _):
@@ -165,7 +193,7 @@ final class HTTPForwardHandler: ChannelInboundHandler, RemovableChannelHandler {
                 method: head.method.rawValue, url: "https://\(authority)\(head.uri)",
                 requestHeaders: HTTPRewrite.summarize(head.headers, redact: redact)
             )
-            exchange = Exchange(head: head, summary: summary, startCounts: startCounts)
+            exchange = Exchange(head: head, summary: summary, startCounts: startCounts, recording: recording)
             send(outgoing, to: Target(host: host, port: port, tls: true), addresses: addresses, context: context)
         }
     }
@@ -250,26 +278,31 @@ final class HTTPForwardHandler: ChannelInboundHandler, RemovableChannelHandler {
     // MARK: - Upstream side (called by UpstreamResponseHandler on the same event loop)
 
     fileprivate func upstreamRead(_ part: HTTPClientResponsePart, from channel: Channel) {
-        guard let context, upstream?.channel === channel, var current = exchange else { return }
+        // No copy of the exchange stays alive while a body is appended, so the kept bytes grow in place.
+        guard let context, upstream?.channel === channel, let method = exchange?.head.method else { return }
         switch part {
         case .head(let head):
             let informational = (100..<200).contains(head.status.code) && head.status.code != 101
             var out = HTTPResponseHead(version: .http1_1, status: head.status, headers: HTTPRewrite.stripHopByHop(head.headers))
-            if !informational {
+            if !informational, var current = exchange {
+                exchange = nil
                 let redact = Set(runtime.policy.snapshot.policy.inspection.redactHeaders.map { $0.lowercased() })
                 current.summary.status = Int(head.status.code)
                 current.summary.responseHeaders = HTTPRewrite.summarize(head.headers, redact: redact)
                 current.upstreamKeepAlive = head.isKeepAlive
                 current.responseStarted = true
+                current.response = BodyCapture(headers: head.headers, limit: Exchange.keepLimit(current.recording))
                 if !current.clientKeepAlive { out.headers.replaceOrAdd(name: "Connection", value: "close") }
+                exchange = current
             }
-            exchange = current
             context.write(wrapOutboundOut(.head(out)), promise: nil)
         case .body(let buffer):
+            exchange?.response?.append(buffer)
             context.write(wrapOutboundOut(.body(.byteBuffer(buffer))), promise: nil)
         case .end(let trailers):
+            exchange?.responseEnded = true
             // A HEAD response has no body; the unpaired encoder would otherwise emit a chunk terminator.
-            if current.head.method != .HEAD {
+            if method != .HEAD {
                 context.write(wrapOutboundOut(.end(trailers)), promise: nil)
             }
             context.flush()
@@ -309,16 +342,31 @@ final class HTTPForwardHandler: ChannelInboundHandler, RemovableChannelHandler {
         drain(context: context)
     }
 
-    /// Hands the summary to the right record and finishes a per-request record.
+    /// Completes the summary (timing, sizes, kept contents) and hands it to the right record; finishes a
+    /// per-request record. With `recording.requests` off the record gets no summary.
     private func finishExchange() {
         guard let current = exchange else { return }
         exchange = nil
+        var summary = current.summary
+        summary.startedAt = current.startedAt
+        summary.durationMs = Int((DispatchTime.now().uptimeNanoseconds - current.clock.uptimeNanoseconds) / 1_000_000)
+        summary.requestBytes = current.request.size
+        summary.responseBytes = current.response?.size ?? 0
+        if let (meta, data) = current.request.stored(complete: current.requestEnded) {
+            runtime.contents.save(meta, data)
+            summary.requestContent = meta
+        }
+        if let (meta, data) = current.response?.stored(complete: current.responseEnded) {
+            runtime.contents.save(meta, data)
+            summary.responseContent = meta
+        }
+        let keep = current.recording.requests
         if case .inspected(_, _, _, let tunnel) = mode {
-            tunnel.add(current.summary)
+            if keep { tunnel.add(summary) }
         } else if let tracker = current.tracker {
             let now = counter.totals
             boundary = now
-            tracker.add(current.summary)
+            if keep { tracker.add(summary) }
             tracker.finish(bytesIn: now.sent - current.startCounts.sent, bytesOut: now.received - current.startCounts.received)
         }
     }
@@ -328,8 +376,13 @@ final class HTTPForwardHandler: ChannelInboundHandler, RemovableChannelHandler {
         exchange?.summary.status = Int(status.code)
         if status == .badGateway { exchange?.tracker?.fail(message.trimmingCharacters(in: .whitespacesAndNewlines)) }
         let (head, body) = HTTPRewrite.errorResponse(status, body: message)
+        let buffer = context.channel.allocator.buffer(string: body)
+        // netd's own answer counts as the response; it is not kept.
+        exchange?.response = BodyCapture(headers: head.headers, limit: nil)
+        exchange?.response?.append(buffer)
+        exchange?.responseEnded = true
         context.write(wrapOutboundOut(.head(head)), promise: nil)
-        context.write(wrapOutboundOut(.body(.byteBuffer(context.channel.allocator.buffer(string: body)))), promise: nil)
+        context.write(wrapOutboundOut(.body(.byteBuffer(buffer))), promise: nil)
         context.writeAndFlush(wrapOutboundOut(.end(nil))).assumeIsolated().whenComplete { _ in
             context.close(promise: nil)
         }

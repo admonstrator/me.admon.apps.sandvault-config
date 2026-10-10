@@ -786,3 +786,45 @@ reports their size. Files and programs: `FileActivityEvent`, `ActivityRecordingS
 helper subcommand `activity-record` that prints `ActivityStreamLine`s, and the app-side `ActivityRecording` protocol
 (`AppEnvironment.activity`, `NoActivityRecorder` until the live one is wired). The sections below describe the web
 recording in netd, the recorder and the Activity and learn mode pages.
+
+## Phase 5 · Web recording (D42, D43)
+
+**Timing and sizes.** `HTTPForwardHandler` (explicit proxy, transparent HTTP, inspected TLS) gives every exchange a
+`startedAt` when the request head arrives, a monotonic `durationMs` until the response ends (or netd answers with its
+own 403/502, or a side closes), and counts both bodies in a `BodyCapture`. NIO's HTTP decoders hand over the payload
+without chunked framing, so `requestBytes`/`responseBytes` are body bytes after the transfer encoding; netd's own
+error text counts as the response but is never kept. The exchange reads `NetworkPolicy.recording` from the live policy
+snapshot when its head arrives, so a reload applies from the next request. With `requests` off the summary is dropped;
+the connection record (bytes, duration, decision) is still written.
+
+**Contents.** With `requests` and `contents` on, each `BodyCapture` keeps the first `maxContentBytes` (clamped to
+`ContentStore.maxBodyBytes`, 16 MB, so a served body fits a control line) while the part is forwarded unchanged:
+nothing waits for the copy, nothing beyond the cap is buffered. At the end of the exchange a non-empty body becomes a
+`StoredContent` (`size` nil when the stream ended early; `binary` for non-text media types, for any
+`Content-Encoding` other than identity, since netd does not decode gzip, and, without a type, for bytes that are not
+UTF-8 or contain NUL). `ContentStore` writes `<httpContentDir>/<UUID>` and a JSON sidecar `<UUID>.json` (directory
+0700, files 0600) on its own serial queue, off the event loops; reads, `clear` and `prune` go through the same queue,
+so a client asking right after the record arrives sees the file. Headers are redacted as before; bodies are stored as
+sent (D43).
+
+**Control socket.** `.content(id:)` builds the path from the UUID alone and answers `.content(meta, data)` or
+`.error`; `.clearContent` deletes every file in the directory. `NetdStatus.storedContentBytes` is a running total kept
+by the store (scanned once, then updated on write, prune and clear). The client's line limit is 32 MB for served
+contents (base64 in JSON); the server's request limit stays 4 MB.
+
+**Retention.** netd prunes files whose modification time is older than `retentionDays` (at least one day) at start
+and on the refresh tick, at most every ten minutes.
+
+**svctl.** `svctl netlog --requests` prints one line per `HTTPSummary` (time, process, method, URL, status, response
+size, duration, short ids of kept contents; `--json` and `--follow` work too). `svctl netlog content <id>` writes the
+raw bytes to stdout (a prefix is resolved through the connection log; a note on stderr when truncated, `--json` prints
+the `StoredContent`).
+
+**Verified on Linux:** unit tests for the cap, early end, empty and counting-only bodies, binary detection and the
+store (write, serve, permissions, clear, retention), and integration tests through the real listeners: a POST through
+the explicit proxy with both bodies stored and served over the control socket, chunked request and response through
+the transparent listener (kept without framing, response capped), requests off and turned on by a reload, a denied
+request, and an inspected TLS POST through the transparent TLS listener.
+
+**Only a Mac can confirm:** real clients (curl, node, git) through pf with recording on, and the inspected explicit
+proxy path, whose curl test is skipped where curl is missing.
