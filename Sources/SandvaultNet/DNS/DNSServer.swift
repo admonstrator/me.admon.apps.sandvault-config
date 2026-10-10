@@ -10,6 +10,8 @@ struct DNSService: Sendable {
     let runtime: NetRuntime
     let upstream: DNSForwarding?
     var ttl: UInt32 = 60
+    /// Receives the addresses of forwarded answers, so an ask for a bare address can show the name behind it.
+    var names: DNSNameCache?
 
     func answer(_ bytes: [UInt8], transport: TransportProtocol, clientPort: UInt16?) async -> [UInt8]? {
         guard let query = try? DNSMessage(bytes: bytes) else { return DNSMessage.formatError(for: bytes) }
@@ -47,6 +49,7 @@ struct DNSService: Sendable {
             }
             if forward {
                 (response, answers) = await forwardUpstream(query: query, bytes: bytes, transport: transport)
+                names?.record(name: host, addresses: answers)
             } else {
                 let pendingAsk = verdict.action == .ask && decision == .denied
                 response = DNSMessage.response(to: query, rcode: pendingAsk ? .refused : .nameError).encoded()

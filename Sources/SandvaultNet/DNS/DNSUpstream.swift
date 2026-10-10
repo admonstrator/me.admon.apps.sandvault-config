@@ -138,3 +138,65 @@ private final class DNSTCPResponseCollector: ChannelInboundHandler {
         promise.fail(error)
     }
 }
+
+// MARK: - Reverse lookups
+
+extension DNSForwarding {
+    /// The PTR name of `address` from this upstream; `nil` when it has none (NXDOMAIN or no PTR answer).
+    /// Throws when the address is not an IP address, the upstream fails or answers with another error.
+    func reverseName(of address: String) async throws -> String? {
+        guard let name = ReverseDNS.queryName(for: address) else {
+            throw SandvaultError.invalidInput("\(address) is not an IP address")
+        }
+        let question = DNSQuestion(name: name, type: ReverseDNS.typePTR)
+        let query = DNSMessage(id: UInt16.random(in: 1...UInt16.max), flags: 0x0100, questions: [question])
+        return try ReverseDNS.ptrName(in: try await forward(query.encoded(), transport: .udp))
+    }
+}
+
+enum ReverseDNS {
+    static let typePTR: UInt16 = 12
+
+    /// `4.3.2.1.in-addr.arpa` for 1.2.3.4, reversed nibbles under `ip6.arpa` for IPv6.
+    static func queryName(for address: String) -> String? {
+        guard let (family, bytes) = AddressRange.parseAddress(address) else { return nil }
+        switch family {
+        case .ipv4:
+            return bytes.reversed().map(String.init).joined(separator: ".") + ".in-addr.arpa"
+        case .ipv6:
+            let nibbles = bytes.reversed().flatMap { [String($0 & 0x0F, radix: 16), String($0 >> 4, radix: 16)] }
+            return nibbles.joined(separator: ".") + ".ip6.arpa"
+        }
+    }
+
+    /// The first PTR target of a reply (compression pointers resolved); `nil` for NXDOMAIN or no PTR answer.
+    static func ptrName(in reply: [UInt8]) throws -> String? {
+        var reader = DNSReader(bytes: reply)
+        _ = try reader.u16()
+        let flags = try reader.u16()
+        let questions = try reader.u16()
+        let answers = try reader.u16()
+        _ = try reader.bytes(4)
+        let rcode = UInt8(flags & 0x000F)
+        if rcode == DNSResponseCode.nameError.rawValue { return nil }
+        guard rcode == DNSResponseCode.noError.rawValue else {
+            throw DNSError.malformed("reverse lookup answered rcode \(rcode)")
+        }
+        for _ in 0..<questions {
+            _ = try reader.name()
+            _ = try reader.bytes(4)
+        }
+        for _ in 0..<answers {
+            _ = try reader.name()
+            let type = try reader.u16()
+            _ = try reader.bytes(6)
+            let length = Int(try reader.u16())
+            if type == typePTR {
+                let name = try reader.name()
+                return name.isEmpty ? nil : name.lowercased()
+            }
+            _ = try reader.bytes(length)
+        }
+        return nil
+    }
+}

@@ -6,7 +6,8 @@ import SandvaultObserve
 struct NetCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "net",
-        abstract: "Show the sandbox user's sockets and, optionally, traffic per process."
+        abstract: "Show the sandbox user's sockets and, optionally, traffic per process.",
+        subcommands: [NetDatabaseCommand.self]
     )
 
     @OptionGroup var global: GlobalOptions

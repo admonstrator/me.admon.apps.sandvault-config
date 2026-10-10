@@ -637,3 +637,56 @@ points (D37-D41). netd fills them through an `AskEnriching` before it publishes 
 reserves the ask, waits at most `AskDetailSettings.budgetSeconds`, then starts the timeout and publishes); listeners
 pass what they saw as a `ConnectionHint` to `NetRuntime.authorize`. The sections below describe the transparent TCP
 listener, the lookups and the panel.
+
+## Phase 4 · Ask details (D38-D40)
+
+`LiveAskEnricher` (Sources/SandvaultNet/Enrichment) is the `AskEnriching` netd passes to `NetRuntime`. Name, port
+and history come from memory at once; reverse DNS, network and program run as unstructured tasks that write into a
+collector. At its deadline (80 % of `budgetSeconds`, at least 0.1 s less) the enricher cancels what is still running
+and returns, so `AskCoordinator` always gets the result inside its budget; a part that ignores cancellation (a
+process) finishes in the background and only fills a cache. Turned-off lookups never start. The assessment is
+computed last, on what arrived.
+
+- **Name:** the hint's `serverName`/`nameSource`, the queried name for a DNS ask, the host itself for named hosts,
+  else `DNSNameCache`: `DNSService` records the addresses of every forwarded answer under the queried name (10 min,
+  4096 entries, oldest dropped). No name: `AskName(name: nil, source: .none)`. A named host without a hint address
+  takes its address from the same cache.
+- **Reverse DNS:** a PTR query (`DNSForwarding.reverseName(of:)`) through netd's upstream with a 1 s timeout;
+  `UpstreamReverseResolver` gets the upstream when netd starts. `AskDetails.noReverseName` (`""`) means the lookup
+  answered without a name; `nil` means not asked, failed or late. Only the empty string adds a point.
+- **Port:** `KnownPorts` (Core) lists 141 ports: IANA services that matter on a Mac plus dev conventions.
+- **Network:** offline from `NetworkDatabase` (iptoasn.com `ip2asn-v4.tsv`, parsed byte-wise into a sorted array,
+  binary search; loaded in the background on start and when the file's date changes; 500 000 lines parse in about
+  0.2 s in a release build on Linux). IPv6 is not covered offline. Online from RDAP (`https://rdap.org/ip/<address>`,
+  1.2 s, URLSession behind `HTTPFetching`): `country`, the registrant's vCard `fn` or the network `name`, and ARIN's
+  origin AS when present; answers are cached per address. `NetworkCatalog` holds every heuristic list in one place
+  (public resolvers by address, known-service, CDN and hosting AS numbers, description keywords). Amazon's AS16509
+  counts as CDN (CloudFront), although it also carries EC2.
+- **Program:** `ps -o comm= -p <pid>` (an absolute path on macOS) and `codesign -dv --verbose=2 <path>` through
+  `CommandRunner`; the first `Authority` line decides Apple (`Software Signing`) or developer (with `TeamIdentifier`),
+  else `Signature=adhoc`, "not signed at all" or unknown. Cached by path and modification date.
+  `inTemporaryFolder`: /tmp, /private/tmp, /var/folders, /private/var/folders, or any directory named `tmp`.
+- **History:** `ConnectionHistoryIndex` counts allowed and denied records per host and port (DNS per name). netd
+  subscribes it to the hub's `connections` topic, so every `NetRuntime.record` feeds it without a change there; on
+  start it is seeded from the connection log with records older than that moment.
+- **Assessment:** `AskAssessor.assess(details:port:settings:)` in Core, pure. Signals and points as in D40: port fits
+  the protocol (443+TLS, 53+DNS, 80+plain HTTP) -2, allowed before -2, known service -2, IP only +2, unknown port +2,
+  no PTR name +1, hosting +1, marked country +2 (only with another signal against), unsigned, ad hoc or temporary
+  folder +1; info signals for first contact, CDN, unknown protocol and plain DNS. Hosting and a marked country form one
+  signal ("Rented servers in a country you marked", +3), as in the mockup. Signals are sorted by detail.
+- **Database file:** `NetworkDatabaseStore.update()` runs `/usr/bin/curl -fsSL --max-time 120 -o <path>.download.gz`
+  and `/usr/bin/gunzip -c`, checks the line count (at least 1000) and that 90 % of the first 200 lines have the five
+  fields, then writes atomically. `status()` reads the file memory-mapped and counts lines. `svctl net database
+  status|update` wraps both; `svctl asks` prints the details and signals under each pending ask.
+- **Licence:** iptoasn.com states "Licensed under Public Domain (PDDL v1.0)" (checked on iptoasn.com on 2026-10-10
+  through a page fetch; the download itself was not reachable from the build machine).
+
+**Verified off the Mac:** assessor matrix (the mockup's three requests give normal, normal, suspicious; turning
+details off lowers the score), port list, table parsing and lookup, store download/validation with a fake runner,
+codesign parsing, PTR query names and answers with compression, DNS cache expiry and bounds, RDAP parsing, history
+counting and seeding, the enricher's deadline with slow and cancellation-ignoring parts, and in a test netd: DNS
+answers fill the name cache and the history, and a PTR query reaches the upstream.
+
+**Only a Mac can confirm:** that `ps -o comm=` prints absolute paths for the sandbox user's processes and that netd
+(host user) may run `codesign` on them; the exact codesign output (the fixtures are synthetic); RDAP answers of the
+real registries (fixtures synthetic); the real iptoasn file through `svctl net database update`.

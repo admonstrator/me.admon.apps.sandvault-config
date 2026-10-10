@@ -45,6 +45,8 @@ public final class NetDaemon: Sendable, ControlService {
     public let options: NetdOptions
     let runtime: NetRuntime
     private let refresher: LocalPortRefresher?
+    /// Fills the details of asks (D38); its DNS cache, reverse resolver and history are wired below.
+    let enricher: LiveAskEnricher
     private let group: EventLoopGroup
     private let logger: @Sendable (String) -> Void
     private let state = LockedState()
@@ -55,6 +57,7 @@ public final class NetDaemon: Sendable, ControlService {
         localPorts: LocalPortSource? = nil,
         applier: PolicyApplier? = nil,
         resolver: HostResolver = SystemHostResolver(),
+        runner: CommandRunner = ProcessCommandRunner(),
         group: EventLoopGroup = MultiThreadedEventLoopGroup.singleton,
         logger: @escaping @Sendable (String) -> Void
     ) throws {
@@ -63,11 +66,19 @@ public final class NetDaemon: Sendable, ControlService {
         self.logger = logger
         let policy = try PolicyStore(store: ConfigStore(path: options.configPath))
         let inspection = try InspectionService(store: CAStore(directory: options.caDirectory), upstreamTrustRoots: options.upstreamTrustRoots)
+        let enricher = LiveAskEnricher.live(paths: options.paths, runner: runner)
+        self.enricher = enricher
         runtime = NetRuntime(
             policy: policy, resolver: resolver, attributor: attributor, log: ConnectionLog(path: options.connectionLogPath),
             hub: ControlHub(), inspection: inspection, transparentHTTPPort: options.transparentHTTPUpstreamPort,
-            transparentTLSPort: options.transparentTLSUpstreamPort, logger: logger
+            transparentTLSPort: options.transparentTLSUpstreamPort, enricher: enricher, logger: logger
         )
+        // Every recorded connection feeds the ask history.
+        let historyFeed = UUID()
+        runtime.hub.add(historyFeed) { event in
+            if case .connection(let record) = event { enricher.history.add(record) }
+        }
+        runtime.hub.subscribe(historyFeed, topics: [.connections])
         if let localPorts, let applier {
             refresher = LocalPortRefresher(source: localPorts, applier: applier, log: logger)
         } else {
@@ -89,6 +100,7 @@ public final class NetDaemon: Sendable, ControlService {
         let config = runtime.policy.snapshot.config
         let wanted = options.ports ?? config.network.ports
         let host = options.bindHost
+        enricher.prepare(config.network.askDetails, logPath: options.connectionLogPath)
 
         var channels: [Channel] = []
         do {
@@ -97,7 +109,9 @@ public final class NetDaemon: Sendable, ControlService {
             let http = try await ProxyListeners.bind(.transparentHTTP, host: host, port: Int(wanted.transparentHTTP), group: group, runtime: runtime)
             let tls = try await ProxyListeners.bind(.transparentTLS, host: host, port: Int(wanted.transparentTLS), group: group, runtime: runtime)
             channels += [explicit, http, tls]
-            let dns = DNSService(runtime: runtime, upstream: try dnsUpstream())
+            let upstream = try dnsUpstream()
+            (enricher.reverse as? UpstreamReverseResolver)?.use(Self.reverseUpstream(upstream))
+            let dns = DNSService(runtime: runtime, upstream: upstream, names: enricher.names)
             let (udp, tcp) = try await bindDNS(host: host, port: Int(wanted.dns), service: dns)
             channels += [udp, tcp]
             let dnsPort = udp.localAddress?.port ?? Int(wanted.dns)
@@ -260,6 +274,13 @@ public final class NetDaemon: Sendable, ControlService {
             throw SandvaultError.invalidInput("upstream DNS '\(text)' is not an IP address")
         }
         return DNSUpstream(server: try SocketAddress(ipAddress: host, port: port ?? 53), group: group)
+    }
+
+    /// The upstream with a short timeout for PTR lookups, which must fit the ask budget.
+    private static func reverseUpstream(_ upstream: DNSForwarding?) -> DNSForwarding? {
+        guard var direct = upstream as? DNSUpstream else { return upstream }
+        direct.timeout = .seconds(1)
+        return direct
     }
 
     private static func port(of channel: Channel) -> UInt16 {
