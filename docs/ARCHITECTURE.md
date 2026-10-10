@@ -786,3 +786,65 @@ reports their size. Files and programs: `FileActivityEvent`, `ActivityRecordingS
 helper subcommand `activity-record` that prints `ActivityStreamLine`s, and the app-side `ActivityRecording` protocol
 (`AppEnvironment.activity`, `NoActivityRecorder` until the live one is wired). The sections below describe the web
 recording in netd, the recorder and the Activity and learn mode pages.
+
+## Phase 5 · Activity page and learn mode (D46)
+
+Activity has three views, switched in the toolbar (`ActivityModel.page`): Hosts (as before), Web traffic and Files &
+programs. Settings is split the same way into General, Connection requests and Recording (`SettingsModel.pane`), so
+Web traffic's hint can open Settings > Recording directly (`AppModel.showRecordingSettings`).
+
+- **Web traffic** (`WebTraffic.swift`, `ActivityModel`): `WebRequestRow.rows` turns the records `NetdLink` holds into one
+  row per `HTTPSummary`, newest first; a web record without summaries is one row, marked encrypted (TLS, not
+  inspected) or connection only (blocked before a request, requests not recorded). DNS and transparent TCP records are
+  left out. The filter matches host and path. The detail pane shows result, size, duration, program, the headers as
+  recorded (`<redacted>` stays and is shown in orange) and the bodies, fetched once per `StoredContent.id` through
+  `NetdLink.content(id:)` and cached (40 entries); text is shown up to 100,000 characters, binary as a note, truncation
+  said. Actions: Copy as curl (`CurlCommand`, drops Host, Content-Length and hop-by-hop headers, Accept-Encoding becomes
+  `--compressed`, a loaded text body becomes `--data-binary`), Block or Allow the host (the existing `NetworkModel`
+  functions), Show All from the host (sets the filter). With inspection off a hint offers Look inside HTTPS and opens
+  Settings > Recording; nothing is switched on silently. With inspection on, an encrypted row offers Inspect for the
+  rule that decides the host, or in Watch a new exact allow rule (Watch allows everything anyway).
+  `NetdLink.recordLimit` is 3000 records and at most `summaryLimit` (20,000) summaries; the oldest go first.
+- **Files & programs** (`FileActivity.swift`, `FileActivityModel`): the model runs `AppEnvironment.activity`. States:
+  off, recording since, needs Full Disk Access (opens the pane in System Settings), needs helper (the existing install
+  flow, then recording starts), failed. Start and Stop save `AppConfig.activity.enabled`; `AppModel.start` calls
+  `launch`, which records when it is enabled and otherwise loads what was stored. A failure ends recording until the
+  user presses Try Again; a changed setting restarts a running recorder, because it reads the settings at start.
+  Events are kept in memory up to about 50,000. `ActivityReport.make` (pure) gives the five tiles (distinct paths; a file
+  created and then written counts as created) and per process one line per action and folder; files below bulk folders
+  (node_modules, .git, .build, DerivedData, venvs and the like) are counted at that folder, more than 12 files fold into
+  the folder with an expandable list. `SensitivePlace.classify` (pure) marks SSH, GnuPG, keychains, cloud and registry
+  credentials (~/.aws, gcloud, Azure, kube, Docker, gh, .netrc, .git-credentials, .npmrc, .pypirc), browser profiles,
+  .env files (not .env.example) and every home other than the sandbox user's, the host user's included; those lines and
+  their programs come first. Everything lists the raw events per program in plain words ("Opened for writing", "Closed,
+  changed"), newest 300 per program. Paths show the host home as `~` and the sandbox home as `~sandvault-<name>`.
+- **Learn mode** (`LearnPhrasing.swift`): `LearnCard.make` (pure) turns a `RuleSuggestion` into a sentence with the
+  process and the place ("claude wanted to create and change files in ~/Documents/Notes"; verbs from the denied
+  operations), a reason line (count, last seen, what the place is; in red with the place's explanation for sensitive
+  places and services) and at most two choices: This Folder or This File plus Reading Only when writes were asked for,
+  This Folder for a read-only file whose folder is deep enough and not a home, This Program, Allow for services, Allow
+  Anyway as the only choice for sensitive places (Keep Blocked is then the default button). `MachService` names the
+  common services (Keychain, certificates, notifications, clipboard, location, LaunchServices, Apple Events, window
+  server, screen recording, privacy permissions, sound, FSEvents, distributed notifications, network settings,
+  preferences, accounts, Dock, disks, Bluetooth, speech); unknown ones keep their technical name. `RulesModel` keeps the
+  answer per card (`LearnDecision`) so the card shows it with Undo; undo removes the rule only when the choice added it.
+  The raw lines and the rule stay under Details. Learn mode stays on the expert page Sandbox Rules & Learn.
+- **Settings > Recording** (`RecordingModel`): Record requests, Keep contents and the retention edit
+  `NetworkPolicy.recording` (netd reloads); Look inside HTTPS is `FirewallModel.setInspection`; Record what the sandbox
+  does is Start and Stop above; Include opening and closing and Hide system files edit `AppConfig.activity`. Keep
+  recordings for (1, 7 or 30 days) sets both retention values. Space used is `NetdStatus.storedContentBytes` (asked
+  for again on showing the page) plus `ActivityRecording.storageBytes()`; Clear asks in place, then calls
+  `clearContent` and `activity.clear()` and says which part failed.
+
+**Verified off the Mac:** web rows from inspected, encrypted, blocked, DNS and TCP records, filter, ordering, status
+texts, sizes and durations; curl; content loading, caching, retry after failure and the error texts; the record and
+summary bounds; recorder states, start/stop persistence, launch with the setting on, no restart after a failure,
+restart on a setting change, helper install from the banner; tiles, folding, bulk folders, sensitive places and their
+order, the Everything wording; learn sentences, reasons and choices for folders, files, sensitive files, programs,
+known and unknown services, and allow, keep blocked and undo against config.json; every Recording switch, the
+retention, space used and Clear with and without netd.
+
+**Only a Mac can confirm:** the SwiftUI views (WebTrafficView, FileActivityView, RecordingSettingsView and the changed
+ActivityView, SettingsView and RulesView; Linux does not compile App/), the Full Disk Access URL
+(`x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles`), Show in Finder for folders of the sandbox
+user, and how the lists perform with tens of thousands of events.

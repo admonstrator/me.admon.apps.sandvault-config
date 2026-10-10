@@ -21,6 +21,9 @@ public final class RulesModel {
     public private(set) var hiddenSuggestions: Set<String> = []
     /// Also learn from violations whose pid was not a sandbox process when seen.
     public var includeUnattributed = false
+    /// What the user chose per suggestion in this session, so a card can show it and undo it.
+    public private(set) var decisions: [String: LearnDecision] = [:]
+    public private(set) var learningSince: Date?
 
     public static let observedLimit = 5000
 
@@ -29,14 +32,19 @@ public final class RulesModel {
     @ObservationIgnored private let policy: PolicyControl
     @ObservationIgnored private let violations: ViolationSource
     @ObservationIgnored private let environment: SandvaultEnvironment
+    @ObservationIgnored private let clock: AppClock
     @ObservationIgnored private var learnTask: Task<Void, Never>?
 
-    public init(editor: ConfigEditor, profiles: ProfileSource, policy: PolicyControl, violations: ViolationSource, environment: SandvaultEnvironment) {
+    public init(
+        editor: ConfigEditor, profiles: ProfileSource, policy: PolicyControl, violations: ViolationSource, environment: SandvaultEnvironment,
+        clock: AppClock = .live
+    ) {
         self.editor = editor
         self.profiles = profiles
         self.policy = policy
         self.violations = violations
         self.environment = environment
+        self.clock = clock
     }
 
     public var settings: SandboxSettings { editor.config.sandbox }
@@ -98,14 +106,31 @@ public final class RulesModel {
     // MARK: Learn mode
 
     public var suggestions: [RuleSuggestion] {
+        allSuggestions.filter { !hiddenSuggestions.contains($0.id) }
+    }
+
+    /// Every suggestion in plain words (D46), the decided ones included so their card shows the choice.
+    public var learnCards: [LearnCard] {
+        allSuggestions.map { LearnCard.make($0, environment: environment) }
+    }
+
+    private var allSuggestions: [RuleSuggestion] {
         let relevant = includeUnattributed ? observed : observed.filter(\.attributedToSandbox)
-        return RuleSuggester.suggestions(for: relevant, environment: environment).filter { !hiddenSuggestions.contains($0.id) }
+        return RuleSuggester.suggestions(for: relevant, environment: environment)
+    }
+
+    /// `Watching for 4 min`, or `nil` while not learning.
+    public func watchingText(now: Date) -> String? {
+        guard let learningSince else { return nil }
+        let seconds = Int(now.timeIntervalSince(learningSince))
+        return seconds < 60 ? "Watching" : "Watching for \(Format.duration(seconds))"
     }
 
     /// Follows the unified log (`log stream`, needs an administrator account) until `stopLearning`.
     public func startLearning() {
         guard learnTask == nil else { return }
         isLearning = true
+        learningSince = clock.now()
         learnError = nil
         let stream = violations.stream()
         learnTask = Task { [weak self] in
@@ -124,6 +149,7 @@ public final class RulesModel {
         learnTask?.cancel()
         learnTask = nil
         isLearning = false
+        learningSince = nil
     }
 
     public func accept(_ suggestion: RuleSuggestion) async {
@@ -137,9 +163,41 @@ public final class RulesModel {
         hiddenSuggestions.insert(suggestion.id)
     }
 
+    /// One of the card's allow choices: adds its rule to config.json (applied with Apply Rules).
+    public func allow(_ card: LearnCard, _ choice: LearnChoice) async {
+        var ruleID: UUID?
+        var added = false
+        let saved = await edit("Add suggested rule") { settings in
+            let before = settings.rules.count
+            ruleID = try settings.add(choice.proposal)
+            added = settings.rules.count > before
+        }
+        guard saved, let ruleID else { return }
+        hiddenSuggestions.insert(card.id)
+        decisions[card.id] = .allowed(choice: choice.title, ruleID: added ? ruleID : nil)
+        message = .success("Rule added", detail: "Apply the rules to write it into the profile.")
+    }
+
+    /// Keep Blocked: nothing changes, the card only remembers the answer.
+    public func keepBlocked(_ card: LearnCard) {
+        hiddenSuggestions.insert(card.id)
+        decisions[card.id] = .keptBlocked
+    }
+
+    /// Takes the answer back; an added rule is removed again.
+    public func undo(_ card: LearnCard) async {
+        if case .allowed(_, let ruleID?) = decisions[card.id] {
+            guard await edit("Remove the rule", { _ = try $0.removeRule(idPrefix: ruleID.uuidString) }) else { return }
+            message = nil
+        }
+        decisions[card.id] = nil
+        hiddenSuggestions.remove(card.id)
+    }
+
     public func clearObserved() {
         observed = []
         hiddenSuggestions = []
+        decisions = [:]
     }
 
     // MARK: -
@@ -153,6 +211,7 @@ public final class RulesModel {
         guard learnTask != nil else { return }
         learnTask = nil
         isLearning = false
+        learningSince = nil
         if let error, !(error is CancellationError) {
             learnError = UserMessage(error: error, action: "Learn mode")
         }
@@ -183,4 +242,11 @@ public final class RulesModel {
         }
         refreshPlan()
     }
+}
+
+/// What the user answered on a learn card.
+public enum LearnDecision: Equatable, Sendable {
+    /// `ruleID` is `nil` when an identical rule existed before (undo then leaves it).
+    case allowed(choice: String, ruleID: UUID?)
+    case keptBlocked
 }

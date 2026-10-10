@@ -16,6 +16,8 @@ public final class SettingsModel {
     /// The offline network table; `nil` until the first refresh.
     public private(set) var networkDatabase: NetworkDatabaseStatus?
     public private(set) var isUpdatingDatabase = false
+    /// The part of the page shown.
+    public var pane: SettingsPane = .general
     public var message: UserMessage?
     /// Called after the helper or netd changed (overview and firewall refresh, netd link retries).
     @ObservationIgnored public var onSetupChanged: (@MainActor () async -> Void)?
@@ -282,6 +284,21 @@ public final class SettingsModel {
             try await editor.edit(reloadNetd: false) { change(&$0.handoff) }
         } catch {
             message = UserMessage(error: error, action: action)
+        }
+    }
+}
+
+/// The three parts of the Settings page.
+public enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
+    case general, connectionRequests, recording
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .general: "General"
+        case .connectionRequests: "Connection requests"
+        case .recording: "Recording"
         }
     }
 }

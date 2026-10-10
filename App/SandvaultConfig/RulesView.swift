@@ -198,6 +198,7 @@ struct ProfileSection: View {
     }
 }
 
+/// Learn mode in plain words (D46): one card per suggestion, at most two allow choices and Keep Blocked.
 struct LearnSection: View {
     @Bindable var rules: RulesModel
 
@@ -205,26 +206,26 @@ struct LearnSection: View {
         Section("Learn mode") {
             HStack {
                 Button(learnTitle) { toggle() }
+                if rules.isLearning {
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        Label(rules.watchingText(now: context.date) ?? "Watching", systemImage: "record.circle")
+                            .foregroundStyle(.red)
+                    }
+                }
                 Toggle("Include unattributed", isOn: $rules.includeUnattributed)
                 Spacer()
-                Text(verbatim: "\(rules.observed.count) violations")
-                    .foregroundStyle(.secondary)
                 if !rules.observed.isEmpty {
                     Button("Clear") { rules.clearObserved() }
                 }
             }
-            Text("Follows sandbox denials in the unified log (needs an administrator account) and proposes the smallest allow rules.")
+            Text("Everything the sandbox was not allowed to do while you watched. Allow what you need, keep the rest blocked. Nothing changes until you choose.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             if let error = rules.learnError {
                 MessageBanner(message: error) {}
             }
-            ForEach(rules.suggestions) { suggestion in
-                SuggestionRow(suggestion: suggestion) {
-                    Task { await rules.accept(suggestion) }
-                } dismiss: {
-                    rules.dismiss(suggestion)
-                }
+            ForEach(rules.learnCards) { card in
+                LearnCardView(card: card, decision: rules.decisions[card.id], rules: rules)
             }
         }
     }
@@ -242,34 +243,108 @@ struct LearnSection: View {
     }
 }
 
-struct SuggestionRow: View {
-    let suggestion: RuleSuggestion
-    let accept: () -> Void
-    let dismiss: () -> Void
+struct LearnCardView: View {
+    let card: LearnCard
+    let decision: LearnDecision?
+    let rules: RulesModel
+
+    private var symbol: String {
+        switch card.kind {
+        case .folder: "folder"
+        case .file: "doc"
+        case .sensitive: "key"
+        case .program: "play.fill"
+        case .service: "gearshape.2"
+        }
+    }
+
+    private var tint: Color {
+        switch card.kind {
+        case .folder: .orange
+        case .file: .blue
+        case .sensitive: .red
+        case .program: .purple
+        case .service: .gray
+        }
+    }
 
     var body: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(suggestion.summary)
-                    .font(.system(.body, design: .monospaced))
-                    .textSelection(.enabled)
-                Text(verbatim: "\(suggestion.occurrences) times by \(suggestion.processes.joined(separator: ", "))")
-                    .font(.caption)
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 34, height: 34)
+                .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 6) {
+                sentence
+                    .fontWeight(.medium)
+                Text(card.reason)
+                    .font(.callout)
+                    .foregroundStyle(card.warning ? Color.red : Color.secondary)
+                if let decision {
+                    HStack {
+                        Text(Self.stateText(decision))
+                            .foregroundStyle(.secondary)
+                        Button("Undo") { Task { await rules.undo(card) } }
+                            .buttonStyle(.borderless)
+                    }
+                } else {
+                    HStack {
+                        ForEach(Array(card.choices.enumerated()), id: \.element.id) { index, choice in
+                            ChoiceButton(title: choice.title, prominent: index == 0 && !card.warning) {
+                                Task { await rules.allow(card, choice) }
+                            }
+                        }
+                        ChoiceButton(title: "Keep Blocked", prominent: card.warning) { rules.keepBlocked(card) }
+                    }
+                }
+                DisclosureGroup("Details") {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(card.suggestion.summary)
+                        ForEach(card.details, id: \.self) { line in
+                            Text(line)
+                        }
+                    }
+                    .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
-                ForEach(suggestion.examples, id: \.self) { example in
-                    Text(example)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                if let note = suggestion.note {
-                    Text(note)
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
+                .font(.caption)
             }
-            Spacer()
-            Button("Accept", action: accept)
-            Button("Dismiss", action: dismiss)
+        }
+        .padding(.vertical, 4)
+        .opacity(decision == nil ? 1 : 0.7)
+    }
+
+    @ViewBuilder private var sentence: some View {
+        if let place = card.place {
+            Text("\(card.lead) \(Text(place).font(.system(.body, design: .monospaced)))")
+        } else {
+            Text(card.lead)
+        }
+    }
+
+    static func stateText(_ decision: LearnDecision) -> String {
+        switch decision {
+        case .allowed(_, let ruleID): ruleID == nil ? "Allowed · the rule already existed" : "Allowed · rule added"
+        case .keptBlocked: "Stays blocked"
+        }
+    }
+}
+
+private struct ChoiceButton: View {
+    let title: String
+    let prominent: Bool
+    let action: () -> Void
+
+    var body: some View {
+        if prominent {
+            Button(title, action: action)
+                .buttonStyle(.borderedProminent)
+        } else {
+            Button(title, action: action)
+                .buttonStyle(.bordered)
         }
     }
 }

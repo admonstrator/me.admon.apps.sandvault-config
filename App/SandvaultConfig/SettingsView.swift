@@ -2,24 +2,46 @@ import SandvaultAppModel
 import SandvaultCore
 import SwiftUI
 
+/// Settings in three parts, switched in the toolbar: General, Connection requests, Recording.
 struct SettingsView: View {
-    let settings: SettingsModel
+    @Bindable var settings: SettingsModel
     let netd: NetdLink
+    let recording: RecordingModel
     let setExpertMode: @MainActor (Bool) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             MessageArea(message: settings.message) { settings.message = nil }
+            if settings.pane == .recording {
+                MessageArea(message: recording.message) { recording.message = nil }
+            }
             Form {
-                HelperSection(settings: settings)
-                NetdSection(settings: settings, netd: netd)
-                ConnectionRequestsSection(settings: settings)
-                HandoffDefaultsSection(settings: settings)
-                AppSection(settings: settings, setExpertMode: setExpertMode)
+                switch settings.pane {
+                case .general:
+                    HelperSection(settings: settings)
+                    NetdSection(settings: settings, netd: netd)
+                    HandoffDefaultsSection(settings: settings)
+                    AppSection(settings: settings, setExpertMode: setExpertMode)
+                case .connectionRequests:
+                    ConnectionRequestsSection(settings: settings)
+                case .recording:
+                    RecordingSections(recording: recording)
+                }
             }
             .formStyle(.grouped)
         }
         .navigationTitle(Screen.settings.title)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("Part", selection: $settings.pane) {
+                    ForEach(SettingsPane.allCases) { pane in
+                        Text(pane.title).tag(pane)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+        }
     }
 }
 
@@ -170,7 +192,7 @@ private struct NetworkDatabaseRow: View {
 }
 
 /// A settings row label: a white symbol on a coloured square, a title and a one-line note.
-private struct DetailLabel: View {
+struct DetailLabel: View {
     let title: String
     let note: String
     let symbol: String

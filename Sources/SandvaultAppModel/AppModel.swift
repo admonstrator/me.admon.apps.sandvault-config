@@ -59,6 +59,10 @@ public final class AppModel {
     public let processes: ProcessesModel
     public let network: NetworkModel
     public let activity: ActivityModel
+    /// Activity > Files & programs (D44, D45).
+    public let files: FileActivityModel
+    /// Settings > Recording.
+    public let recording: RecordingModel
     public let firewall: FirewallModel
     public let rules: RulesModel
     public let asks: AsksModel
@@ -90,14 +94,18 @@ public final class AppModel {
         )
         processes = ProcessesModel(source: environment.processes, control: environment.processControl)
         network = NetworkModel(connections: environment.connections, netd: netd, editor: editor, clock: environment.clock)
-        activity = ActivityModel(network: network, processes: processes, netd: netd, editor: editor)
-        firewall = FirewallModel(
+        activity = ActivityModel(network: network, processes: processes, netd: netd, editor: editor, clock: environment.clock)
+        let files = FileActivityModel(recorder: environment.activity, editor: editor, clock: environment.clock, environment: environment.environment)
+        self.files = files
+        let firewall = FirewallModel(
             editor: editor, policy: environment.policy, sandboxUID: environment.sandboxUID, localPorts: environment.localPorts,
             ca: environment.ca, clock: environment.clock
         )
+        self.firewall = firewall
+        recording = RecordingModel(editor: editor, netd: netd, files: files, firewall: firewall)
         rules = RulesModel(
             editor: editor, profiles: environment.profiles, policy: environment.policy, violations: environment.violations,
-            environment: environment.environment
+            environment: environment.environment, clock: environment.clock
         )
         asks = AsksModel(netd: netd, editor: editor)
         handoff = HandoffModel(service: environment.handoff, editor: editor)
@@ -125,6 +133,7 @@ public final class AppModel {
         started = true
         netd.start()
         Task {
+            await files.launch()
             await settings.refresh()
             await firewall.refreshStatus()
             await overview.refresh()
@@ -134,6 +143,7 @@ public final class AppModel {
 
     public func stop() {
         netd.stop()
+        files.shutDown()
         rules.stopLearning()
         pollTask?.cancel()
         pollTask = nil
@@ -218,8 +228,22 @@ public final class AppModel {
         case .tools: break
         case .handoff: await repos.refresh()
         case .migration: await keys.refresh()
-        case .settings: await settings.refresh()
+        case .settings:
+            await settings.refresh()
+            await recording.refreshStorage()
         }
+    }
+
+    /// Settings > Recording, where Look inside HTTPS and the recording switches are (Web traffic's hint).
+    public func showRecordingSettings() {
+        settings.pane = .recording
+        select(.settings)
+    }
+
+    /// The helper install flow for the Files & programs banner; recording starts again once it is installed.
+    public func installHelperForRecording() async {
+        await settings.installHelper()
+        if settings.helperInstalled { await files.start() }
     }
 
     func setupChanged() async {
