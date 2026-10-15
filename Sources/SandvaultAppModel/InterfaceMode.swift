@@ -48,11 +48,11 @@ public struct SidebarSection: Identifiable, Equatable, Sendable {
     }
 
     /// The sidebar of `mode`; sections without a page in that mode are left out.
-    /// `.lab` joins the Work section once its page exists (D52); `.settings` is its own window.
+    /// `.settings` is its own window, not a sidebar page.
     public static func sidebar(for mode: InterfaceMode) -> [SidebarSection] {
         let all = [
             SidebarSection(title: "Protect", screens: [.overview, .websites, .activity]),
-            SidebarSection(title: "Work", screens: [.handoff, .sandbox, .tools]),
+            SidebarSection(title: "Work", screens: [.handoff, .sandbox, .lab, .tools]),
             SidebarSection(title: "Expert", screens: [.firewall, .rules, .processes, .network, .migration, .diagnostics]),
         ]
         return all.compactMap { section in

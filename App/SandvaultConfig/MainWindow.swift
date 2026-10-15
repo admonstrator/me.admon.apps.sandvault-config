@@ -170,7 +170,7 @@ struct ScreenView: View {
         case .overview: OverviewView(model: model)
         case .websites: WebsitesView(model: model)
         case .diagnostics: DiagnosticsView(model: model)
-        case .lab: ContentUnavailableView("Lab", systemImage: Screen.lab.symbolName)
+        case .lab: LabView(model: model)
         case .sandbox: SandboxView(model: model)
         case .activity: ActivityView(model: model)
         case .processes: ProcessesView(processes: model.processes)

@@ -147,11 +147,11 @@ import Testing
         model.setMode(.advanced)
         #expect(world.preferences.stored.get().mode == .advanced)
         #expect(model.sidebar.map(\.title) == ["Protect", "Work"])
-        #expect(model.screens == [.overview, .websites, .activity, .handoff, .sandbox, .tools])
+        #expect(model.screens == [.overview, .websites, .activity, .handoff, .sandbox, .lab, .tools])
 
         model.setMode(.expert)
         #expect(model.sidebar.map(\.title) == ["Protect", "Work", "Expert"])
-        #expect(Set(model.screens) == Set(Screen.allCases).subtracting([.lab, .settings]))
+        #expect(Set(model.screens) == Set(Screen.allCases).subtracting([.settings]))
         model.select(.firewall)
         #expect(model.selection == .firewall)
 

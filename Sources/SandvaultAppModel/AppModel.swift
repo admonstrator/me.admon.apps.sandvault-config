@@ -299,7 +299,8 @@ public final class AppModel {
         case .migration: await keys.refresh()
         case .diagnostics: await overview.refresh()
         case .websites: await activity.refresh()
-        case .lab, .settings: break
+        case .lab: await lab.refresh()
+        case .settings: break
         }
     }
 
