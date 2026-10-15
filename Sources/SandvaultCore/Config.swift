@@ -476,20 +476,29 @@ public struct HandoffSettings: Codable, Sendable, Equatable {
     public var defaultAgent: AgentKind
     /// Extra `sv` options for hand-offs, e.g. `--browser`.
     public var svOptions: [String]
+    /// Where a repository URL is cloned on the host before Docker Sandboxes get it (`sbx` takes local folders only).
+    public var cloneDirectory: String
 
-    public init(terminal: TerminalApp = .terminal, defaultAgent: AgentKind = .claude, svOptions: [String] = []) {
+    public static let defaultCloneDirectory = "~/git"
+
+    public init(
+        terminal: TerminalApp = .terminal, defaultAgent: AgentKind = .claude, svOptions: [String] = [],
+        cloneDirectory: String = HandoffSettings.defaultCloneDirectory
+    ) {
         self.terminal = terminal
         self.defaultAgent = defaultAgent
         self.svOptions = svOptions
+        self.cloneDirectory = cloneDirectory
     }
 
-    enum CodingKeys: String, CodingKey { case terminal, defaultAgent, svOptions }
+    enum CodingKeys: String, CodingKey { case terminal, defaultAgent, svOptions, cloneDirectory }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         terminal = try c.value(.terminal, default: .terminal)
         defaultAgent = try c.value(.defaultAgent, default: .claude)
         svOptions = try c.value(.svOptions, default: [])
+        cloneDirectory = try c.value(.cloneDirectory, default: HandoffSettings.defaultCloneDirectory)
     }
 }
 
@@ -524,19 +533,27 @@ public struct HandoffRecord: Codable, Sendable, Equatable, Hashable, Identifiabl
     /// Original repository on the host.
     public var hostPath: String
     public var repoName: String
-    /// `$SHARED_WORKSPACE/repos/<name>`.
+    /// `$SHARED_WORKSPACE/repos/<name>`, or `sbx:<sandbox>` for a Docker Sandboxes hand-off.
     public var sandboxPath: String
     public var agent: AgentKind
     public var createdAt: Date
+    /// The Docker Sandboxes VM (`sbx run --name`); `nil` for sv.
+    public var dockerSandbox: String?
 
-    public init(id: UUID = UUID(), hostPath: String, repoName: String, sandboxPath: String, agent: AgentKind, createdAt: Date = Date()) {
+    public init(
+        id: UUID = UUID(), hostPath: String, repoName: String, sandboxPath: String, agent: AgentKind, createdAt: Date = Date(),
+        dockerSandbox: String? = nil
+    ) {
         self.id = id
         self.hostPath = hostPath
         self.repoName = repoName
         self.sandboxPath = sandboxPath
         self.agent = agent
         self.createdAt = createdAt
+        self.dockerSandbox = dockerSandbox
     }
+
+    public var target: HandoffTarget { dockerSandbox == nil ? .sandvault : .dockerSandbox }
 }
 
 // MARK: - Persistence

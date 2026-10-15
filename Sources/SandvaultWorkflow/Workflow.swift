@@ -28,6 +28,11 @@ public enum Workflow {
         SandboxLifecycle(environment: environment, runner: runner)
     }
 
+    /// Docker Sandboxes VMs through `sbx` (D47).
+    public static func makeDockerSandboxService(runner: CommandRunner) -> DockerSandboxService {
+        DockerSandboxes(runner: runner)
+    }
+
     /// Public keys in sv's `authorized_keys.d`.
     public static func makeKeyService(environment: SandvaultEnvironment, runner: CommandRunner) -> KeyService {
         AuthorizedKeyStore(environment: environment, runner: runner)

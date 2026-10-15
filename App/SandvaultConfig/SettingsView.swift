@@ -260,6 +260,17 @@ struct HandoffDefaultsSection: View {
                     Text(terminal.displayName).tag(terminal)
                 }
             }
+            LabeledContent("Clone folder") {
+                HStack {
+                    Text(settings.handoff.cloneDirectory)
+                        .textSelection(.enabled)
+                    Button("Choose…") {
+                        if let path = FolderPicker.chooseFolder(message: "Choose where repository URLs are cloned before they go to a Linux VM.") {
+                            Task { await settings.setCloneDirectory(path) }
+                        }
+                    }
+                }
+            }
         }
     }
 

@@ -24,6 +24,7 @@ struct HandoffPage: View {
     @Bindable var handoff: HandoffModel
     let repos: ReposModel
     let choose: () -> Void
+    @State private var url = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,6 +44,22 @@ struct HandoffPage: View {
                         Spacer()
                         Button("Choose…", action: choose)
                     }
+                    HStack {
+                        TextField("Or a repository URL", text: $url)
+                            .onSubmit { Task { await handoff.select(url: url) } }
+                        Button("Use URL") { Task { await handoff.select(url: url) } }
+                            .disabled(url.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                    if handoff.offersDocker {
+                        Picker("Run in", selection: target) {
+                            ForEach(HandoffTarget.allCases, id: \.self) { target in
+                                Text(target.displayName).tag(target)
+                            }
+                        }
+                        Text(handoff.target.explanation)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     if handoff.isChecking {
                         ProgressView()
                             .controlSize(.small)
@@ -51,16 +68,18 @@ struct HandoffPage: View {
                         ReadinessView(report: readiness)
                     }
                     Picker("Agent", selection: $handoff.agent) {
-                        ForEach(AgentKind.allCases, id: \.self) { agent in
+                        ForEach(handoff.agents, id: \.self) { agent in
                             Text(agent.displayName).tag(agent)
                         }
                     }
                     TextField("Task for the agent (optional)", text: $handoff.task, axis: .vertical)
                         .lineLimit(3...8)
-                    Toggle("Include uncommitted changes", isOn: $handoff.includeUncommitted)
-                    Picker("Deploy key", selection: $handoff.deployKey) {
-                        ForEach(HandoffRequest.DeployKeyMode.allCases, id: \.self) { mode in
-                            Text(mode.displayName).tag(mode)
+                    if handoff.target == .sandvault {
+                        Toggle("Include uncommitted changes", isOn: $handoff.includeUncommitted)
+                        Picker("Deploy key", selection: $handoff.deployKey) {
+                            ForEach(HandoffRequest.DeployKeyMode.allCases, id: \.self) { mode in
+                                Text(mode.displayName).tag(mode)
+                            }
                         }
                     }
                     LabeledContent("Terminal", value: handoff.terminal.displayName)
@@ -74,7 +93,7 @@ struct HandoffPage: View {
                             .disabled(!handoff.canHandOff)
                     }
                     if let result = handoff.lastResult {
-                        Text(result.command.joined(separator: " "))
+                        Text(result.shellLine)
                             .font(.system(.caption, design: .monospaced))
                             .textSelection(.enabled)
                     }
@@ -85,6 +104,10 @@ struct HandoffPage: View {
             }
             .formStyle(.grouped)
         }
+    }
+
+    private var target: Binding<HandoffTarget> {
+        Binding(get: { handoff.target }, set: { target in Task { await handoff.choose(target) } })
     }
 }
 
@@ -124,6 +147,11 @@ struct FindingRow: View {
 struct ReposList: View {
     let repos: ReposModel
 
+    private func fetchHelp(_ repo: RepoStatus) -> String {
+        let remote = repo.record?.dockerSandbox.map { "sandbox-" + $0 } ?? "sandvault"
+        return "git fetch " + remote + " in the host repository"
+    }
+
     var body: some View {
         if case .notAvailableYet(let note) = repos.availability {
             Text(note)
@@ -144,7 +172,7 @@ struct ReposList: View {
                 Spacer()
                 Button("Fetch Back") { Task { await repos.fetchBack(repo) } }
                     .disabled(repo.record == nil || repos.fetching.contains(repo.id))
-                    .help("git fetch sandvault in the host repository")
+                    .help(fetchHelp(repo))
             }
         }
         HStack {

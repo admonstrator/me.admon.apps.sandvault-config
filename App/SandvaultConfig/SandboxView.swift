@@ -11,6 +11,7 @@ struct SandboxView: View {
         let sandbox = model.sandbox
         VStack(spacing: 0) {
             MessageArea(message: sandbox.message) { sandbox.message = nil }
+            MessageArea(message: model.docker.message) { model.docker.message = nil }
             Form {
                 Section("Status") {
                     LabeledContent("Sandbox", value: sandbox.summary)
@@ -22,6 +23,9 @@ struct SandboxView: View {
                     StartSection(sandbox: sandbox, repos: model.repos, defaultAgent: model.editor.config.handoff.defaultAgent)
                 }
                 ManageSection(sandbox: sandbox, confirmDelete: $confirmDelete)
+                if model.docker.installed {
+                    DockerSandboxesSection(docker: model.docker, home: sandbox.environment.hostHome)
+                }
             }
             .formStyle(.grouped)
         }
@@ -43,7 +47,7 @@ struct StartSection: View {
         Section("Start") {
             Picker("Start in", selection: $sandbox.startDirectory) {
                 Text("Shared workspace").tag(String?.none)
-                ForEach(repos.repositories) { repo in
+                ForEach(repos.repositories.filter { $0.record?.dockerSandbox == nil }) { repo in
                     Text(repo.name).tag(Optional(repo.sandboxPath))
                 }
             }
@@ -102,5 +106,62 @@ struct ManageSection: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+/// Docker Sandboxes VMs (D47), shown only when `sbx` is installed.
+struct DockerSandboxesSection: View {
+    let docker: DockerSandboxesModel
+    let home: String
+    @State private var deleting: DockerSandbox?
+
+    var body: some View {
+        Section("Linux VMs (Docker Sandboxes)") {
+            if docker.state.sshAgentForwarding == true {
+                Label("Your SSH agent is forwarded into every VM. Turn it off with: sbx settings set ssh.agentForwardingEnabled false",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .textSelection(.enabled)
+            }
+            if let problem = docker.state.problem {
+                Text(problem)
+                    .foregroundStyle(.secondary)
+            } else if docker.state.sandboxes.isEmpty {
+                Text(verbatim: docker.isLoading ? "Loading…" : "No VMs. Hand off a repository to a Linux VM under Repos & Hand-off.")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(docker.state.sandboxes) { sandbox in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(sandbox.name)
+                            .fontWeight(.medium)
+                        Text(sandbox.summary(home: home))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Delete…", role: .destructive) { deleting = sandbox }
+                    if sandbox.isRunning {
+                        Button("Stop") { Task { await docker.stop(sandbox) } }
+                    }
+                    Button("Open") { Task { await docker.open(sandbox) } }
+                }
+                .disabled(docker.busy.contains(sandbox.name))
+            }
+            HStack {
+                Spacer()
+                Button("Refresh") { Task { await docker.refresh() } }
+                    .disabled(docker.isLoading)
+            }
+        }
+        .confirmationDialog("Delete \(deleting?.name ?? "")?", isPresented: isDeleting, presenting: deleting) { sandbox in
+            Button("Delete VM", role: .destructive) { Task { await docker.remove(sandbox) } }
+        } message: { sandbox in
+            Text(docker.deleteExplanation(sandbox))
+        }
+    }
+
+    private var isDeleting: Binding<Bool> {
+        Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })
     }
 }

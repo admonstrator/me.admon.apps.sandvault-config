@@ -255,6 +255,8 @@ public struct AppEnvironment: Sendable {
     public var networkDatabase: NetworkDatabaseService
     /// Records files and programs the sandbox touches (D44).
     public var activity: ActivityRecording
+    /// Docker Sandboxes VMs (D47).
+    public var dockerSandboxes: DockerSandboxService
 
     public init(
         environment: SandvaultEnvironment, paths: AppPaths, runner: CommandRunner, configStore: ConfigStore,
@@ -264,7 +266,8 @@ public struct AppEnvironment: Sendable {
         policy: PolicyControl, profiles: ProfileSource, sandboxUID: SandboxUIDSource, localPorts: LocalPortSource,
         helperSetup: HelperInstalling, netd: NetdConnector, netdAgent: NetdAgentControl, ca: CAControl,
         handoff: HandoffService, repos: RepoService, tools: ToolService, migration: MigrationService, keys: KeyService,
-        sandbox: SandboxService, networkDatabase: NetworkDatabaseService, activity: ActivityRecording = NoActivityRecorder()
+        sandbox: SandboxService, networkDatabase: NetworkDatabaseService, activity: ActivityRecording = NoActivityRecorder(),
+        dockerSandboxes: DockerSandboxService = NoDockerSandboxes()
     ) {
         self.environment = environment
         self.paths = paths
@@ -295,6 +298,7 @@ public struct AppEnvironment: Sendable {
         self.sandbox = sandbox
         self.networkDatabase = networkDatabase
         self.activity = activity
+        self.dockerSandboxes = dockerSandboxes
     }
 
     /// The real thing: the factories of Observe, Enforce, Net and Workflow over one `ProcessCommandRunner`.
@@ -330,7 +334,8 @@ public struct AppEnvironment: Sendable {
             keys: Workflow.makeKeyService(environment: environment, runner: runner),
             sandbox: Workflow.makeSandboxService(environment: environment, runner: runner),
             networkDatabase: NetworkDatabaseStore(path: paths.networkDatabase, runner: runner),
-            activity: LiveActivityRecorder(paths: paths, runner: runner)
+            activity: LiveActivityRecorder(paths: paths, runner: runner),
+            dockerSandboxes: Workflow.makeDockerSandboxService(runner: runner)
         )
     }
 }

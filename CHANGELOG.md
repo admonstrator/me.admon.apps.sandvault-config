@@ -47,6 +47,12 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   eingestellten DNS-Server.
 - **Aktivität:** eine Liste mit Hosts (Allow, Block), direkten Verbindungen ohne Hostnamen und laufenden
   ping/traceroute.
+- **Linux-VM als zweites Ziel (Docker Sandboxes):** Ist `sbx` installiert, fragt Repos & Hand-off, ob der Agent in der
+  Mac-Sandbox (sv) oder in einer eigenen Linux-VM läuft. Die VM startet mit `sbx run --clone` im Terminal, die
+  Aufgabe geht als erste Eingabe an den Agenten. Eine Repository-URL wird vorher im Terminal nach `~/git/<name>`
+  geklont (Ordner in den Einstellungen wählbar). Zurück kommen die Commits wie gewohnt mit „Fetch Back“
+  (`git fetch sandbox-<name>`). Die Sandbox-Seite listet die VMs mit Open, Stop und Delete und warnt, wenn der
+  SSH-Agent in jede VM weitergereicht wird. `svctl handoff --target docker`, `svctl sbx list|open|stop|rm`.
 
 ### Behoben
 - `xcodegen generate` schaltete die automatische Signierung jedes Mal ab. `project.yml` signiert jetzt alle Targets

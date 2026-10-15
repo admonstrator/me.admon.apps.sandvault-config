@@ -35,19 +35,26 @@ struct ReposCommand: AsyncParsableCommand {
     }
 
     struct Fetch: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Run git fetch sandvault in the host repository of a hand-off.")
+        static let configuration = CommandConfiguration(
+            abstract: "Run git fetch sandvault (or sandbox-<name> for a Linux VM) in the host repository of a hand-off."
+        )
         @OptionGroup var global: GlobalOptions
-        @Argument(help: "Clone name (see svctl repos).") var name: String
+        @Argument(help: "Clone name or Docker sandbox name (see svctl repos).") var name: String
 
         func run() async throws {
-            guard let record = try global.configStore.load().repos.last(where: { $0.repoName == name }) else {
+            // A Docker sandbox name is exact; a repository name picks its latest hand-off.
+            let repos = try global.configStore.load().repos
+            guard let record = repos.last(where: { $0.dockerSandbox == name }) ?? repos.last(where: { $0.repoName == name }) else {
                 throw SandvaultError.invalidInput("no hand-off of \(name) recorded; run git fetch sandvault in the host repository yourself")
             }
             let status = try await ReposCommand.service(global).fetchBack(record)
             if global.json { return try Output.json(status) }
-            Output.line("fetched \(name) into \(record.hostPath) (remote sandvault)")
+            let remote = record.dockerSandbox.map { "sandbox-" + $0 } ?? "sandvault"
+            Output.line("fetched \(name) into \(record.hostPath) (remote \(remote))")
             if let branch = status.branch {
-                Output.line("branch \(branch): \(WorkflowCLI.count(status.unfetchedCommits)) commits not fetched; merge with git merge sandvault/\(branch)")
+                Output.line("branch \(branch): \(WorkflowCLI.count(status.unfetchedCommits)) commits not fetched; merge with git merge \(remote)/\(branch)")
+            } else if record.dockerSandbox != nil {
+                Output.line("branches: git branch -r --list '\(remote)/*' in \(record.hostPath)")
             }
         }
     }

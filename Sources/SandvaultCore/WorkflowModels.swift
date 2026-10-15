@@ -24,6 +24,10 @@ public enum ReadinessKind: String, Codable, Sendable, CaseIterable {
     case largeRepository, alreadyHandedOff
     /// sv-clone (v1.32) refuses a local repository without an `origin` remote.
     case noOriginRemote
+    /// Docker Sandboxes take local folders only: a URL is cloned on the host first (D47).
+    case cloneFirst
+    /// The hand-off target is not installed (`sbx` missing).
+    case targetMissing
 }
 
 public struct ReadinessFinding: Codable, Sendable, Equatable, Hashable {
@@ -69,12 +73,15 @@ public struct HandoffRequest: Codable, Sendable, Equatable {
     public var svOptions: [String]
     /// `sv-clone -k` / `-w`.
     public var deployKey: DeployKeyMode
+    /// sv's account or a Docker Sandboxes VM; svOptions, deployKey and the briefing apply only to sv.
+    public var target: HandoffTarget
 
     public enum DeployKeyMode: String, Codable, Sendable, CaseIterable { case none, readOnly, readWrite }
 
     public init(
         source: String, agent: AgentKind, task: String? = nil, includeUncommitted: Bool = false,
-        terminal: TerminalApp = .terminal, svOptions: [String] = [], deployKey: DeployKeyMode = .none
+        terminal: TerminalApp = .terminal, svOptions: [String] = [], deployKey: DeployKeyMode = .none,
+        target: HandoffTarget = .sandvault
     ) {
         self.source = source
         self.agent = agent
@@ -83,6 +90,7 @@ public struct HandoffRequest: Codable, Sendable, Equatable {
         self.terminal = terminal
         self.svOptions = svOptions
         self.deployKey = deployKey
+        self.target = target
     }
 }
 
@@ -91,12 +99,15 @@ public struct HandoffResult: Codable, Sendable, Equatable {
     public var briefingPath: String?
     /// The exact command line started in the terminal.
     public var command: [String]
+    /// Runs before `command` in the same terminal line (`git clone` of a URL for Docker Sandboxes).
+    public var prepare: [String]?
     public var launched: Bool
 
-    public init(record: HandoffRecord, briefingPath: String?, command: [String], launched: Bool) {
+    public init(record: HandoffRecord, briefingPath: String?, command: [String], prepare: [String]? = nil, launched: Bool) {
         self.record = record
         self.briefingPath = briefingPath
         self.command = command
+        self.prepare = prepare
         self.launched = launched
     }
 }
@@ -232,7 +243,15 @@ public struct AuthorizedKey: Codable, Sendable, Equatable, Hashable, Identifiabl
 
 public protocol HandoffService: Sendable {
     func readiness(of source: String) async throws -> ReadinessReport
+    /// The report for one target: a Docker Sandboxes hand-off needs no `origin` and no clone in the shared workspace.
+    func readiness(of source: String, target: HandoffTarget) async throws -> ReadinessReport
     func handOff(_ request: HandoffRequest) async throws -> HandoffResult
+}
+
+extension HandoffService {
+    public func readiness(of source: String, target: HandoffTarget) async throws -> ReadinessReport {
+        try await readiness(of: source)
+    }
 }
 
 public protocol RepoService: Sendable {

@@ -152,3 +152,44 @@ import Testing
         #expect(keys.keys.isEmpty)
     }
 }
+
+private struct InstalledDocker: DockerSandboxService {
+    func state() async -> DockerSandboxesState {
+        DockerSandboxesState(executable: "/opt/homebrew/bin/sbx", sandboxes: [DockerSandbox(name: "sv-app", status: "running")])
+    }
+    func open(_ name: String, terminal: TerminalApp) async throws -> SandboxLaunch { SandboxLaunch(command: "sbx run --name \(name)", launched: true) }
+    func stop(_ name: String) async throws {}
+    func remove(_ name: String) async throws {}
+}
+
+@MainActor
+@Suite struct DockerHandoffScreenTests {
+    @Test func theLinuxVMTargetFiltersAgentsAndReachesTheRequest() async throws {
+        let world = TestWorld()
+        defer { world.cleanUp() }
+        try world.store.save(AppConfig(handoff: HandoffSettings(terminal: .ghostty, defaultAgent: .pi, svOptions: ["--browser"])))
+        world.workflow.readinessHandler.set { _ in WorkflowScreenTests.report([]) }
+        let record = HandoffRecord(hostPath: "/Users/alice/src/app", repoName: "app", sandboxPath: "sbx:sv-app", agent: .claude, dockerSandbox: "sv-app")
+        world.workflow.handOffHandler.set { _ in HandoffResult(record: record, briefingPath: nil, command: ["sbx"], launched: true) }
+        let editor = world.model().editor
+        let docker = DockerSandboxesModel(service: InstalledDocker(), editor: editor)
+        let handoff = HandoffModel(service: world.workflow, editor: editor, docker: docker)
+        #expect(!handoff.offersDocker)
+        await docker.refresh()
+        #expect(handoff.offersDocker)
+
+        await handoff.select("/Users/alice/src/app")
+        #expect(handoff.agent == .pi)
+        await handoff.choose(.dockerSandbox)
+        #expect(!handoff.agents.contains(.pi) && !handoff.agents.contains(.muse))
+        #expect(handoff.agent == .claude)
+        handoff.includeUncommitted = true
+        handoff.deployKey = .readWrite
+        await handoff.handOff()
+
+        let request = try #require(world.workflow.requests.get().first)
+        #expect(request.target == .dockerSandbox)
+        #expect(!request.includeUncommitted && request.deployKey == .none && request.svOptions.isEmpty)
+        #expect(handoff.message?.title == "Handed off app to Claude Code in a Linux VM")
+    }
+}

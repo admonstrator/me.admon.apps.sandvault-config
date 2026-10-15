@@ -28,18 +28,26 @@ public struct SandboxRepositories: RepoService {
     }
 
     public func repositories() async throws -> [RepoStatus] {
-        try layout.requireWorkspace()
-        let names = try cloneNames()
         let records = try configStore.load().repos
-        return await withTaskGroup(of: RepoStatus.self) { group in
+        // Docker Sandboxes clones live in their VM; the app knows them only from its hand-off records (D47).
+        let docker = records.filter { $0.dockerSandbox != nil }.map { RepoStatus(record: $0, name: $0.repoName, sandboxPath: $0.sandboxPath) }
+        do {
+            try layout.requireWorkspace()
+        } catch {
+            if docker.isEmpty { throw error }
+            return docker
+        }
+        let names = try cloneNames()
+        let local = await withTaskGroup(of: RepoStatus.self) { group in
             for name in names {
-                let record = records.last { $0.repoName == name }
+                let record = records.last { $0.repoName == name && $0.dockerSandbox == nil }
                 group.addTask { await status(name: name, record: record) }
             }
             var result: [RepoStatus] = []
             for await status in group { result.append(status) }
-            return result.sorted { $0.name < $1.name }
+            return result
         }
+        return (local + docker).sorted { ($0.name, $0.sandboxPath) < ($1.name, $1.sandboxPath) }
     }
 
     /// Host-side: git in the host repository fetches from the clone. upload-pack serves the clone's objects and refs
@@ -49,14 +57,22 @@ public struct SandboxRepositories: RepoService {
         guard FileKind.of(record.hostPath) == .directory else {
             throw SandvaultError.invalidInput("\(record.repoName) has no host repository at \(record.hostPath) (handed off from a URL?)")
         }
-        let remote = try await runner.run(CommandInvocation(GitSafe.gitPath, ["-C", record.hostPath, "remote", "get-url", "sandvault"], timeout: Self.timeout))
+        // sbx clone mode adds `sandbox-<name>` to the host repository, sv-clone adds `sandvault`.
+        let remoteName = record.dockerSandbox.map { "sandbox-" + $0 } ?? "sandvault"
+        guard !remoteName.hasPrefix("-"), !Text.hasControlCharacters(remoteName), !remoteName.contains(" ") else {
+            throw SandvaultError.invalidInput("bad remote name '\(remoteName)'")
+        }
+        let remote = try await runner.run(CommandInvocation(GitSafe.gitPath, ["-C", record.hostPath, "remote", "get-url", remoteName], timeout: Self.timeout))
         guard remote.succeeded else {
-            throw SandvaultError.invalidInput("\(record.hostPath) has no 'sandvault' remote (sv-clone adds it on hand-off)")
+            throw SandvaultError.invalidInput(record.dockerSandbox == nil
+                ? "\(record.hostPath) has no 'sandvault' remote (sv-clone adds it on hand-off)"
+                : "\(record.hostPath) has no '\(remoteName)' remote (sbx adds it when the sandbox starts, and removes it with the sandbox)")
         }
         // No tags and no submodules: the sandbox must not plant tags or trigger fetches elsewhere.
         _ = try await runner.checked(GitSafe.invocation(
-            repository: record.hostPath, ["fetch", "--no-tags", "--no-recurse-submodules", "sandvault"], timeout: 120
+            repository: record.hostPath, ["fetch", "--no-tags", "--no-recurse-submodules", remoteName], timeout: 120
         ))
+        if record.dockerSandbox != nil { return RepoStatus(record: record, name: record.repoName, sandboxPath: record.sandboxPath) }
         return await status(name: record.repoName, record: record)
     }
 

@@ -137,6 +137,15 @@ public final class SettingsModel {
         await editHandoff("Set the terminal") { $0.terminal = terminal }
     }
 
+    /// Where repository URLs are cloned before a Docker Sandboxes hand-off.
+    public func setCloneDirectory(_ path: String) async {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let home = environment.hostHome
+        let shown = trimmed == home || trimmed.hasPrefix(home + "/") ? "~" + trimmed.dropFirst(home.count) : trimmed
+        await editHandoff("Set the clone folder") { $0.cloneDirectory = shown }
+    }
+
     public func setShowInDock(_ on: Bool) {
         preferences.showInDock = on
         store.save(preferences)

@@ -46,20 +46,42 @@ public final class HandoffModel {
     public var task = ""
     public var includeUncommitted = false
     public var deployKey = HandoffRequest.DeployKeyMode.none
+    /// sv or a Docker Sandboxes VM (D47); change it with `choose(_:)` so the report follows.
+    public private(set) var target = HandoffTarget.sandvault
     public var message: UserMessage?
     /// Called after a successful hand-off (the repos list refreshes).
     @ObservationIgnored public var onHandedOff: (@MainActor () async -> Void)?
 
     @ObservationIgnored private let service: HandoffService
     @ObservationIgnored private let editor: ConfigEditor
+    @ObservationIgnored private let docker: DockerSandboxesModel?
 
-    public init(service: HandoffService, editor: ConfigEditor) {
+    public init(service: HandoffService, editor: ConfigEditor, docker: DockerSandboxesModel? = nil) {
         self.service = service
         self.editor = editor
+        self.docker = docker
         agent = editor.config.handoff.defaultAgent
     }
 
     public var terminal: TerminalApp { editor.config.handoff.terminal }
+    /// The target picker shows only when `sbx` is installed.
+    public var offersDocker: Bool { docker?.installed == true }
+    public var agents: [AgentKind] { target == .dockerSandbox ? AgentKind.allCases.filter { $0.sbxAgent != nil } : AgentKind.allCases }
+
+    public func choose(_ target: HandoffTarget) async {
+        guard target != self.target else { return }
+        self.target = target
+        if !agents.contains(agent) { agent = agents.contains(editor.config.handoff.defaultAgent) ? editor.config.handoff.defaultAgent : .claude }
+        readiness = nil
+        await recheck()
+    }
+
+    /// A repository URL typed in: sv clones it in the sandbox, Docker Sandboxes get a clone in the clone folder first.
+    public func select(url: String) async {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        await select(trimmed)
+    }
     public var blockers: [ReadinessFinding] { readiness?.findings.filter { $0.severity == .blocker } ?? [] }
 
     /// Selects a folder (picker or drop) and checks it.
@@ -82,10 +104,11 @@ public final class HandoffModel {
         guard let source else { return }
         isChecking = true
         defer { isChecking = false }
-        switch await WorkflowCall.run("Check the repository", { try await self.service.readiness(of: source) }) {
+        let target = self.target
+        switch await WorkflowCall.run("Check the repository", { try await self.service.readiness(of: source, target: target) }) {
         case .value(let report):
-            // A newer selection wins over a slow check of an older one.
-            guard self.source == source else { return }
+            // A newer selection or target wins over a slow check of an older one.
+            guard self.source == source, self.target == target else { return }
             readiness = report
             availability = .available
             message = nil
@@ -100,6 +123,7 @@ public final class HandoffModel {
     public var disabledReason: String? {
         if case .notAvailableYet = availability { return "Hand-off is not available in this build yet." }
         guard source != nil else { return "Choose or drop a repository folder." }
+        if target == .dockerSandbox && agent.sbxAgent == nil { return "\(agent.displayName) does not run in Docker Sandboxes." }
         if isChecking { return "Checking the repository..." }
         if isHandingOff { return "Handing off..." }
         guard let readiness else { return "The repository has not been checked." }
@@ -116,18 +140,21 @@ public final class HandoffModel {
         defer { isHandingOff = false }
         let settings = editor.config.handoff
         let trimmed = task.trimmingCharacters(in: .whitespacesAndNewlines)
+        let docker = target == .dockerSandbox
         let request = HandoffRequest(
-            source: source, agent: agent, task: trimmed.isEmpty ? nil : trimmed, includeUncommitted: includeUncommitted,
-            terminal: settings.terminal, svOptions: settings.svOptions, deployKey: deployKey
+            source: source, agent: agent, task: trimmed.isEmpty ? nil : trimmed, includeUncommitted: !docker && includeUncommitted,
+            terminal: settings.terminal, svOptions: docker ? [] : settings.svOptions, deployKey: docker ? .none : deployKey, target: target
         )
         switch await WorkflowCall.run("Hand off", { try await self.service.handOff(request) }) {
         case .value(let result):
             lastResult = result
             editor.reload()
+            let place = docker ? " in a Linux VM" : ""
             message = result.launched
-                ? .success("Handed off \(result.record.repoName) to \(agent.displayName)", detail: "Started in \(settings.terminal.displayName).")
+                ? .success("Handed off \(result.record.repoName) to \(agent.displayName)\(place)", detail: "Started in \(settings.terminal.displayName).")
                 : UserMessage(kind: .warning, title: "Prepared \(result.record.repoName), but the terminal did not start", detail: result.command.joined(separator: " "))
             await onHandedOff?()
+            if docker { await self.docker?.refresh() }
         case .notAvailable(let note):
             availability = .notAvailableYet(note)
         case .failed(let failure):
@@ -178,7 +205,8 @@ public final class ReposModel {
         switch await WorkflowCall.run("Fetch \(repo.name)", { try await self.service.fetchBack(record) }) {
         case .value(let updated):
             if let index = repositories.firstIndex(where: { $0.id == updated.id }) { repositories[index] = updated }
-            message = .success("Fetched \(repo.name) into \(record.hostPath)", detail: "Branches are under sandvault/ in the host repository.")
+            let remote = record.dockerSandbox.map { "sandbox-" + $0 } ?? "sandvault"
+            message = .success("Fetched \(repo.name) into \(record.hostPath)", detail: "Branches are under \(remote)/ in the host repository.")
         case .notAvailable(let note):
             availability = .notAvailableYet(note)
         case .failed(let failure):

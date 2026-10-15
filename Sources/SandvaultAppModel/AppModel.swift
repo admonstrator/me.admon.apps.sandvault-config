@@ -73,6 +73,8 @@ public final class AppModel {
     public let keys: KeysModel
     public let settings: SettingsModel
     public let sandbox: SandboxModel
+    /// Docker Sandboxes VMs (D47).
+    public let docker: DockerSandboxesModel
 
     public private(set) var selection: Screen = .overview
     public private(set) var visibleSurfaces: Set<Surface> = []
@@ -108,7 +110,9 @@ public final class AppModel {
             environment: environment.environment, clock: environment.clock
         )
         asks = AsksModel(netd: netd, editor: editor)
-        handoff = HandoffModel(service: environment.handoff, editor: editor)
+        let docker = DockerSandboxesModel(service: environment.dockerSandboxes, editor: editor)
+        self.docker = docker
+        handoff = HandoffModel(service: environment.handoff, editor: editor, docker: docker)
         repos = ReposModel(service: environment.repos)
         tools = ToolsModel(service: environment.tools, editor: editor)
         migration = MigrationModel(service: environment.migration)
@@ -220,13 +224,16 @@ public final class AppModel {
         case .sandbox:
             await sandbox.refresh()
             await repos.refresh()
+            await docker.refresh()
         case .activity: await activity.refresh()
         case .processes: await processes.refresh()
         case .network: await network.refreshSockets()
         case .firewall: await firewall.refreshStatus()
         case .rules: rules.refreshPlan()
         case .tools: break
-        case .handoff: await repos.refresh()
+        case .handoff:
+            await repos.refresh()
+            await docker.refresh()
         case .migration: await keys.refresh()
         case .settings:
             await settings.refresh()

@@ -8,19 +8,29 @@ public struct RepositoryHandoff: HandoffService {
     public let configStore: ConfigStore
     /// Opening a terminal needs macOS; elsewhere `handOff` returns the command with `launched: false`.
     public let isMacOS: Bool
+    /// The second target (D47).
+    public let docker: DockerSandboxes
 
     public init(
         environment: SandvaultEnvironment, runner: CommandRunner, configStore: ConfigStore,
-        shared: SharedFiles? = nil, isMacOS: Bool = WorkflowPlatform.isMacOS
+        shared: SharedFiles? = nil, isMacOS: Bool = WorkflowPlatform.isMacOS, docker: DockerSandboxes? = nil
     ) {
         layout = SharedLayout(environment: environment, shared: shared)
         self.runner = runner
         self.configStore = configStore
         self.isMacOS = isMacOS
+        self.docker = docker ?? DockerSandboxes(runner: runner, isMacOS: isMacOS)
     }
 
     public func readiness(of source: String) async throws -> ReadinessReport {
         try await ReadinessCheck(layout: layout, runner: runner).run(source)
+    }
+
+    public func readiness(of source: String, target: HandoffTarget) async throws -> ReadinessReport {
+        switch target {
+        case .sandvault: try await readiness(of: source)
+        case .dockerSandbox: try await dockerReadiness(of: source)
+        }
     }
 
     public func handOff(_ request: HandoffRequest) async throws -> HandoffResult {
@@ -29,6 +39,7 @@ public struct RepositoryHandoff: HandoffService {
 
     /// `launch: false` writes the briefing, records the hand-off and returns the command without opening a terminal.
     public func handOff(_ request: HandoffRequest, launch: Bool) async throws -> HandoffResult {
+        if request.target == .dockerSandbox { return try await handOffToDocker(request, launch: launch) }
         try SvOptions.validate(request.svOptions)
         let report = try await readiness(of: request.source)
         let blockers = report.findings.filter { $0.severity == .blocker }
@@ -58,10 +69,101 @@ public struct RepositoryHandoff: HandoffService {
         }
         let record = HandoffRecord(hostPath: report.repositoryPath, repoName: name, sandboxPath: clonePath, agent: request.agent)
         var config = try configStore.load()
-        config.repos.removeAll { $0.repoName == name || $0.sandboxPath == clonePath }
+        config.repos.removeAll { $0.dockerSandbox == nil && ($0.repoName == name || $0.sandboxPath == clonePath) }
         config.repos.append(record)
         try configStore.save(config)
         return HandoffResult(record: record, briefingPath: briefingPath, command: command, launched: launched)
+    }
+
+    // MARK: - Docker Sandboxes (D47)
+
+    /// Where a URL is cloned on the host: `<cloneDirectory>/<repo>`.
+    func cloneDestination(for name: String) throws -> String {
+        let directory = try configStore.load().handoff.cloneDirectory.trimmingCharacters(in: .whitespaces)
+        guard !directory.isEmpty, !Text.hasControlCharacters(directory) else { throw SandvaultError.invalidInput("the clone folder is not set") }
+        var base = HostPath.absolute(directory, home: layout.environment.hostHome)
+        while base.count > 1 && base.hasSuffix("/") { base.removeLast() }
+        return base + "/" + name
+    }
+
+    /// sv's readiness without what only sv-clone needs (`origin`, the shared workspace clone). A URL is checked
+    /// against its clone folder: missing means `git clone` first, an existing clone is checked like a local folder.
+    func dockerReadiness(of source: String) async throws -> ReadinessReport {
+        let missing = docker.executable == nil ? [ReadinessFinding(kind: .targetMissing, severity: .blocker,
+            message: "Docker Sandboxes are not installed (brew install docker/tap/sbx, then sbx login)")] : []
+        var report: ReadinessReport
+        switch RepositorySource.classify(source, home: layout.environment.hostHome) {
+        case .remote(let url):
+            let name = RepositoryName.derive(from: url)
+            guard RepositoryName.isValid(name) else { report = try await readiness(of: source); break }
+            let destination = try cloneDestination(for: name)
+            switch FileKind.of(destination) {
+            case .missing:
+                report = ReadinessReport(repositoryPath: destination, repositoryName: name, findings: [ReadinessFinding(
+                    kind: .cloneFirst, severity: .info, message: "\(url) is cloned to \(destination) first, in the terminal with your git login"
+                )])
+            case .directory where FileKind.of(destination + "/.git") != .missing:
+                report = try await readiness(of: destination)
+                report.findings.insert(ReadinessFinding(kind: .cloneFirst, severity: .info,
+                    message: "\(destination) already exists and is handed off as it is (no pull)"), at: 0)
+            default:
+                report = ReadinessReport(repositoryPath: destination, repositoryName: name, findings: [ReadinessFinding(
+                    kind: .cloneFirst, severity: .blocker, message: "\(destination) exists but is not a git repository; choose another clone folder"
+                )])
+            }
+        default:
+            report = try await readiness(of: source)
+        }
+        report.findings = missing + report.findings.compactMap(Self.forDocker)
+        return report
+    }
+
+    static func forDocker(_ finding: ReadinessFinding) -> ReadinessFinding? {
+        switch finding.kind {
+        case .noOriginRemote, .alreadyHandedOff:
+            return nil
+        case .uncommittedChanges:
+            var adjusted = finding
+            adjusted.message = finding.message.replacingOccurrences(of: " unless they are included", with: "; the Linux VM gets committed history only")
+            return adjusted
+        default:
+            return finding
+        }
+    }
+
+    func handOffToDocker(_ request: HandoffRequest, launch: Bool) async throws -> HandoffResult {
+        guard request.agent.sbxAgent != nil else {
+            throw SandvaultError.invalidInput("\(request.agent.rawValue) does not run in Docker Sandboxes (claude, codex, opencode, gemini or shell)")
+        }
+        if request.includeUncommitted {
+            throw SandvaultError.invalidInput("Docker Sandboxes clone committed history only; commit first or leave out uncommitted changes")
+        }
+        let report = try await dockerReadiness(of: request.source)
+        let blockers = report.findings.filter { $0.severity == .blocker }
+        guard blockers.isEmpty, let sbx = docker.executable else {
+            throw SandvaultError.invalidInput("cannot hand off \(request.source): " + blockers.map(\.message).joined(separator: "; "))
+        }
+        let folder = report.repositoryPath
+        var prepare: [String]?
+        if case .remote(let url) = RepositorySource.classify(request.source, home: layout.environment.hostHome), FileKind.of(folder) == .missing {
+            prepare = ["git", "clone", "--", url, folder]
+        }
+        var config = try configStore.load()
+        let taken = Set(await docker.state().sandboxes.map(\.name) + config.repos.compactMap(\.dockerSandbox))
+        let name = DockerSandboxName.make(for: report.repositoryName, taken: taken)
+        let task = request.task?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let command = try DockerSandboxes.runArguments(sbx: sbx, name: name, agent: request.agent, folder: folder, prompt: task)
+        let result = HandoffResult(
+            record: HandoffRecord(hostPath: folder, repoName: report.repositoryName, sandboxPath: "sbx:" + name, agent: request.agent, dockerSandbox: name),
+            briefingPath: nil, command: command, prepare: prepare, launched: launch && isMacOS
+        )
+        if result.launched {
+            _ = try await runner.checked(TerminalLaunch.invocation(request.terminal, command: result.shellLine))
+        }
+        config.repos.removeAll { $0.dockerSandbox == name }
+        config.repos.append(result.record)
+        try configStore.save(config)
+        return result
     }
 
     /// Writes `tmp/handoff-<repo>.md` (and with uncommitted changes `tmp/handoff-<repo>.patch`) through `SharedFiles`.
@@ -105,6 +207,13 @@ public struct RepositoryHandoff: HandoffService {
 
     private func git(_ root: String, _ arguments: [String]) async throws -> CommandResult {
         try await runner.run(CommandInvocation(GitSafe.gitPath, ["-C", root] + arguments, timeout: 30))
+    }
+}
+
+extension HandoffResult {
+    /// What the terminal runs: `prepare && command`, every word quoted for a POSIX shell.
+    public var shellLine: String {
+        ((prepare.map { [$0] } ?? []) + [command]).map(ShellQuoting.join).joined(separator: " && ")
     }
 }
 

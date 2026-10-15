@@ -395,9 +395,28 @@ extension RuleSuggestion {
     }
 }
 
+extension HandoffTarget {
+    public var displayName: String {
+        switch self {
+        case .sandvault: "Mac sandbox (sv)"
+        case .dockerSandbox: "Linux VM (Docker Sandboxes)"
+        }
+    }
+
+    public var explanation: String {
+        switch self {
+        case .sandvault: "Runs as the sandbox user on this Mac, with macOS tools like Xcode and Homebrew."
+        case .dockerSandbox: "Runs in its own Linux VM with its own Docker. No Xcode or macOS tools inside."
+        }
+    }
+}
+
 extension RepoStatus {
-    /// `main · 3 new commits to fetch · uncommitted changes`.
+    /// `main · 3 new commits to fetch · uncommitted changes`; for a Docker Sandboxes hand-off `Linux VM sv-app · ~/git/app`.
     public var summary: String {
+        if let record, let name = record.dockerSandbox {
+            return "Linux VM \(name) · \(record.hostPath)"
+        }
         var parts: [String] = [branch ?? "detached"]
         if let unfetchedCommits, unfetchedCommits > 0 { parts.append("\(unfetchedCommits) new commit\(unfetchedCommits == 1 ? "" : "s") to fetch") }
         if let aheadOfOrigin, aheadOfOrigin > 0 { parts.append("\(aheadOfOrigin) ahead of origin") }

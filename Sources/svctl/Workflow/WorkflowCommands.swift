@@ -6,6 +6,7 @@ import SandvaultWorkflow
 enum WorkflowCommands {
     static let all: [any ParsableCommand.Type] = [
         HandoffCommand.self, ReposCommand.self, ToolsCommand.self, MigrateCommand.self, KeysCommand.self, DefaultsCommand.self,
+        SbxCommand.self,
     ]
 }
 
@@ -55,6 +56,12 @@ enum WorkflowCLI {
 }
 
 extension WorkflowCLI {
+    enum TargetArgument: String, ExpressibleByArgument, CaseIterable {
+        case sv, docker
+
+        var target: HandoffTarget { self == .sv ? .sandvault : .dockerSandbox }
+    }
+
     enum DeployKeyArgument: String, ExpressibleByArgument, CaseIterable {
         case none, ro, rw
 

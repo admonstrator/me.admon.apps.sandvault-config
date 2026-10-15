@@ -11,6 +11,9 @@ struct HandoffCommand: AsyncParsableCommand {
         Prints the readiness report first and stops on a blocker. With a task or --include-uncommitted the briefing \
         goes to $SHARED_WORKSPACE/tmp/handoff-<repo>.md and the agent is told to read it. Agent, terminal and sv \
         options default to the hand-off settings in config.json. Pass sv options as --sv-option=--browser.
+
+        --target docker runs the agent in a Docker Sandboxes Linux VM instead (sbx run --clone). A URL is cloned \
+        into the clone folder of the hand-off settings first; the task goes to the agent as its first prompt.
         """
     )
 
@@ -25,6 +28,7 @@ struct HandoffCommand: AsyncParsableCommand {
     var deployKey: WorkflowCLI.DeployKeyArgument = .none
     @Option(name: .customLong("sv-option"), parsing: .unconditionalSingleValue, help: "An sv option such as --browser (repeatable).")
     var svOptions: [String] = []
+    @Option(help: "sv (this Mac's sandbox) or docker (a Docker Sandboxes Linux VM).") var target: WorkflowCLI.TargetArgument = .sv
     @Flag(name: .customLong("check-only"), help: "Only print the readiness report.") var checkOnly = false
     @Flag(name: .customLong("print"), help: "Write the briefing and print the command instead of opening a terminal.") var printOnly = false
 
@@ -35,13 +39,16 @@ struct HandoffCommand: AsyncParsableCommand {
 
     func validate() throws {
         if task != nil && taskFile != nil { throw ValidationError("use --task or --task-file, not both") }
+        if target == .docker && (includeUncommitted || deployKey != .none || !svOptions.isEmpty) {
+            throw ValidationError("--include-uncommitted, --deploy-key and --sv-option apply only to --target sv")
+        }
         if checkOnly && printOnly { throw ValidationError("use --check-only or --print, not both") }
     }
 
     func run() async throws {
         let settings = try global.configStore.load().handoff
         let service = RepositoryHandoff(environment: global.environment, runner: global.runner, configStore: global.configStore)
-        let report = try await service.readiness(of: source)
+        let report = try await service.readiness(of: source, target: target.target)
         if checkOnly || !report.canProceed {
             if global.json { try Output.json(Report(readiness: report)) } else { show(report) }
             if !report.canProceed { throw ExitCode.failure }
@@ -56,15 +63,18 @@ struct HandoffCommand: AsyncParsableCommand {
             task: try taskFile.map { try WorkflowCLI.readInput($0) } ?? task,
             includeUncommitted: includeUncommitted,
             terminal: try terminal.map { try WorkflowCLI.parse($0, as: "terminal") } ?? settings.terminal,
-            svOptions: svOptions.isEmpty ? settings.svOptions : svOptions,
-            deployKey: deployKey.mode
+            svOptions: target == .docker ? [] : svOptions.isEmpty ? settings.svOptions : svOptions,
+            deployKey: deployKey.mode,
+            target: target.target
         )
         let result = try await service.handOff(request, launch: !printOnly)
         if global.json { return try Output.json(Report(readiness: report, result: result)) }
         show(report)
         if let briefing = result.briefingPath { Output.line("briefing: \(briefing)") }
-        Output.line("command: \(ShellQuoting.join(result.command))")
-        if result.launched {
+        Output.line("command: \(result.shellLine)")
+        if result.launched, let name = result.record.dockerSandbox {
+            Output.line("started in \(request.terminal.rawValue); sandbox \(name), fetch back with: svctl repos fetch \(result.record.repoName)")
+        } else if result.launched {
             Output.line("started in \(request.terminal.rawValue); the clone will be \(result.record.sandboxPath)")
         } else {
             Output.line("not started: run the command above in a terminal")
