@@ -60,6 +60,11 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   Sandbox-Benutzer. Der Emulator läuft dort ohne Fenster (`emulator -avd <name> -no-window`). Die Bereitschaftsprüfung
   beim Hand-off warnt bei Android-Projekten ohne SDK-Kopie und bei einem eingecheckten `local.properties` mit
   `sdk.dir`. `svctl android status|share|unshare|check`, `svctl android device add|remove`.
+- **Chrome in der Sandbox vertraut der Prüf-CA:** Mit „Look inside HTTPS“ legt die App `sandvault-chrome` in den
+  Shared Workspace (`$SANDVAULT_CHROME`). Das Skript startet Chrome mit eigenem Profil, über den Sandbox-Proxy und
+  mit dem Schlüssel der Prüf-CA als vertrauenswürdig, ohne Schlüsselbund und ohne Wirkung auf andere Browser.
+  Argumente wie `--headless=new --remote-debugging-port=9222` werden durchgereicht; Playwright und Puppeteer nehmen
+  es als `executablePath`.
 
 ### Behoben
 - `xcodegen generate` schaltete die automatische Signierung jedes Mal ab. `project.yml` signiert jetzt alle Targets

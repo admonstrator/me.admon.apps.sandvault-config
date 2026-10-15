@@ -45,6 +45,7 @@ struct TempLayout {
         for name in ["SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO", "AWS_CA_BUNDLE"] {
             #expect(body.contains("export \(name)='/Users/Shared/sv-alice/_sandvault-config/ca-bundle.pem'"))
         }
+        #expect(body.contains("export SANDVAULT_CHROME='/Users/Shared/sv-alice/_sandvault-config/sandvault-chrome'"))
         policy.mode = .off
         #expect(SandboxEnvironmentBlock.body(policy: policy, paths: paths) == nil)
         #expect(SandboxEnvironmentBlock.shellQuoted("it's") == "'it'\\''s'")
@@ -149,9 +150,59 @@ struct TempLayout {
         #expect(bundle.hasSuffix(try ca.certificatePEM))
         #expect(try publisher.state(of: ca) == .current)
         #expect(try publisher.state(of: InspectionCA.generate(hostUser: "alice")) == .stale)
+        let launcher = layout.onDisk(layout.paths.sandboxChromeLauncher)
+        #expect(try String(contentsOfFile: launcher, encoding: .utf8) == ChromeLauncher.script(for: ca))
+        let mode = try FileManager.default.attributesOfItem(atPath: launcher)[.posixPermissions] as? NSNumber
+        #expect(mode?.intValue == 0o755)
+        try "#!/bin/sh\n".write(toFile: launcher, atomically: true, encoding: .utf8)
+        #expect(try publisher.state(of: ca) == .stale)
 
         try publisher.unpublish()
         #expect(try publisher.state(of: ca) == .missing)
+    }
+}
+
+@Suite struct ChromeLauncherTests {
+    @Test func hashesTheSubjectPublicKeyInfoLikeOpenSSL() throws {
+        // openssl pkey -pubin -in pub.pem -outform der | openssl dgst -sha256 -binary | base64
+        let der = try #require(Data(base64Encoded: """
+        MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE8TPcYBfMKtSk5T1ApnQSUqThnego5SsFQPjsqcOREL0YpdR1S5sW6KHHJXJPONAkEfANJsmd1ZQZqoVStAMZFA==
+        """))
+        #expect(ChromeLauncher.spkiHash(der: der) == "DWBW7YbFsFikJ1PgNennbY4vW079WftwlxZeTtQjbeM=")
+    }
+
+    @Test func startsChromeWithTheCAKeyProfileAndProxy() throws {
+        let layout = try TempLayout()
+        defer { layout.cleanup() }
+        let ca = try InspectionCA.generate(hostUser: "alice")
+        let script = layout.base.appendingPathComponent("sandvault-chrome").path
+        let fake = layout.base.appendingPathComponent("fake-chrome").path
+        let profile = layout.base.appendingPathComponent("profile").path
+        try ChromeLauncher.script(for: ca).write(toFile: script, atomically: true, encoding: .utf8)
+        try "#!/bin/sh\nfor a in \"$@\"; do echo \"$a\"; done\n".write(toFile: fake, atomically: true, encoding: .utf8)
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = [script, "--headless=new", "--remote-debugging-port=9222"]
+        process.environment = [
+            "HOME": layout.base.path, "SANDVAULT_CHROME_BINARY": fake, "SANDVAULT_CHROME_PROFILE": profile,
+            "HTTPS_PROXY": "http://127.0.0.1:18080",
+        ]
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake)
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        try process.run()
+        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        process.waitUntilExit()
+
+        #expect(process.terminationStatus == 0)
+        #expect(output.split(separator: "\n").map(String.init) == [
+            "--user-data-dir=\(profile)",
+            "--ignore-certificate-errors-spki-list=\(ca.spkiHash)",
+            "--no-first-run", "--no-default-browser-check",
+            "--proxy-server=http://127.0.0.1:18080", "--headless=new", "--remote-debugging-port=9222",
+        ])
+        #expect(FileManager.default.fileExists(atPath: profile))
     }
 }
 

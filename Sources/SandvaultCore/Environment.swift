@@ -117,6 +117,8 @@ public struct AppPaths: Sendable, Equatable, Codable {
 
     public var publicCABundle: String { "\(environment.sharedConfigDir)/ca-bundle.pem" }
     public var publicCACertificate: String { "\(environment.sharedConfigDir)/sandvault-config-ca.pem" }
+    /// Starts Chrome so that it accepts the inspection CA (`ChromeLauncher`).
+    public var sandboxChromeLauncher: String { "\(environment.sharedConfigDir)/sandvault-chrome" }
     public var handoffDir: String { "\(environment.sharedWorkspace)/tmp" }
     /// The sandbox sources this file on every session start (`guest/home/.zshenv`).
     public var sharedZshenv: String { "\(environment.sharedUserDir)/.zshenv" }

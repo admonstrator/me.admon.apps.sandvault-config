@@ -1,7 +1,7 @@
 import Foundation
 import SandvaultCore
 
-/// Puts the CA certificate and a bundle (system roots plus the CA) into the shared workspace,
+/// Puts the CA certificate, a bundle (system roots plus the CA) and the Chrome launcher into the shared workspace,
 /// where the sandbox's `.zshenv` block points tools at them. Written through `SharedFiles` only.
 public struct CAPublisher: Sendable {
     public var paths: AppPaths
@@ -23,6 +23,7 @@ public struct CAPublisher: Sendable {
     public struct Result: Codable, Sendable, Equatable {
         public var certificatePath: String
         public var bundlePath: String
+        public var chromeLauncherPath: String
         public var systemRootCount: Int
     }
 
@@ -54,23 +55,31 @@ public struct CAPublisher: Sendable {
         bundle += "# \(InspectionCA.commonName(hostUser: paths.environment.hostUser))\n" + certificate
         try shared.write(Data(certificate.utf8), to: try paths.sharedRelative(paths.publicCACertificate), permissions: 0o644)
         try shared.write(Data(bundle.utf8), to: try paths.sharedRelative(paths.publicCABundle), permissions: 0o644)
+        try shared.write(Data(ChromeLauncher.script(for: ca).utf8), to: try paths.sharedRelative(paths.sandboxChromeLauncher), permissions: 0o755)
         let count = roots.components(separatedBy: "-----BEGIN CERTIFICATE-----").count - 1
-        return Result(certificatePath: paths.publicCACertificate, bundlePath: paths.publicCABundle, systemRootCount: count)
+        return Result(
+            certificatePath: paths.publicCACertificate, bundlePath: paths.publicCABundle,
+            chromeLauncherPath: paths.sandboxChromeLauncher, systemRootCount: count
+        )
     }
 
     public func unpublish() throws {
         try shared.remove(try paths.sharedRelative(paths.publicCACertificate))
         try shared.remove(try paths.sharedRelative(paths.publicCABundle))
+        try shared.remove(try paths.sharedRelative(paths.sandboxChromeLauncher))
     }
 
-    /// Whether the published certificate is the CA's and the bundle contains it. Untrusted content is only compared.
+    /// Whether the published certificate is the CA's, the bundle contains it and the Chrome launcher matches it.
+    /// Untrusted content is only compared.
     public func state(of ca: InspectionCA) throws -> State {
         let certificate = try ca.certificatePEM
         guard let published = try shared.read(try paths.sharedRelative(paths.publicCACertificate)),
               let bundle = try shared.read(try paths.sharedRelative(paths.publicCABundle), maxBytes: 8 << 20)
         else { return .missing }
+        let launcher = try shared.read(try paths.sharedRelative(paths.sandboxChromeLauncher))
         let current = String(decoding: published, as: UTF8.self) == certificate
             && String(decoding: bundle, as: UTF8.self).contains(certificate)
+            && launcher.map { String(decoding: $0, as: UTF8.self) } == ChromeLauncher.script(for: ca)
         return current ? .current : .stale
     }
 }

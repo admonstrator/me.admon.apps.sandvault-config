@@ -70,7 +70,7 @@ struct NetCACommand: AsyncParsableCommand {
     }
 
     struct Publish: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Copy the CA and a CA bundle (system roots + CA) into the shared workspace.")
+        static let configuration = CommandConfiguration(abstract: "Copy the CA, a CA bundle (system roots + CA) and the Chrome launcher into the shared workspace.")
         @OptionGroup var global: GlobalOptions
 
         func run() async throws {
@@ -82,6 +82,7 @@ struct NetCACommand: AsyncParsableCommand {
             if global.json { return try Output.json(result) }
             Output.line("published \(result.certificatePath)")
             Output.line("published \(result.bundlePath) (\(result.systemRootCount) system roots + CA)")
+            Output.line("published \(result.chromeLauncherPath) (starts Chrome trusting the CA)")
         }
     }
 

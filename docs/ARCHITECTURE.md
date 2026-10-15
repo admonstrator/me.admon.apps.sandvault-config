@@ -332,11 +332,12 @@ asks for one host share one `AskRequest`; the connection waits up to `askTimeout
 `CAStore` keeps the P-256 CA in `AppPaths.caDir` (`ca-key.pem` 0600, `ca-cert.pem`), `InspectionService` signs a
 30-day leaf per host with one in-memory key and caches the server context; ALPN `http/1.1` only; the upstream side
 verifies against the platform roots. Requests and responses become `HTTPSummary` entries with
-`inspection.redactHeaders` replaced by `<redacted>`; bodies are relayed, never stored. `CAPublisher` writes the CA
-and a bundle (system roots + CA) into `_sandvault-config/` through `SharedFiles`.
+`inspection.redactHeaders` replaced by `<redacted>`; bodies are relayed, never stored. `CAPublisher` writes the CA,
+a bundle (system roots + CA) and the `sandvault-chrome` launcher (`ChromeLauncher`, D49) into `_sandvault-config/`
+through `SharedFiles`; the published state is `stale` when any of the three no longer matches the CA.
 
 **Sandbox environment**: `SandboxEnvironmentBlock` writes `ManagedBlock.zshenv` into `$SHARED_WORKSPACE/user/.zshenv`
-through `SharedFiles` (proxy variables, `NO_PROXY`, CA variables with inspection; removed when the mode is `off`).
+through `SharedFiles` (proxy variables, `NO_PROXY`, CA variables and `SANDVAULT_CHROME` with inspection; removed when the mode is `off`).
 netd syncs it on start and on every reload; `svctl proxy env apply|remove` does it by hand.
 
 **Records**: every decision yields a `ConnectionRecord` (raw bytes on the client socket, duration, process from the

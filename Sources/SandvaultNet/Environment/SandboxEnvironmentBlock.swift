@@ -33,6 +33,7 @@ public enum SandboxEnvironmentBlock {
             for name in ["SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO", "AWS_CA_BUNDLE"] {
                 result.append((name, paths.publicCABundle))
             }
+            result.append(("SANDVAULT_CHROME", paths.sandboxChromeLauncher))
         }
         return result
     }

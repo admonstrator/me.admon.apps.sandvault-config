@@ -184,7 +184,7 @@ struct NetProxyCommand: AsyncParsableCommand {
                 if created { notes.append("created CA \(try ca.fingerprint)") }
                 let shared = try NetCLI.requireSharedWorkspace(global)
                 let published = try await CAPublisher(paths: global.paths, runner: global.runner, shared: shared).publish(ca)
-                notes.append("published \(published.certificatePath) and \(published.bundlePath)")
+                notes.append("published \(published.certificatePath), \(published.bundlePath) and \(published.chromeLauncherPath)")
             }
             let (config, reloaded) = try await NetCLI.edit(global) { config -> AppConfig in
                 config.network.inspection.enabled = enable
