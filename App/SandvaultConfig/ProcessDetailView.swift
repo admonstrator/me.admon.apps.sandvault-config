@@ -27,7 +27,7 @@ struct ProcessDetailView: View {
     }
 
     private var current: ProcessReference { history.last ?? ProcessReference(pid: 0) }
-    private var expert: Bool { model.settings.preferences.expertMode }
+    private var expert: Bool { model.mode == .expert }
 
     var body: some View {
         let detail = model.processDetail.detail(for: current, includeChildren: includeChildren, grouped: grouped)
