@@ -120,6 +120,12 @@ public struct AppPaths: Sendable, Equatable, Codable {
     public var handoffDir: String { "\(environment.sharedWorkspace)/tmp" }
     /// The sandbox sources this file on every session start (`guest/home/.zshenv`).
     public var sharedZshenv: String { "\(environment.sharedUserDir)/.zshenv" }
+    /// Android SDK and emulators for the sandbox (`AndroidSharing`).
+    public var androidDir: String { "\(environment.sharedWorkspace)/android" }
+    /// APFS clone of the host's Android SDK (host-owned, read-only for the sandbox); `ANDROID_HOME` in the sandbox.
+    public var androidSDK: String { "\(androidDir)/sdk" }
+    /// The sandbox's virtual devices (sandbox-writable); `ANDROID_AVD_HOME` in the sandbox.
+    public var androidAVDHome: String { "\(androidDir)/avd" }
 
     /// LaunchAgent label of sandvault-netd.
     public static let netdLabel = "\(BundleIdentity.bundleID).netd"

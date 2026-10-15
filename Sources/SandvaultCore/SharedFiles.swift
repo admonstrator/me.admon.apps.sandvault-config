@@ -114,6 +114,92 @@ public struct SharedFiles: Sendable {
         }
     }
 
+    /// Opens the directory `relativePath` without following symlinks and passes its descriptor to `body`.
+    /// With `create`, missing directories are made and a newly made or already owned leaf gets exactly `permissions`.
+    public func withDirectory<T>(_ relativePath: String, create: Bool = false, permissions: Int = 0o770, _ body: (Int32) throws -> T) throws -> T {
+        let fd = try openDirectory(try components(relativePath), create: create, permissions: permissions)
+        defer { close(fd) }
+        if create {
+            var info = stat()
+            if fstat(fd, &info) == 0, info.st_uid == getuid(), Int(info.st_mode & 0o7777) != permissions {
+                fchmod(fd, mode_t(permissions))
+            }
+        }
+        return try body(fd)
+    }
+
+    /// Entry names of a directory (without `.` and `..`), sorted; `nil` when it does not exist. Throws on a symlink.
+    public func list(_ relativePath: String) throws -> [String]? {
+        do {
+            return try withDirectory(relativePath) { try Self.entries(of: $0) }.sorted()
+        } catch SandvaultError.io(let message) where message.hasSuffix("(errno \(ENOENT))") {
+            return nil
+        }
+    }
+
+    /// Renames within the tree; neither path is followed through a symlink.
+    public func rename(_ relativePath: String, to newRelativePath: String) throws {
+        let from = try components(relativePath)
+        let to = try components(newRelativePath)
+        let source = try openDirectory(Array(from.dropLast()), create: false, permissions: 0)
+        defer { close(source) }
+        let destination = try openDirectory(Array(to.dropLast()), create: false, permissions: 0)
+        defer { close(destination) }
+        guard renameat(source, from[from.count - 1], destination, to[to.count - 1]) == 0 else {
+            throw posixError("rename \(relativePath)")
+        }
+    }
+
+    /// Removes a file or a whole directory tree. Symlinks inside are removed as links, never followed.
+    /// A missing entry is ignored.
+    public func removeTree(_ relativePath: String) throws {
+        let parts = try components(relativePath)
+        let directory: Int32
+        do {
+            directory = try openDirectory(Array(parts.dropLast()), create: false, permissions: 0)
+        } catch SandvaultError.io(let message) where message.hasSuffix("(errno \(ENOENT))") {
+            return
+        }
+        defer { close(directory) }
+        try removeEntry(directory, parts[parts.count - 1], path: relativePath)
+    }
+
+    private func removeEntry(_ parent: Int32, _ name: String, path: String) throws {
+        var info = stat()
+        guard fstatat(parent, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else {
+            if errno == ENOENT { return }
+            throw posixError("stat \(path)")
+        }
+        if info.st_mode & S_IFMT == S_IFDIR {
+            let fd = openat(parent, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            guard fd >= 0 else { throw posixError("open \(path)") }
+            defer { close(fd) }
+            for child in try Self.entries(of: fd) {
+                try removeEntry(fd, child, path: path + "/" + child)
+            }
+            guard unlinkat(parent, name, AT_REMOVEDIR) == 0 || errno == ENOENT else { throw posixError("remove \(path)") }
+        } else {
+            guard unlinkat(parent, name, 0) == 0 || errno == ENOENT else { throw posixError("remove \(path)") }
+        }
+    }
+
+    private static func entries(of directory: Int32) throws -> [String] {
+        let copy = dup(directory)
+        guard copy >= 0, let stream = fdopendir(copy) else {
+            if copy >= 0 { close(copy) }
+            throw SandvaultError.io("list directory failed (errno \(errno))")
+        }
+        defer { closedir(stream) }
+        var names: [String] = []
+        while let entry = readdir(stream) {
+            let name = withUnsafePointer(to: entry.pointee.d_name) {
+                $0.withMemoryRebound(to: CChar.self, capacity: MemoryLayout.size(ofValue: entry.pointee.d_name)) { String(cString: $0) }
+            }
+            if name != ".", name != ".." { names.append(name) }
+        }
+        return names
+    }
+
     // MARK: - Internals
 
     func components(_ relativePath: String) throws -> [String] {

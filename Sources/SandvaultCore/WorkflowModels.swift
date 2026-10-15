@@ -28,6 +28,8 @@ public enum ReadinessKind: String, Codable, Sendable, CaseIterable {
     case cloneFirst
     /// The hand-off target is not installed (`sbx` missing).
     case targetMissing
+    /// An Android project while the sandbox has no SDK copy, or a tracked `local.properties` naming a host SDK.
+    case androidSDK
 }
 
 public struct ReadinessFinding: Codable, Sendable, Equatable, Hashable {
@@ -183,6 +185,106 @@ public struct ToolStatus: Codable, Sendable, Equatable {
     }
 }
 
+// MARK: - Android emulator
+
+/// A virtual device: the host's (`~/.android/avd`) or the sandbox's (`$SHARED_WORKSPACE/android/avd`).
+public struct AndroidDevice: Codable, Sendable, Equatable, Hashable, Identifiable {
+    public var name: String
+    public var displayName: String?
+    /// `android-35`, from the device's `.ini`.
+    public var target: String?
+    /// `system-images/android-35/google_apis/arm64-v8a`, relative to the SDK.
+    public var systemImage: String?
+    /// Whether that system image is in the sandbox's SDK copy.
+    public var imageShared: Bool
+
+    public var id: String { name }
+
+    public init(name: String, displayName: String? = nil, target: String? = nil, systemImage: String? = nil, imageShared: Bool = false) {
+        self.name = name
+        self.displayName = displayName
+        self.target = target
+        self.systemImage = systemImage
+        self.imageShared = imageShared
+    }
+}
+
+/// What the host has and what the sandbox got, from the file system only (no sandbox commands).
+public struct AndroidStatus: Codable, Sendable, Equatable {
+    /// The host SDK (resolved), `nil` when none was found.
+    public var hostSDK: String?
+    public var hostEmulatorVersion: String?
+    /// The host SDK's system images, relative to the SDK.
+    public var hostSystemImages: [String]
+    public var hostDevices: [AndroidDevice]
+    /// `$SHARED_WORKSPACE/android/sdk`.
+    public var sharedSDK: String
+    public var sharedSDKPresent: Bool
+    public var sharedEmulatorVersion: String?
+    public var sharedSystemImages: [String]
+    public var sandboxDevices: [AndroidDevice]
+    /// Whether `$SHARED_WORKSPACE/user/.zshenv` sets `ANDROID_HOME`, `ANDROID_AVD_HOME` and `PATH` as expected.
+    public var environmentCurrent: Bool
+
+    public init(
+        hostSDK: String?, hostEmulatorVersion: String? = nil, hostSystemImages: [String] = [], hostDevices: [AndroidDevice] = [],
+        sharedSDK: String, sharedSDKPresent: Bool = false, sharedEmulatorVersion: String? = nil, sharedSystemImages: [String] = [],
+        sandboxDevices: [AndroidDevice] = [], environmentCurrent: Bool = false
+    ) {
+        self.hostSDK = hostSDK
+        self.hostEmulatorVersion = hostEmulatorVersion
+        self.hostSystemImages = hostSystemImages
+        self.hostDevices = hostDevices
+        self.sharedSDK = sharedSDK
+        self.sharedSDKPresent = sharedSDKPresent
+        self.sharedEmulatorVersion = sharedEmulatorVersion
+        self.sharedSystemImages = sharedSystemImages
+        self.sandboxDevices = sandboxDevices
+        self.environmentCurrent = environmentCurrent
+    }
+
+    /// The copy misses something the host has: another emulator version or system images.
+    public var sharedOutdated: Bool {
+        sharedSDKPresent && hostSDK != nil && (sharedEmulatorVersion != hostEmulatorVersion || !Set(hostSystemImages).isSubset(of: Set(sharedSystemImages)))
+    }
+
+    /// Host devices that the sandbox does not have yet.
+    public var importableDevices: [AndroidDevice] {
+        hostDevices.filter { device in !sandboxDevices.contains { $0.name == device.name } }
+    }
+}
+
+/// The emulator run as the sandbox user inside sv's profile.
+public struct AndroidSandboxCheck: Codable, Sendable, Equatable {
+    /// `emulator -version`, first line; `nil` when it did not run.
+    public var emulatorVersion: String?
+    public var emulatorError: String?
+    /// `emulator -accel-check` succeeded (Hypervisor.framework usable).
+    public var acceleration: Bool
+    public var accelerationDetail: String
+    /// `emulator -list-avds`.
+    public var devices: [String]
+    /// The sandbox user can write `$SHARED_WORKSPACE/android/avd`.
+    public var deviceHomeWritable: Bool
+    /// `adb version`, first line.
+    public var adbVersion: String?
+
+    public init(
+        emulatorVersion: String?, emulatorError: String? = nil, acceleration: Bool, accelerationDetail: String = "", devices: [String] = [],
+        deviceHomeWritable: Bool, adbVersion: String? = nil
+    ) {
+        self.emulatorVersion = emulatorVersion
+        self.emulatorError = emulatorError
+        self.acceleration = acceleration
+        self.accelerationDetail = accelerationDetail
+        self.devices = devices
+        self.deviceHomeWritable = deviceHomeWritable
+        self.adbVersion = adbVersion
+    }
+
+    public var ready: Bool { emulatorVersion != nil && acceleration && deviceHomeWritable && !devices.isEmpty }
+}
+
 // MARK: - Migration
 
 public enum MigrationItem: String, Codable, Sendable, CaseIterable {
@@ -263,6 +365,19 @@ public protocol RepoService: Sendable {
 public protocol ToolService: Sendable {
     func status(of name: String) async throws -> ToolStatus
     func grant(_ name: String, method: ToolGrantMethod) async throws -> ToolGrant
+}
+
+/// The host's Android SDK as an APFS clone in the shared workspace, and virtual devices for the sandbox.
+public protocol AndroidService: Sendable {
+    func status() async throws -> AndroidStatus
+    /// Clones the host SDK (replacing an older copy) and writes the environment block.
+    func shareSDK() async throws -> AndroidStatus
+    /// Removes the SDK copy and the environment block; the sandbox's devices stay.
+    func unshare() async throws -> AndroidStatus
+    /// A new sandbox device from a host device's configuration (no user data, no snapshots).
+    func importDevice(_ name: String) async throws -> AndroidDevice
+    func removeDevice(_ name: String) async throws
+    func checkSandbox() async throws -> AndroidSandboxCheck
 }
 
 public protocol MigrationService: Sendable {

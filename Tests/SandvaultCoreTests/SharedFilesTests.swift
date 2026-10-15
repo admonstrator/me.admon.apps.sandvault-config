@@ -32,6 +32,27 @@ import Testing
         #expect(try shared.read("nowhere/missing") == nil)
     }
 
+    @Test func treesAreListedRenamedAndRemovedWithoutFollowingLinks() throws {
+        defer { cleanup() }
+        try shared.write(Data("a".utf8), to: "android/sdk/emulator/emulator")
+        try shared.write(Data("b".utf8), to: "android/sdk/platform-tools/adb")
+        try FileManager.default.createSymbolicLink(atPath: shared.root + "/android/sdk/link", withDestinationPath: outside.path)
+        #expect(try shared.list("android/sdk") == ["emulator", "link", "platform-tools"])
+        #expect(try shared.list("android/missing") == nil)
+        #expect(throws: SandvaultError.self) { try shared.list("android/sdk/link") }
+
+        try shared.rename("android/sdk", to: "android/old")
+        #expect(try shared.list("android") == ["old"])
+        try shared.removeTree("android/old")
+        try shared.removeTree("android/old")
+        #expect(try shared.list("android") == [])
+        #expect(try String(contentsOf: outside.appendingPathComponent(".zshrc"), encoding: .utf8) == "host secret")
+
+        try shared.withDirectory("android/avd", create: true, permissions: 0o770) { _ in }
+        let attributes = try FileManager.default.attributesOfItem(atPath: shared.root + "/android/avd")
+        #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o770)
+    }
+
     @Test func neverWritesThroughASymlinkedFile() throws {
         defer { cleanup() }
         try FileManager.default.createDirectory(atPath: shared.root + "/user", withIntermediateDirectories: true)

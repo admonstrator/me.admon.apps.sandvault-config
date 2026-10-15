@@ -257,6 +257,8 @@ public struct AppEnvironment: Sendable {
     public var activity: ActivityRecording
     /// Docker Sandboxes VMs (D47).
     public var dockerSandboxes: DockerSandboxService
+    /// The host's Android SDK and devices for the sandbox.
+    public var android: AndroidService
 
     public init(
         environment: SandvaultEnvironment, paths: AppPaths, runner: CommandRunner, configStore: ConfigStore,
@@ -267,7 +269,8 @@ public struct AppEnvironment: Sendable {
         helperSetup: HelperInstalling, netd: NetdConnector, netdAgent: NetdAgentControl, ca: CAControl,
         handoff: HandoffService, repos: RepoService, tools: ToolService, migration: MigrationService, keys: KeyService,
         sandbox: SandboxService, networkDatabase: NetworkDatabaseService, activity: ActivityRecording = NoActivityRecorder(),
-        dockerSandboxes: DockerSandboxService = NoDockerSandboxes()
+        dockerSandboxes: DockerSandboxService = NoDockerSandboxes(),
+        android: AndroidService = UnavailableAndroid()
     ) {
         self.environment = environment
         self.paths = paths
@@ -299,6 +302,7 @@ public struct AppEnvironment: Sendable {
         self.networkDatabase = networkDatabase
         self.activity = activity
         self.dockerSandboxes = dockerSandboxes
+        self.android = android
     }
 
     /// The real thing: the factories of Observe, Enforce, Net and Workflow over one `ProcessCommandRunner`.
@@ -335,7 +339,8 @@ public struct AppEnvironment: Sendable {
             sandbox: Workflow.makeSandboxService(environment: environment, runner: runner),
             networkDatabase: NetworkDatabaseStore(path: paths.networkDatabase, runner: runner),
             activity: LiveActivityRecorder(paths: paths, runner: runner),
-            dockerSandboxes: Workflow.makeDockerSandboxService(runner: runner)
+            dockerSandboxes: Workflow.makeDockerSandboxService(runner: runner),
+            android: Workflow.makeAndroidService(environment: environment, runner: runner)
         )
     }
 }

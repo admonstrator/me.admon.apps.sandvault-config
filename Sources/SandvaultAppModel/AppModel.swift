@@ -69,6 +69,7 @@ public final class AppModel {
     public let handoff: HandoffModel
     public let repos: ReposModel
     public let tools: ToolsModel
+    public let android: AndroidModel
     public let migration: MigrationModel
     public let keys: KeysModel
     public let settings: SettingsModel
@@ -115,6 +116,7 @@ public final class AppModel {
         handoff = HandoffModel(service: environment.handoff, editor: editor, docker: docker)
         repos = ReposModel(service: environment.repos)
         tools = ToolsModel(service: environment.tools, editor: editor)
+        android = AndroidModel(service: environment.android)
         migration = MigrationModel(service: environment.migration)
         keys = KeysModel(service: environment.keys)
         settings = SettingsModel(
@@ -230,7 +232,7 @@ public final class AppModel {
         case .network: await network.refreshSockets()
         case .firewall: await firewall.refreshStatus()
         case .rules: rules.refreshPlan()
-        case .tools: break
+        case .tools: await android.refresh()
         case .handoff:
             await repos.refresh()
             await docker.refresh()

@@ -62,7 +62,7 @@ struct ScreenView: View {
         case .network: NetworkView(network: model.network, netd: model.netd)
         case .firewall: FirewallView(firewall: model.firewall)
         case .rules: RulesView(rules: model.rules)
-        case .tools: ToolsView(tools: model.tools)
+        case .tools: ToolsView(tools: model.tools, android: model.android)
         case .handoff: HandoffView(model: model)
         case .migration: MigrationView(migration: model.migration, keys: model.keys)
         case .settings: SettingsView(settings: model.settings, netd: model.netd, recording: model.recording) { on in model.setExpertMode(on) }

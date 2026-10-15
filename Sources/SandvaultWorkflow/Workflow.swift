@@ -18,6 +18,11 @@ public enum Workflow {
         ToolAccess(environment: environment, runner: runner, configStore: configStore)
     }
 
+    /// The host's Android SDK and virtual devices for the sandbox.
+    public static func makeAndroidService(environment: SandvaultEnvironment, runner: CommandRunner) -> AndroidService {
+        AndroidSharing(environment: environment, runner: runner)
+    }
+
     /// Copying host configuration (Claude, git, zsh) into `$SHARED_WORKSPACE/user`.
     public static func makeMigrationService(environment: SandvaultEnvironment, runner: CommandRunner) -> MigrationService {
         ConfigMigration(environment: environment, runner: runner)

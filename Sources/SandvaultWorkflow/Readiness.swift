@@ -152,6 +152,7 @@ struct ReadinessCheck: Sendable {
         }
         findings += limited(local)
 
+        findings += androidFindings(root, tracked: tracked.map(\.path))
         findings += virtualenvFindings(root)
         if FileKind.of(root + "/.gitmodules") == .regular {
             findings += try await submoduleFindings(root, originURL: origin.succeeded ? origin.trimmedOutput : nil)
@@ -204,6 +205,35 @@ struct ReadinessCheck: Sendable {
             return ReadinessFinding(kind: .virtualenvHostInterpreter, severity: .info, path: name,
                 message: "\(name) uses the host interpreter in \(home) and does not work in the sandbox; recreate it in the clone (python3 -m venv \(name))")
         }
+    }
+
+    /// Gradle in the clone needs `ANDROID_HOME` (the SDK copy) unless a tracked `local.properties` names `sdk.dir`.
+    private func androidFindings(_ root: String, tracked: [String]) -> [ReadinessFinding] {
+        guard tracked.contains(where: { Self.baseName($0) == "AndroidManifest.xml" }) else { return [] }
+        var findings: [ReadinessFinding] = []
+        let paths = AppPaths(environment: layout.environment)
+        if FileKind.of(layout.absolute(layout.relative(paths.androidSDK))) != .directory {
+            findings.append(ReadinessFinding(kind: .androidSDK, severity: .warning,
+                message: "this is an Android project, but the sandbox has no Android SDK yet; share it on the Tools page (svctl android share)"))
+        }
+        if tracked.contains("local.properties"),
+           let text = try? String(contentsOfFile: root + "/local.properties", encoding: .utf8),
+           let directory = Self.sdkDirectory(text), !HostPath.isInside(directory, layout.environment.sharedWorkspace) {
+            findings.append(ReadinessFinding(kind: .androidSDK, severity: .warning, path: "local.properties",
+                message: "local.properties is tracked and sets sdk.dir=\(directory), which the sandbox cannot read; Gradle in the clone fails until the line is removed there"))
+        }
+        return findings
+    }
+
+    /// `sdk.dir` of a Gradle `local.properties` (`\:` and `\\` unescaped).
+    static func sdkDirectory(_ text: String) -> String? {
+        for line in Text.lines(text) {
+            let parts = line.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            if parts.count == 2, parts[0] == "sdk.dir", !parts[1].isEmpty {
+                return parts[1].replacingOccurrences(of: "\\:", with: ":").replacingOccurrences(of: "\\\\", with: "\\")
+            }
+        }
+        return nil
     }
 
     static func pyvenvHome(_ text: String) -> String? {

@@ -53,6 +53,13 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   geklont (Ordner in den Einstellungen wählbar). Zurück kommen die Commits wie gewohnt mit „Fetch Back“
   (`git fetch sandbox-<name>`). Die Sandbox-Seite listet die VMs mit Open, Stop und Delete und warnt, wenn der
   SSH-Agent in jede VM weitergereicht wird. `svctl handoff --target docker`, `svctl sbx list|open|stop|rm`.
+- **Android-Emulator in der Sandbox:** Tools > Android emulator klont das Android-SDK des Macs nach
+  `$SHARED_WORKSPACE/android/sdk` (APFS-Klon, kein zusätzlicher Platz) und setzt in der Sandbox `ANDROID_HOME`,
+  `ANDROID_AVD_HOME` und den PATH für emulator und adb. Geräte aus dem Device Manager kommen mit „Add to Sandbox“
+  herüber, nur ihre Einstellungen, ohne Daten und Snapshots. „Check in Sandbox“ startet emulator und adb als
+  Sandbox-Benutzer. Der Emulator läuft dort ohne Fenster (`emulator -avd <name> -no-window`). Die Bereitschaftsprüfung
+  beim Hand-off warnt bei Android-Projekten ohne SDK-Kopie und bei einem eingecheckten `local.properties` mit
+  `sdk.dir`. `svctl android status|share|unshare|check`, `svctl android device add|remove`.
 
 ### Behoben
 - `xcodegen generate` schaltete die automatische Signierung jedes Mal ab. `project.yml` signiert jetzt alle Targets
