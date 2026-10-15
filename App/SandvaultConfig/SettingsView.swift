@@ -2,46 +2,111 @@ import SandvaultAppModel
 import SandvaultCore
 import SwiftUI
 
-/// Settings in three parts, switched in the toolbar: General, Connection requests, Recording.
+/// The Settings window (⌘,): one tab per part the current mode has (D53).
 struct SettingsView: View {
-    @Bindable var settings: SettingsModel
-    let netd: NetdLink
-    let recording: RecordingModel
-    let setExpertMode: @MainActor (Bool) -> Void
+    let model: AppModel
 
     var body: some View {
+        @Bindable var settings = model.settings
+        TabView(selection: $settings.pane) {
+            ForEach(SettingsPane.panes(for: model.mode)) { pane in
+                SettingsPaneView(model: model, pane: pane)
+                    .tabItem { Label(pane.title, systemImage: pane.symbolName) }
+                    .tag(pane)
+            }
+        }
+        .frame(minWidth: 560, idealWidth: 620, minHeight: 460, idealHeight: 560)
+    }
+}
+
+struct SettingsPaneView: View {
+    let model: AppModel
+    let pane: SettingsPane
+
+    var body: some View {
+        let settings = model.settings
         VStack(spacing: 0) {
             MessageArea(message: settings.message) { settings.message = nil }
-            if settings.pane == .recording {
-                MessageArea(message: recording.message) { recording.message = nil }
+            if pane == .recording {
+                MessageArea(message: model.recording.message) { model.recording.message = nil }
             }
             Form {
-                switch settings.pane {
+                switch pane {
                 case .general:
-                    HelperSection(settings: settings)
-                    NetdSection(settings: settings, netd: netd)
+                    ModeSection(model: model)
+                    if model.mode != .expert {
+                        HelperSection(settings: settings)
+                        NetdSection(settings: settings, netd: model.netd)
+                    }
                     HandoffDefaultsSection(settings: settings)
-                    AppSection(settings: settings, setExpertMode: setExpertMode)
+                    AppSection(settings: settings)
+                case .websites:
+                    DeveloperBasicsSection(settings: settings)
                 case .connectionRequests:
                     ConnectionRequestsSection(settings: settings)
                 case .recording:
-                    RecordingSections(recording: recording)
+                    RecordingSections(recording: model.recording)
+                case .service:
+                    HelperSection(settings: settings)
+                    NetdSection(settings: settings, netd: model.netd)
                 }
             }
             .formStyle(.grouped)
         }
-        .navigationTitle(Screen.settings.title)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Picker("Part", selection: $settings.pane) {
-                    ForEach(SettingsPane.allCases) { pane in
-                        Text(pane.title).tag(pane)
-                    }
+    }
+}
+
+/// Easy, Advanced or Expert, with what each adds.
+struct ModeSection: View {
+    let model: AppModel
+
+    var body: some View {
+        Section("Mode") {
+            Picker("Mode", selection: mode) {
+                ForEach(InterfaceMode.allCases) { mode in
+                    Label(mode.title, systemImage: mode.symbolName).tag(mode)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
             }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            Text(model.mode.explanation)
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
+    }
+
+    private var mode: Binding<InterfaceMode> {
+        Binding<InterfaceMode>(get: { model.mode }, set: { mode in model.setMode(mode) })
+    }
+}
+
+/// Websites allowed without asking (D53); a rule for the same host still decides first.
+struct DeveloperBasicsSection: View {
+    let settings: SettingsModel
+
+    var body: some View {
+        Section {
+            Toggle("Allow developer basics", isOn: enabled)
+            ForEach(DeveloperBasicsGroup.catalog) { group in
+                Toggle(isOn: binding(group)) {
+                    Label(group.title, systemImage: group.symbolName)
+                    Text(group.patterns.joined(separator: ", "))
+                }
+                .disabled(!settings.developerBasics.enabled)
+            }
+        } header: {
+            Text("Developer basics")
+        } footer: {
+            Text("These websites open without asking. Only web traffic and DNS; a rule of yours for the same website wins.")
+        }
+    }
+
+    private var enabled: Binding<Bool> {
+        Binding<Bool>(get: { settings.developerBasics.enabled }, set: { on in Task { await settings.setDeveloperBasics(on) } })
+    }
+
+    private func binding(_ group: DeveloperBasicsGroup) -> Binding<Bool> {
+        Binding<Bool>(get: { settings.developerBasics.isOn(group) }, set: { on in Task { await settings.setDeveloperBasics(group, on) } })
     }
 }
 
@@ -285,15 +350,10 @@ struct HandoffDefaultsSection: View {
 
 struct AppSection: View {
     let settings: SettingsModel
-    let setExpertMode: @MainActor (Bool) -> Void
 
     var body: some View {
         Section("App") {
             Toggle("Show in Dock", isOn: showInDock)
-            Toggle("Expert mode", isOn: expertMode)
-            Text("Shows processes, sockets, firewall details, sandbox rules, tools and migration in the sidebar.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
             Picker("Refresh while visible", selection: interval) {
                 ForEach([1.0, 2.0, 5.0, 10.0, 30.0], id: \.self) { seconds in
                     Text(verbatim: "every \(Int(seconds)) s").tag(seconds)
@@ -313,10 +373,6 @@ struct AppSection: View {
             settings.setShowInDock(on)
             DockPresence.apply(on)
         })
-    }
-
-    private var expertMode: Binding<Bool> {
-        Binding<Bool>(get: { settings.preferences.expertMode }, set: { on in setExpertMode(on) })
     }
 
     private var interval: Binding<Double> {

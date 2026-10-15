@@ -26,7 +26,7 @@ struct MenuBarView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var armStop = false
 
-    private var expert: Bool { model.settings.preferences.expertMode }
+    private var expert: Bool { model.mode == .expert }
 
     var body: some View {
         let summary = model.menuBar
@@ -71,7 +71,7 @@ struct MenuBarView: View {
             MenuSeparator()
             MenuRow("Open \(BundleIdentity.displayName)…", shortcut: "⌘O") { open(nil) }
                 .keyboardShortcut("o")
-            MenuRow("Settings…", shortcut: "⌘,") { open(.settings) }
+            MenuRow("Settings…", shortcut: "⌘,") { model.showSettings() }
                 .keyboardShortcut(",")
             EmergencyStop(armed: $armStop, firewall: model.firewall)
             MenuSeparator()

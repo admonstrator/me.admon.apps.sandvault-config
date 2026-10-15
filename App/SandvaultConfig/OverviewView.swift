@@ -6,14 +6,14 @@ import SwiftUI
 struct OverviewView: View {
     let model: AppModel
 
-    private var expert: Bool { model.settings.preferences.expertMode }
+    private var expert: Bool { model.mode == .expert }
 
     var body: some View {
         VStack(spacing: 0) {
             MessageArea(message: model.firewall.message) { model.firewall.message = nil }
             Form {
                 Section("Protection") {
-                    ProtectionPicker(firewall: model.firewall, netdRunning: model.netd.isConnected)
+                    ProtectionPicker(firewall: model.firewall, netdRunning: model.netd.isConnected, mode: model.mode)
                 }
                 if expert || !model.overview.nextStep.isDone {
                     Section("Next step") {
@@ -77,10 +77,11 @@ struct OverviewView: View {
 struct ProtectionPicker: View {
     let firewall: FirewallModel
     let netdRunning: Bool
+    var mode: InterfaceMode = .expert
 
     var body: some View {
         Picker("Protection", selection: level) {
-            ForEach(ProtectionLevel.allCases) { level in
+            ForEach(ProtectionLevel.choices(for: mode)) { level in
                 Text(level.title).tag(Optional(level))
             }
         }

@@ -151,9 +151,36 @@ public final class SettingsModel {
         store.save(preferences)
     }
 
-    public func setExpertMode(_ on: Bool) {
-        preferences.expertMode = on
+    public func setMode(_ mode: InterfaceMode) {
+        preferences.mode = mode
+        if !SettingsPane.panes(for: mode).contains(pane) { pane = .general }
         store.save(preferences)
+    }
+
+    public func setOnboarded() {
+        preferences.onboarded = true
+        store.save(preferences)
+    }
+
+    // MARK: Developer basics (D53)
+
+    public var developerBasics: DeveloperBasicsSettings { editor.config.network.developerBasics }
+
+    public func setDeveloperBasics(_ on: Bool) async {
+        await editDeveloperBasics(on ? "Allow developer basics" : "Stop allowing developer basics") { $0.enabled = on }
+    }
+
+    public func setDeveloperBasics(_ group: DeveloperBasicsGroup, _ on: Bool) async {
+        await editDeveloperBasics("\(on ? "Allow" : "Stop allowing") \(group.title)") { $0.set(group, on: on) }
+    }
+
+    private func editDeveloperBasics(_ action: String, _ change: (inout DeveloperBasicsSettings) -> Void) async {
+        do {
+            let edit = try await editor.edit { change(&$0.network.developerBasics) }
+            message = edit.netdReloaded == false ? .info("Saved", detail: netdReloadNote(false)) : nil
+        } catch {
+            message = UserMessage(error: error, action: action)
+        }
     }
 
     public func setRefreshInterval(_ seconds: Double) {
@@ -297,18 +324,43 @@ public final class SettingsModel {
     }
 }
 
-/// The three parts of the Settings page.
+/// The tabs of the Settings window, in order (D53).
 public enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
-    case general, connectionRequests, recording
+    case general, websites, connectionRequests, recording, service
 
     public var id: String { rawValue }
 
     public var title: String {
         switch self {
         case .general: "General"
-        case .connectionRequests: "Connection requests"
+        case .websites: "Websites"
+        case .connectionRequests: "Requests"
         case .recording: "Recording"
+        case .service: "Service"
         }
+    }
+
+    public var symbolName: String {
+        switch self {
+        case .general: "gearshape"
+        case .websites: "globe"
+        case .connectionRequests: "questionmark.bubble"
+        case .recording: "record.circle"
+        case .service: "server.rack"
+        }
+    }
+
+    /// General and Websites in every mode, Requests and Recording from Advanced, Service (helper, netd) in Expert.
+    public var minimumMode: InterfaceMode {
+        switch self {
+        case .general, .websites: .easy
+        case .connectionRequests, .recording: .advanced
+        case .service: .expert
+        }
+    }
+
+    public static func panes(for mode: InterfaceMode) -> [SettingsPane] {
+        allCases.filter { $0.minimumMode <= mode }
     }
 }
 

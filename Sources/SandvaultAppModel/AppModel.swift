@@ -3,44 +3,58 @@ import Observation
 import SandvaultCore
 import SandvaultObserve
 
-/// Pages of the main window, in sidebar order.
+/// Pages of the main window, in sidebar order (`SidebarSection.sidebar(for:)` groups them).
+/// `.settings` is the Settings window (⌘,), not a sidebar page: selecting it opens that window.
 public enum Screen: String, CaseIterable, Identifiable, Hashable, Sendable {
-    case overview, sandbox, activity, processes, network, firewall, rules, tools, handoff, migration, settings
-
-    /// The window without expert mode.
-    public static let simple: [Screen] = [.overview, .sandbox, .activity, .handoff, .settings]
+    case overview, websites, activity, handoff, sandbox, lab, tools
+    case firewall, rules, processes, network, migration, diagnostics, settings
 
     public var id: String { rawValue }
 
     public var title: String {
         switch self {
-        case .overview: "Overview"
-        case .sandbox: "Sandbox"
+        case .overview: "Home"
+        case .websites: "Websites"
         case .activity: "Activity"
+        case .handoff: "Projects"
+        case .sandbox: "Sandbox"
+        case .lab: "Lab"
+        case .tools: "Tools"
+        case .firewall: "Firewall & Proxy"
+        case .rules: "Sandbox Rules"
         case .processes: "Processes"
         case .network: "Network"
-        case .firewall: "Firewall & Proxy"
-        case .rules: "Sandbox Rules & Learn"
-        case .tools: "Tools"
-        case .handoff: "Repos & Hand-off"
-        case .migration: "Migration"
+        case .migration: "Migration & Keys"
+        case .diagnostics: "Diagnostics"
         case .settings: "Settings"
         }
     }
 
     public var symbolName: String {
         switch self {
-        case .overview: "gauge.with.dots.needle.33percent"
+        case .overview: "house"
+        case .websites: "globe"
+        case .activity: "waveform.path.ecg"
+        case .handoff: "folder"
         case .sandbox: "shippingbox"
-        case .activity: "dot.radiowaves.left.and.right"
-        case .processes: "list.bullet.indent"
-        case .network: "network"
+        case .lab: "flask"
+        case .tools: "wrench.and.screwdriver"
         case .firewall: "shield.lefthalf.filled"
         case .rules: "lock.doc"
-        case .tools: "wrench.and.screwdriver"
-        case .handoff: "arrow.triangle.branch"
-        case .migration: "tray.and.arrow.down"
+        case .processes: "list.bullet.indent"
+        case .network: "network"
+        case .migration: "key"
+        case .diagnostics: "stethoscope"
         case .settings: "gearshape"
+        }
+    }
+
+    /// The first mode whose sidebar lists this page (D53).
+    public var minimumMode: InterfaceMode {
+        switch self {
+        case .overview, .websites, .handoff, .settings: .easy
+        case .activity, .sandbox, .lab, .tools: .advanced
+        case .firewall, .rules, .processes, .network, .migration, .diagnostics: .expert
         }
     }
 }
@@ -83,6 +97,8 @@ public final class AppModel {
 
     public private(set) var selection: Screen = .overview
     public private(set) var visibleSurfaces: Set<Surface> = []
+    /// Counts requests to bring up the Settings window; the app opens it whenever this changes (only SwiftUI can).
+    public private(set) var settingsRequests = 0
 
     @ObservationIgnored public let environment: AppEnvironment
     @ObservationIgnored private var pollTask: Task<Void, Never>?
@@ -169,26 +185,56 @@ public final class AppModel {
 
     // MARK: Navigation and visibility
 
-    /// Sidebar pages: all of them in expert mode, `Screen.simple` otherwise.
-    public var screens: [Screen] {
-        settings.preferences.expertMode ? Screen.allCases : Screen.simple
-    }
+    public var mode: InterfaceMode { settings.preferences.mode }
 
-    /// Opens `screen`; a page hidden outside expert mode opens the overview instead, where the simple window
-    /// offers the same choice (the protection level for the firewall steps).
+    public var sidebar: [SidebarSection] { SidebarSection.sidebar(for: mode) }
+
+    /// The pages the sidebar lists in the current mode.
+    public var screens: [Screen] { sidebar.flatMap(\.screens) }
+
+    /// Opens `screen`; a page the current mode does not list opens Home instead, which offers the same choice
+    /// (the protection level for the firewall steps). `.settings` brings up the Settings window.
     public func select(_ screen: Screen) {
+        if screen == .settings { return showSettings() }
         let target = screens.contains(screen) ? screen : .overview
         selection = target
         Task { await refreshOnShow(target) }
+    }
+
+    /// Brings up the Settings window, on `pane` when given.
+    public func showSettings(_ pane: SettingsPane? = nil) {
+        if let pane, pane.minimumMode <= mode { settings.pane = pane }
+        settingsRequests += 1
+        Task {
+            await settings.refresh()
+            await recording.refreshStorage()
+        }
     }
 
     public func setShowInDock(_ on: Bool) {
         settings.setShowInDock(on)
     }
 
-    public func setExpertMode(_ on: Bool) {
-        settings.setExpertMode(on)
+    public func setMode(_ mode: InterfaceMode) {
+        settings.setMode(mode)
         if !screens.contains(selection) { select(.overview) }
+    }
+
+    /// First launch still shows its sheet (mode, then sandbox preset).
+    public var needsOnboarding: Bool { !settings.preferences.onboarded }
+
+    /// Ends first launch with the chosen mode. With a preset, a missing sandbox is created with it; an existing one
+    /// only takes the preset's protection level (its rules stay until the Sandbox page changes them).
+    public func finishOnboarding(mode: InterfaceMode, setup: SandboxSetup?) async {
+        setMode(mode)
+        settings.setOnboarded()
+        guard let setup else { return }
+        sandbox.setup = setup
+        if sandbox.installed {
+            await firewall.setProtection(setup.protection)
+        } else {
+            await sandbox.create()
+        }
     }
 
     public func setVisible(_ surface: Surface, _ visible: Bool) {
@@ -223,7 +269,7 @@ public final class AppModel {
         guard visibleSurfaces.contains(.window) else { return }
         switch selection {
         case .network: await network.refreshSockets()
-        case .activity: await activity.refresh()
+        case .activity, .websites: await activity.refresh()
         case .overview: await overview.refreshIfStale()
         case .sandbox: await sandbox.refresh()
         default: break
@@ -248,16 +294,15 @@ public final class AppModel {
             await repos.refresh()
             await docker.refresh()
         case .migration: await keys.refresh()
-        case .settings:
-            await settings.refresh()
-            await recording.refreshStorage()
+        case .diagnostics: await overview.refresh()
+        case .websites: await activity.refresh()
+        case .lab, .settings: break
         }
     }
 
     /// Settings > Recording, where Look inside HTTPS and the recording switches are (Web traffic's hint).
     public func showRecordingSettings() {
-        settings.pane = .recording
-        select(.settings)
+        showSettings(.recording)
     }
 
     /// The helper install flow for the Files & programs banner; recording starts again once it is installed.

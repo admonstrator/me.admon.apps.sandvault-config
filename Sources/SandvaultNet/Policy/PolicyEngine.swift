@@ -26,14 +26,19 @@ public struct PolicyVerdict: Sendable, Equatable {
 /// Ports other than 80 and 443 need an explicit `allow` rule and `ask` never applies to them, except in proxy-only
 /// mode with `routeAllTCP` (D37): there every port follows the rules and the default action like the web ports.
 /// In `FirewallMode.watch` only `deny` rules refuse; everything else is allowed, on every port.
+/// Developer basics (D53) allow the web ports and DNS of their hosts when no rule matches, before the default action.
 public struct PolicyEngine: Sendable {
     public let policy: NetworkPolicy
     private let rules: [(pattern: DomainPattern, rule: DomainRule)]
     private let overrides: [(pattern: DomainPattern, override: DnsOverride)]
+    private let basics: [(pattern: DomainPattern, group: DeveloperBasicsGroup)]
 
     public init(policy: NetworkPolicy) {
         self.policy = policy
         rules = policy.domainRules.compactMap { rule in (try? DomainPattern(rule.pattern)).map { ($0, rule) } }
+        basics = policy.developerBasics.activeGroups.flatMap { group in
+            group.patterns.compactMap { text in (try? DomainPattern(text)).map { ($0, group) } }
+        }
         overrides = policy.dnsOverrides.compactMap { entry in
             guard AddressRange.parseAddress(entry.address) != nil, let pattern = try? DomainPattern(entry.pattern) else { return nil }
             return (pattern, entry)
@@ -56,6 +61,12 @@ public struct PolicyEngine: Sendable {
                 return Self.strength(lhs.rule.action) < Self.strength(rhs.rule.action)
             }?
             .rule
+    }
+
+    /// The active developer basics group covering `host`, whatever the port.
+    public func basicsGroup(for host: String) -> DeveloperBasicsGroup? {
+        let host = HostName.normalize(host)
+        return basics.filter { $0.pattern.matches(host) }.max { $0.pattern.specificity < $1.pattern.specificity }?.group
     }
 
     /// `port` is `nil` for DNS queries.
@@ -82,6 +93,9 @@ public struct PolicyEngine: Sendable {
         }
         if let rule {
             return PolicyVerdict(action: rule.action, rule: rule, inspect: rule.action == .deny ? false : inspect, reason: ruleReason!)
+        }
+        if port.map(Self.webPorts.contains) ?? true, let group = basicsGroup(for: host) {
+            return PolicyVerdict(action: .allow, rule: nil, inspect: false, reason: "developer basics: \(group.title)")
         }
         return PolicyVerdict(
             action: policy.defaultAction, rule: nil, inspect: false, reason: "default action (\(policy.defaultAction.rawValue))"

@@ -135,26 +135,63 @@ import Testing
         #expect(policy.mode == .watch && policy.defaultAction == .ask)
     }
 
-    @Test func simpleWindowShowsFourPagesAndExpertModeAll() async {
+    @Test func eachModeAddsPagesAndHidesTheRest() async {
         let world = TestWorld()
         defer { world.cleanUp() }
         let model = world.model()
-        #expect(model.screens == [.overview, .sandbox, .activity, .handoff, .settings])
+        #expect(model.mode == .easy)
+        #expect(model.screens == [.overview, .websites, .handoff])
         model.select(.firewall)
         #expect(model.selection == .overview)
 
-        model.setExpertMode(true)
-        #expect(world.preferences.stored.get().expertMode)
-        #expect(model.screens == Screen.allCases)
+        model.setMode(.advanced)
+        #expect(world.preferences.stored.get().mode == .advanced)
+        #expect(model.sidebar.map(\.title) == ["Protect", "Work"])
+        #expect(model.screens == [.overview, .websites, .activity, .handoff, .sandbox, .tools])
+
+        model.setMode(.expert)
+        #expect(model.sidebar.map(\.title) == ["Protect", "Work", "Expert"])
+        #expect(Set(model.screens) == Set(Screen.allCases).subtracting([.lab, .settings]))
         model.select(.firewall)
         #expect(model.selection == .firewall)
 
-        model.setExpertMode(false)
+        model.setMode(.easy)
         #expect(model.selection == .overview)
     }
 
-    @Test func olderPreferencesKeepTheirInterval() throws {
+    @Test func settingsOpenAsAWindowOnAPaneTheModeHas() {
+        let world = TestWorld()
+        defer { world.cleanUp() }
+        let model = world.model()
+        model.select(.settings)
+        #expect(model.settingsRequests == 1 && model.selection == .overview)
+
+        model.showRecordingSettings()
+        #expect(model.settingsRequests == 2 && model.settings.pane == .general)
+        model.setMode(.advanced)
+        model.showRecordingSettings()
+        #expect(model.settings.pane == .recording)
+        #expect(SettingsPane.panes(for: .advanced) == [.general, .websites, .connectionRequests, .recording])
+
+        model.setMode(.easy)
+        #expect(model.settings.pane == .general)
+    }
+
+    @Test func olderPreferencesKeepTheirIntervalAndExpertMode() throws {
         let decoded = try JSONDecoder().decode(AppPreferences.self, from: Data(#"{"refreshInterval":5}"#.utf8))
-        #expect(decoded == AppPreferences(refreshInterval: 5, expertMode: false, showInDock: true))
+        #expect(decoded == AppPreferences(refreshInterval: 5, mode: .easy, showInDock: true, onboarded: true))
+        let expert = try JSONDecoder().decode(AppPreferences.self, from: Data(#"{"refreshInterval":3,"expertMode":true}"#.utf8))
+        #expect(expert.mode == .expert)
+        #expect(!AppPreferences().onboarded)
+
+        let saved = try JSONEncoder().encode(AppPreferences(mode: .advanced, onboarded: true))
+        #expect(try JSONDecoder().decode(AppPreferences.self, from: saved) == AppPreferences(mode: .advanced, onboarded: true))
+    }
+
+    @Test func easyHidesOffAndUnrestricted() {
+        #expect(!ProtectionLevel.choices(for: .easy).contains(.off))
+        #expect(ProtectionLevel.choices(for: .advanced).contains(.off))
+        #expect(SandboxSetup.choices(for: .easy) == [.everyday, .careful, .offline])
+        #expect(SandboxSetup.choices(for: .expert).contains(.unrestricted))
     }
 }

@@ -404,6 +404,8 @@ public struct NetworkPolicy: Codable, Sendable, Equatable {
     public var askDetails: AskDetailSettings
     /// Which web requests and contents netd keeps (D42, D43).
     public var recording: WebRecordingSettings
+    /// Websites allowed without asking when no rule matches (D53).
+    public var developerBasics: DeveloperBasicsSettings
 
     public init(
         mode: FirewallMode = .off,
@@ -420,7 +422,8 @@ public struct NetworkPolicy: Codable, Sendable, Equatable {
         inspection: InspectionSettings = InspectionSettings(),
         routeAllTCP: Bool = true,
         askDetails: AskDetailSettings = AskDetailSettings(),
-        recording: WebRecordingSettings = WebRecordingSettings()
+        recording: WebRecordingSettings = WebRecordingSettings(),
+        developerBasics: DeveloperBasicsSettings = DeveloperBasicsSettings()
     ) {
         self.mode = mode
         self.defaultAction = defaultAction
@@ -437,11 +440,12 @@ public struct NetworkPolicy: Codable, Sendable, Equatable {
         self.routeAllTCP = routeAllTCP
         self.askDetails = askDetails
         self.recording = recording
+        self.developerBasics = developerBasics
     }
 
     enum CodingKeys: String, CodingKey {
         case mode, defaultAction, askTimeoutSeconds, askFallback, domainRules, dnsOverrides, portExceptions
-        case blockLAN, localhost, blockPrivateDestinations, ports, inspection, routeAllTCP, askDetails, recording
+        case blockLAN, localhost, blockPrivateDestinations, ports, inspection, routeAllTCP, askDetails, recording, developerBasics
     }
 
     public init(from decoder: Decoder) throws {
@@ -462,6 +466,7 @@ public struct NetworkPolicy: Codable, Sendable, Equatable {
         routeAllTCP = try c.value(.routeAllTCP, default: d.routeAllTCP)
         askDetails = try c.value(.askDetails, default: d.askDetails)
         recording = try c.value(.recording, default: d.recording)
+        developerBasics = try c.value(.developerBasics, default: d.developerBasics)
     }
 }
 

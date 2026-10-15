@@ -207,4 +207,33 @@ import Testing
         #expect(throws: SandvaultError.self) { try policy.upsertDnsOverride(pattern: "x.test", address: "example.com") }
         #expect(try policy.removeDnsOverride(selector: "db.test").id == entry.id)
     }
+
+    @Test func developerBasicsAllowWebPortsAndDNSWhenNoRuleMatches() {
+        var policy = NetworkPolicy(mode: .proxyOnly, defaultAction: .ask)
+        policy.domainRules = [DomainRule(pattern: "gist.github.com", action: .deny)]
+        let engine = PolicyEngine(policy: policy)
+        #expect(engine.evaluate(host: "api.github.com", port: 443).action == .allow)
+        #expect(engine.evaluate(host: "api.github.com", port: 443).reason == "developer basics: GitHub")
+        #expect(engine.evaluate(host: "registry.npmjs.org", port: nil).action == .allow)
+        #expect(engine.evaluate(host: "github.com", port: 22).action == .ask)
+        #expect(engine.evaluate(host: "gist.github.com", port: 443).action == .deny)
+        #expect(engine.evaluate(host: "evilgithub.com", port: 443).action == .ask)
+        #expect(engine.basicsGroup(for: "objects.githubusercontent.com")?.id == "github")
+
+        policy.developerBasics.set(DeveloperBasicsGroup.group(id: "github")!, on: false)
+        #expect(PolicyEngine(policy: policy).evaluate(host: "api.github.com", port: 443).action == .ask)
+        #expect(PolicyEngine(policy: policy).evaluate(host: "pypi.org", port: 443).action == .allow)
+        policy.developerBasics.enabled = false
+        #expect(PolicyEngine(policy: policy).evaluate(host: "pypi.org", port: 443).action == .ask)
+    }
+
+    @Test func developerBasicsDecodeAsOnWhenMissingAndRoundTrip() throws {
+        let old = try JSONDecoder().decode(NetworkPolicy.self, from: Data(#"{"mode":"proxyOnly"}"#.utf8))
+        #expect(old.developerBasics == DeveloperBasicsSettings(enabled: true, disabledGroups: []))
+        var policy = NetworkPolicy()
+        policy.developerBasics = DeveloperBasicsSettings(enabled: true, disabledGroups: ["ai"])
+        let decoded = try JSONDecoder().decode(NetworkPolicy.self, from: JSONEncoder().encode(policy))
+        #expect(decoded.developerBasics.activeGroups.map(\.id) == ["github", "npm", "python", "homebrew", "rust", "go", "docker"])
+        #expect(DeveloperBasicsGroup.catalog.allSatisfy { group in group.patterns.allSatisfy { (try? DomainPattern($0)) != nil } })
+    }
 }

@@ -176,23 +176,45 @@ public struct AppClock: Sendable {
 public struct AppPreferences: Codable, Sendable, Equatable {
     /// Seconds between process and socket snapshots while a window or the menu is open.
     public var refreshInterval: Double
-    /// Shows every screen; off, the window has only Overview, Sandbox, Activity, Repos & Hand-off and Settings.
-    public var expertMode: Bool
+    /// Which pages and settings the window shows (D53).
+    public var mode: InterfaceMode
     /// An icon in the Dock (with a menu to start sessions) besides the menu bar item.
     public var showInDock: Bool
+    /// First launch is done (mode and sandbox preset chosen, or skipped).
+    public var onboarded: Bool
 
-    public init(refreshInterval: Double = AppModelInfo.refreshInterval, expertMode: Bool = false, showInDock: Bool = true) {
+    public init(
+        refreshInterval: Double = AppModelInfo.refreshInterval, mode: InterfaceMode = .easy, showInDock: Bool = true, onboarded: Bool = false
+    ) {
         self.refreshInterval = refreshInterval
-        self.expertMode = expertMode
+        self.mode = mode
         self.showInDock = showInDock
+        self.onboarded = onboarded
     }
 
-    /// Missing keys keep their defaults, so preferences saved by an older version survive.
+    enum CodingKeys: String, CodingKey {
+        case refreshInterval, mode, showInDock, onboarded
+        /// Before D53: `true` for every page, which is Expert now.
+        case expertMode
+    }
+
+    /// Missing keys keep their defaults, so preferences saved by an older version survive; saved preferences mean
+    /// the app ran before, so first launch is over for them.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         refreshInterval = try container.decodeIfPresent(Double.self, forKey: .refreshInterval) ?? AppModelInfo.refreshInterval
-        expertMode = try container.decodeIfPresent(Bool.self, forKey: .expertMode) ?? false
+        let expert = try container.decodeIfPresent(Bool.self, forKey: .expertMode) ?? false
+        mode = try container.decodeIfPresent(InterfaceMode.self, forKey: .mode) ?? (expert ? .expert : .easy)
         showInDock = try container.decodeIfPresent(Bool.self, forKey: .showInDock) ?? true
+        onboarded = try container.decodeIfPresent(Bool.self, forKey: .onboarded) ?? true
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(refreshInterval, forKey: .refreshInterval)
+        try container.encode(mode, forKey: .mode)
+        try container.encode(showInDock, forKey: .showInDock)
+        try container.encode(onboarded, forKey: .onboarded)
     }
 
     public static let refreshRange: ClosedRange<Double> = 1...30

@@ -19,6 +19,7 @@ import Testing
         #expect(world.connections.calls.get() == 0)
 
         model.setVisible(.window, true)
+        model.setMode(.advanced)
         model.select(.activity)
         #expect(await eventually { world.connections.calls.get() >= 2 })
 
@@ -147,8 +148,28 @@ import Testing
 
     @Test func screensHaveTitlesInSidebarOrder() {
         #expect(Screen.allCases.map(\.title) == [
-            "Overview", "Sandbox", "Activity", "Processes", "Network", "Firewall & Proxy", "Sandbox Rules & Learn", "Tools", "Repos & Hand-off",
-            "Migration", "Settings",
+            "Home", "Websites", "Activity", "Projects", "Sandbox", "Lab", "Tools", "Firewall & Proxy", "Sandbox Rules", "Processes", "Network",
+            "Migration & Keys", "Diagnostics", "Settings",
         ])
+    }
+
+    @Test func firstLaunchSavesTheModeAndCreatesOnlyAMissingSandbox() async throws {
+        let world = TestWorld()
+        defer { world.cleanUp() }
+        world.sandbox.current.set(SandboxState(installed: false, profile: false, home: false, workspace: false))
+        let model = world.model()
+        await model.sandbox.refresh()
+        #expect(model.needsOnboarding)
+
+        await model.finishOnboarding(mode: .advanced, setup: .careful)
+        #expect(!model.needsOnboarding && model.mode == .advanced)
+        #expect(world.preferences.stored.get().onboarded)
+        #expect(world.sandbox.runs.get().map(\.command) == [.build])
+
+        world.sandbox.current.set(SandboxState(installed: true, profile: true, home: true, workspace: true))
+        await model.sandbox.refresh()
+        await model.finishOnboarding(mode: .easy, setup: .offline)
+        #expect(world.sandbox.runs.get().count == 1)
+        #expect(try world.store.load().network.mode == .blocked)
     }
 }

@@ -22,6 +22,10 @@ struct SandvaultConfigApp: App {
         .defaultSize(width: 1080, height: 720)
 
         ProcessDetailScene(model: AppRuntime.model)
+
+        Settings {
+            SettingsView(model: AppRuntime.model)
+        }
     }
 }
 
@@ -50,13 +54,19 @@ enum AppRuntime {
     }
 }
 
-/// Hands SwiftUI's `openWindow` to the AppKit side (Dock icon click and Dock menu).
+/// Hands SwiftUI's `openWindow` to the AppKit side (Dock icon click and Dock menu) and opens the Settings window
+/// whenever the model asks for it (`AppModel.showSettings`).
 struct WindowOpenerRegistration: View {
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         Color.clear
             .onAppear { AppRuntime.openMainWindow = { openWindow(id: MainWindow.id) } }
+            .onChange(of: AppRuntime.model.settingsRequests) {
+                openSettings()
+                NSApplication.shared.activate()
+            }
     }
 }
 

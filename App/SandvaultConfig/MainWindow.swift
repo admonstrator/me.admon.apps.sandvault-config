@@ -23,9 +23,13 @@ struct Sidebar: View {
 
     var body: some View {
         List(selection: selection) {
-            ForEach(model.screens) { screen in
-                NavigationLink(value: screen) {
-                    Label(screen.title, systemImage: screen.symbolName)
+            ForEach(model.sidebar) { section in
+                Section(section.title) {
+                    ForEach(section.screens) { screen in
+                        NavigationLink(value: screen) {
+                            Label(screen.title, systemImage: screen.symbolName)
+                        }
+                    }
                 }
             }
         }
@@ -56,6 +60,9 @@ struct ScreenView: View {
     var body: some View {
         switch model.selection {
         case .overview: OverviewView(model: model)
+        case .websites: WebsitesView(model: model)
+        case .diagnostics: DiagnosticsView(model: model)
+        case .lab: ContentUnavailableView("Lab", systemImage: Screen.lab.symbolName)
         case .sandbox: SandboxView(model: model)
         case .activity: ActivityView(model: model)
         case .processes: ProcessesView(processes: model.processes)
@@ -65,7 +72,7 @@ struct ScreenView: View {
         case .tools: ToolsView(tools: model.tools, android: model.android)
         case .handoff: HandoffView(model: model)
         case .migration: MigrationView(migration: model.migration, keys: model.keys)
-        case .settings: SettingsView(settings: model.settings, netd: model.netd, recording: model.recording) { on in model.setExpertMode(on) }
+        case .settings: EmptyView()
         }
     }
 }
