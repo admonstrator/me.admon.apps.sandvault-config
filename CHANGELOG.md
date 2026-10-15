@@ -84,6 +84,29 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   automatische Checkpoints werden gelöscht, wenn der eingestellte Platz (Standard 10 GB, geschätzt) oder 120
   Checkpoints erreicht sind; Start und aktueller Stand bleiben. `android/sdk` im Workspace bleibt außen vor.
   `svctl lab list|start|mark|compare|show|rewind|finish|watch`. Braucht den neu installierten Helper.
+- **Drei Modi: Easy, Advanced, Expert (D53).** Ersetzt den Schalter „Expert mode“; wer ihn an hatte, landet in
+  Expert, alle anderen in Easy. Die Seitenleiste ist gegliedert in Protect, Work und Expert. Easy zeigt Home,
+  Websites und Projects, Advanced zusätzlich Activity, Sandbox, Lab und Tools, Expert alles übrige (Firewall & Proxy,
+  Sandbox Rules, Processes, Network, Migration & Keys, Diagnostics). Der Modus steht als Knopf unten in der
+  Seitenleiste. Easy blendet die Schutzstufe Off und das Preset Unrestricted aus.
+- **Home:** Statuskarte in Worten, Schutzstufe, der nächste Einrichtungsschritt mit direktem Knopf (Helper
+  installieren, netd starten, Sandbox anlegen), Start von Shell und Agent, die letzten Websites. Notstopp jetzt
+  auch als roter Knopf in der Werkzeugleiste des Fensters.
+- **Websites:** jede Website, die die Sandbox benutzt hat, mit Zustand (von Dir erlaubt, durch Entwickler-Grundlagen
+  erlaubt, gefragt, blockiert, wartet), Programm, Anzahl und letztem Zugriff; Allow und Block, Suche, Filter und
+  die eigenen Regeln darunter.
+- **Entwickler-Grundlagen:** GitHub, npm, Python-Pakete, Homebrew, Rust crates, Go modules, Docker Hub und
+  KI-Dienste sind ohne Nachfrage erlaubt, nur Web (80, 443) und DNS, nie entschlüsselt. Eine eigene Regel für
+  dieselbe Website geht vor. Einzeln abschaltbar unter Settings › Websites; braucht ein neues netd.
+- **Einstellungen als eigenes Fenster (⌘,):** Tabs General (Modus als Karten), Websites, ab Advanced Requests und
+  Recording, in Expert Service (Helper, netd, svctl).
+- **Erster Start:** ein Blatt fragt nach dem Modus und einem Preset und legt die Sandbox an (oder übernimmt nur
+  die Schutzstufe, wenn es sie schon gibt).
+- **Fragefenster je Modus:** Easy zeigt höchstens drei Kacheln und bietet „Only this time“ und „Always for this
+  site“, ab Advanced sechs Kacheln und „Always for *.domain“, Expert zusätzlich die technische Zeile. Die
+  Mitteilung hat in Easy nur Allow, Deny und Details.
+- **Diagnostics (Expert):** Dienste, alle Prüfungen und „Copy Report“. Projects und Sandbox sind aufgeräumt; in
+  Easy sind die sv-Optionen und das Docker-Sandboxes-Ziel ausgeblendet.
 
 ### Behoben
 - Untersuchter HTTPS-Verkehr war in der App praktisch unsichtbar: netd gab die Anfragen einer Verbindung erst

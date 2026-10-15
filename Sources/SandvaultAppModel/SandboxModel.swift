@@ -137,7 +137,7 @@ public enum SandboxSetup: String, CaseIterable, Identifiable, Sendable {
 
     public var explanation: String {
         switch self {
-        case .everyday: "sv's rules. Network allowed, every website and DNS name shows under Activity."
+        case .everyday: "sv's rules. Network allowed, every website shows under Websites."
         case .careful: "Hardened rules (no AppleScript, open, launchctl). Each new website waits for your answer."
         case .offline: "Hardened rules and no network at all."
         case .unrestricted: "sv's rules and a direct network connection. Only addresses are visible."

@@ -71,7 +71,7 @@ public final class ActivityModel {
         let mode = editor.config.network.mode
         switch mode {
         case .off, .open:
-            return "Only addresses are visible. Choose Watch on the Overview to see the host names the sandbox uses."
+            return "Only addresses are visible. Choose Watch on Home to see the websites the sandbox uses."
         case .blocked:
             return "The sandbox has no network."
         case .watch, .proxyOnly:
@@ -124,7 +124,7 @@ public final class ActivityModel {
     public var webHint: String? {
         let network = editor.config.network
         switch network.mode {
-        case .off, .open: return "Web traffic is visible only when it goes through netd. Choose Watch on the Overview."
+        case .off, .open: return "Web traffic is visible only when it goes through netd. Choose Watch on Home."
         case .blocked: return "The sandbox has no network."
         case .watch, .proxyOnly: break
         }
@@ -370,7 +370,7 @@ public enum ProtectionLevel: String, CaseIterable, Identifiable, Sendable {
     public var explanation: String {
         switch self {
         case .off: "The sandbox reaches the network directly. Only addresses are visible."
-        case .watch: "Everything is allowed. Every website and DNS name the sandbox uses appears under Activity."
+        case .watch: "Everything is allowed. Every website the sandbox uses appears under Websites."
         case .ask: "A website the sandbox has not used before waits for your answer. Other ports stay closed."
         case .blockAll: "The sandbox has no network. Running programs keep running."
         }
