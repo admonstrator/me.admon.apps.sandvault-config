@@ -102,10 +102,13 @@ public struct DockerSandboxes: DockerSandboxService {
         var sandboxes: [Entry]
     }
 
-    /// `{"sandboxes":[{"name":…,"status":…,"agent":…,"workspaces":[…]}]}`; unknown fields are ignored.
+    /// sbx 0.4x on macOS prints a bare array `[{"name":…,"status":…,"agent":…,"workspaces":[…]}]`; older builds wrap
+    /// it as `{"sandboxes":[…]}`. Unknown fields are ignored.
     static func parseList(_ data: Data) -> [DockerSandbox]? {
-        guard let output = try? JSONDecoder().decode(ListOutput.self, from: data) else { return nil }
-        return output.sandboxes
+        let decoder = JSONDecoder()
+        guard let entries = (try? decoder.decode([ListOutput.Entry].self, from: data)) ?? (try? decoder.decode(ListOutput.self, from: data))?.sandboxes
+        else { return nil }
+        return entries
             .filter { !Text.hasControlCharacters($0.name) && !$0.name.isEmpty }
             .map { DockerSandbox(name: $0.name, status: $0.status ?? "unknown", agent: $0.agent, workspaces: $0.workspaces ?? []) }
             .sorted { $0.name < $1.name }

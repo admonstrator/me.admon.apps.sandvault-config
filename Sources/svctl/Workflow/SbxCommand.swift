@@ -33,6 +33,9 @@ struct SbxCommand: AsyncParsableCommand {
             if let problem = state.problem { return Output.line(problem) }
             guard !state.sandboxes.isEmpty else { return Output.line("no sandboxes") }
             let repos = try global.configStore.load().repos
+            for sandbox in state.sandboxes where sandbox.mountsHome(global.environment.hostHome) {
+                Output.line("WARN \(sandbox.name) mounts your whole home folder, SSH keys included")
+            }
             Output.table(["NAME", "STATUS", "AGENT", "FOLDER", "HANDED OFF"], state.sandboxes.map { sandbox in
                 [
                     sandbox.name, sandbox.status, sandbox.agent ?? "-", sandbox.workspaces.first ?? "-",

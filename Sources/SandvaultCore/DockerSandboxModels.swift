@@ -33,6 +33,14 @@ public struct DockerSandbox: Codable, Sendable, Equatable, Hashable, Identifiabl
     public var id: String { name }
     public var isRunning: Bool { status == "running" }
 
+    /// Mounts the home folder itself or a folder above it: SSH keys, keychains and every project are in the VM.
+    public func mountsHome(_ home: String) -> Bool {
+        workspaces.contains { folder in
+            let trimmed = folder.count > 1 && folder.hasSuffix("/") ? String(folder.dropLast()) : folder
+            return trimmed == home || trimmed == "/" || home.hasPrefix(trimmed + "/")
+        }
+    }
+
     public init(name: String, status: String, agent: String? = nil, workspaces: [String] = []) {
         self.name = name
         self.status = status

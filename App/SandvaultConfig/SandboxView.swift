@@ -138,6 +138,11 @@ struct DockerSandboxesSection: View {
                         Text(sandbox.summary(home: home))
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        if sandbox.mountsHome(home) {
+                            Label("Sees your whole home folder, SSH keys included", systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
                     }
                     Spacer()
                     Button("Delete…", role: .destructive) { deleting = sandbox }

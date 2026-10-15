@@ -28,6 +28,28 @@ import Testing
             DockerSandbox(name: "sv-app", status: "running", agent: "claude", workspaces: ["/Users/alice/git/app"]),
         ])
         #expect(DockerSandboxes.parseList(Data("not json".utf8)) == nil)
+
+        // sbx on macOS 27 (Aaron's Mac, 2026-10-15): a bare array.
+        let bare = """
+        [
+          {
+            "name": "claude-admon",
+            "id": "78e63276-130d-4482-b23d-ca9a61b634ef",
+            "agent": "claude",
+            "status": "running",
+            "last_used_at": "2026-10-15T13:06:02.297315Z",
+            "workspaces": [
+              "/Users/admon"
+            ],
+            "created_at": "2026-10-15T13:06:00Z"
+          }
+        ]
+        """
+        let mac = try #require(DockerSandboxes.parseList(Data(bare.utf8)))
+        #expect(mac == [DockerSandbox(name: "claude-admon", status: "running", agent: "claude", workspaces: ["/Users/admon"])])
+        #expect(mac[0].mountsHome("/Users/admon"))
+        #expect(!DockerSandbox(name: "a", status: "running", workspaces: ["/Users/admon/git/app"]).mountsHome("/Users/admon"))
+        #expect(DockerSandbox(name: "a", status: "running", workspaces: ["/Users/"]).mountsHome("/Users/admon"))
         #expect(DockerSandboxes.parseList(Data(#"{"sandboxes":[]}"#.utf8)) == [])
     }
 
