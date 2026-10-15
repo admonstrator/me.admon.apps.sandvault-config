@@ -319,7 +319,7 @@ final class HTTPForwardHandler: ChannelInboundHandler, RemovableChannelHandler {
         upstream = nil
         guard let context, let current = exchange, state == .streaming || state == .responding else { return }
         if current.responseStarted {
-            context.close(promise: nil)
+            closeClient(context: context)
         } else {
             fail(.badGateway, "sandvault-config: upstream closed the connection\n", context: context)
         }
@@ -334,7 +334,7 @@ final class HTTPForwardHandler: ChannelInboundHandler, RemovableChannelHandler {
         }
         guard current.clientKeepAlive else {
             state = .closed
-            context.close(promise: nil)
+            closeClient(context: context)
             return
         }
         state = .idle
@@ -384,10 +384,19 @@ final class HTTPForwardHandler: ChannelInboundHandler, RemovableChannelHandler {
         context.write(wrapOutboundOut(.head(head)), promise: nil)
         context.write(wrapOutboundOut(.body(.byteBuffer(buffer))), promise: nil)
         context.writeAndFlush(wrapOutboundOut(.end(nil))).assumeIsolated().whenComplete { _ in
-            context.close(promise: nil)
+            self.closeClient(context: context)
         }
         finishExchange()
         state = .closed
+    }
+
+    /// Closes the client side with reading on again. An inspected connection closes with a TLS close_notify and
+    /// waits for the peer's answer; with reading paused that answer and the peer's FIN go unseen on macOS
+    /// (kqueue reports neither without a read), so the close would wait for the TLS shutdown timeout (5 s)
+    /// and the connection's record would arrive that much later.
+    private func closeClient(context: ChannelHandlerContext) {
+        setReading(true, context: context)
+        context.close(promise: nil)
     }
 
     private func setReading(_ enabled: Bool, context: ChannelHandlerContext) {

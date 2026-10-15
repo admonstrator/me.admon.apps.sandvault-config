@@ -73,6 +73,9 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   `ControlRequest.openConnections`), die App zeigt ihre Anfragen sofort und die Verbindung selbst als „Open“.
   Hosts hat bei Hosts mit festgehaltenen Anfragen einen Knopf „Requests“, der Web traffic auf den Host gefiltert
   öffnet, und zählt bei untersuchten Hosts die Anfragen statt der Verbindungen. netd muss neu gestartet werden.
+- Eine untersuchte HTTPS-Verbindung, die nach der Antwort schließt, hing auf macOS noch 5 Sekunden in netd und
+  erschien erst dann im Protokoll: netd las beim Schließen nicht mehr, sah daher die TLS-Abmeldung des Programms
+  nicht und wartete die Frist von swift-nio-ssl ab. netd liest beim Schließen jetzt wieder.
 - `xcodegen generate` schaltete die automatische Signierung jedes Mal ab. `project.yml` signiert jetzt alle Targets
   automatisch mit dem Team `5CVUCAZ4AV` und mit Hardened Runtime, die App zusätzlich mit der Berechtigung für Apple
   Events (für Terminal, iTerm2 und Ghostty). Mindestversion ist macOS 26.
