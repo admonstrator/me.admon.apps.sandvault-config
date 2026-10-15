@@ -76,6 +76,8 @@ public protocol NetdClient: AnyObject, Sendable {
     func answer(_ answer: AskAnswer) async throws
     func pendingAsks() async throws -> [AskRequest]
     func recent(limit: Int) async throws -> [ConnectionRecord]
+    /// Snapshots of the open connections (D50).
+    func openConnections() async throws -> [ConnectionRecord]
     func reloadConfig() async throws
     /// A stored request or response body (D43).
     func content(id: UUID) async throws -> (StoredContent, Data)
@@ -84,6 +86,10 @@ public protocol NetdClient: AnyObject, Sendable {
 }
 
 extension NetdClient {
+    public func openConnections() async throws -> [ConnectionRecord] {
+        throw SandvaultError.notImplemented("open connections")
+    }
+
     public func content(id: UUID) async throws -> (StoredContent, Data) {
         throw SandvaultError.notImplemented("stored contents")
     }

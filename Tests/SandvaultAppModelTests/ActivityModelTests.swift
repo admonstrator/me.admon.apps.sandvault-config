@@ -69,6 +69,31 @@ import Testing
         #expect(model.activity.summary == "1 host · 1 failed")
     }
 
+    @Test func anInspectedConnectionStillOpenListsItsRequestsAndLeadsToThem() async throws {
+        let world = TestWorld()
+        defer { world.cleanUp() }
+        try world.store.save(AppConfig(network: NetworkPolicy(mode: .watch)))
+        let now = world.clock.current.get()
+        var tunnel = record("api.anthropic.com", .allowed, at: now, process: "claude")
+        tunnel.inspected = true
+        tunnel.http = (0..<3).map { HTTPSummary(method: "POST", url: "https://api.anthropic.com/v1/messages?n=\($0)", status: 200) }
+        world.netd.queue.set([.client(FakeNetdClient(recent: [record("github.com", .allowed, at: now.addingTimeInterval(-60))], open: [tunnel]))])
+        let model = world.model()
+        model.netd.start()
+        defer { model.netd.stop() }
+        #expect(await eventually { model.netd.records.count == 2 })
+
+        let item = try #require(model.activity.items.first)
+        #expect(item.title == "api.anthropic.com" && item.requests == 3)
+        #expect(item.detail.hasPrefix("claude · 3 requests"))
+        #expect(model.activity.items.last?.requests == 0)
+        #expect(model.activity.webRows.filter { $0.host == "api.anthropic.com" }.count == 3)
+
+        model.activity.showRequests(of: "api.anthropic.com")
+        #expect(model.activity.page == .web)
+        #expect(model.activity.webRows.map(\.host) == ["api.anthropic.com", "api.anthropic.com", "api.anthropic.com"])
+    }
+
     @Test func withoutNetdInTheLoopOnlyAddressesShow() async throws {
         let world = TestWorld()
         defer { world.cleanUp() }

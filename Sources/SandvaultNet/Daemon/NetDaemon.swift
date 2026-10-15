@@ -219,6 +219,8 @@ public final class NetDaemon: Sendable, ControlService {
             }
         case .recent(let limit):
             return .recent(runtime.log.recent(limit: limit))
+        case .openConnections:
+            return .openConnections(runtime.open.snapshots)
         case .pendingAsks:
             return .pending(await runtime.asks.pendingRequests())
         case .content(let id):

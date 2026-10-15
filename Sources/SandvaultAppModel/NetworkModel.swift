@@ -100,6 +100,8 @@ public struct HostGroup: Identifiable, Sendable, Equatable {
     public var bytesIn: Int64
     public var bytesOut: Int64
     public var inspected: Bool
+    /// Request summaries netd recorded (plain HTTP, or HTTPS with inspection).
+    public var requests = 0
     /// Why the newest connection failed, if it did.
     public var lastError: String?
 
@@ -124,6 +126,7 @@ public struct HostGroup: Identifiable, Sendable, Equatable {
             group.bytesIn += record.bytesIn
             group.bytesOut += record.bytesOut
             group.inspected = group.inspected || record.inspected
+            group.requests += record.http.count
             groups[record.host] = group
         }
         return groups.values

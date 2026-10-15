@@ -99,12 +99,12 @@ public final class ActivityModel {
     // MARK: Web traffic (D42, D43)
 
     public var webRows: [WebRequestRow] {
-        WebRequestRow.rows(netd.records, filter: webFilter)
+        WebRequestRow.rows(netd.records, open: netd.openRecordIDs, filter: webFilter)
     }
 
     public var selectedRequest: WebRequestRow? {
         guard let id = selectedRequestID else { return nil }
-        return WebRequestRow.rows(netd.records).first { $0.id == id }
+        return WebRequestRow.rows(netd.records, open: netd.openRecordIDs).first { $0.id == id }
     }
 
     /// `42 requests · 3 blocked · 5 encrypted`.
@@ -137,6 +137,12 @@ public final class ActivityModel {
     public func showAll(from host: String) {
         webFilter = host
         selectedRequestID = nil
+    }
+
+    /// Hosts > Requests: Web traffic, filtered to `host`.
+    public func showRequests(of host: String) {
+        showAll(from: host)
+        page = .web
     }
 
     public func content(_ meta: StoredContent) -> ContentLoad? {
@@ -264,6 +270,8 @@ public struct ActivityItem: Identifiable, Sendable, Equatable {
     public var host: String?
     public var blocked: Bool
     public var lastSeen: Date?
+    /// Requests of this host listed under Web traffic.
+    public var requests = 0
 
     public var id: String { "\(kind.rawValue) \(title)" }
 
@@ -280,7 +288,8 @@ public struct ActivityItem: Identifiable, Sendable, Equatable {
 
     init(host group: HostGroup) {
         var parts = group.processes.isEmpty ? [] : [group.processes.joined(separator: ", ")]
-        let count = group.allowed + group.denied
+        // An inspected connection carries many requests; a blocked or encrypted one counts as one.
+        let count = max(group.allowed + group.denied, group.requests)
         parts.append(Format.count(count, "request"))
         if group.bytesIn + group.bytesOut > 0 { parts.append("\(Format.bytes(group.bytesIn)) in, \(Format.bytes(group.bytesOut)) out") }
         let blocked = group.lastDecision.blocked
@@ -291,6 +300,7 @@ public struct ActivityItem: Identifiable, Sendable, Equatable {
             status: blocked ? "Blocked" : failed ? "Failed" : "Allowed",
             tint: blocked ? .red : failed ? .orange : .green, host: group.host, blocked: blocked, lastSeen: group.lastSeen
         )
+        requests = group.requests
     }
 
     static func icmp(_ activity: [ICMPActivity]) -> [ActivityItem] {

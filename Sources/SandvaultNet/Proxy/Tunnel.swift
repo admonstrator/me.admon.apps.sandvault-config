@@ -46,8 +46,10 @@ enum Tunnel {
         tracker.setInspected()
     }
 
-    /// Finishes the tunnel's record once the client side is closed (and the upstream, when there is one).
+    /// Marks the tunnel open (its snapshots become visible) and finishes its record once the client side is
+    /// closed (and the upstream, when there is one).
     static func finish(_ tracker: ConnectionTracker, counter: ByteCounter, client: Channel, upstream: Channel?) {
+        tracker.opened(counter: counter)
         let closed = upstream.map { client.closeFuture.and($0.closeFuture).map { _ in } } ?? client.closeFuture
         closed.whenComplete { _ in
             let totals = counter.totals

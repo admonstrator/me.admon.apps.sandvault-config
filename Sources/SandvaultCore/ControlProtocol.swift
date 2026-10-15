@@ -11,6 +11,8 @@ public enum ControlTopic: String, Codable, Sendable, CaseIterable {
     case asks
     /// Periodic `NetdStatus`.
     case status
+    /// `.update` snapshots of open connections (D50): a long-lived tunnel shows its requests while it lasts.
+    case live
 }
 
 public enum AskDecision: String, Codable, Sendable, CaseIterable { case allowOnce, allowAlways, denyOnce, denyAlways }
@@ -113,6 +115,8 @@ public enum ControlRequest: Codable, Sendable, Equatable {
     case content(id: UUID)
     /// Delete every stored content.
     case clearContent
+    /// Snapshots of the connections that are open now (D50).
+    case openConnections
 }
 
 /// Server to client.
@@ -120,7 +124,10 @@ public enum ControlEvent: Codable, Sendable, Equatable {
     case hello(version: String)
     case status(NetdStatus)
     case connection(ConnectionRecord)
+    /// An open connection with the requests seen so far; the finished `.connection` with the same id replaces it.
+    case update(ConnectionRecord)
     case recent([ConnectionRecord])
+    case openConnections([ConnectionRecord])
     case ask(AskRequest)
     case pending([AskRequest])
     case askResolved(id: UUID, decision: ConnectionDecision)

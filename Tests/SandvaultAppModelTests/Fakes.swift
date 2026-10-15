@@ -184,16 +184,19 @@ final class FakeNetdClient: NetdClient, @unchecked Sendable {
     let closed = Locked(false)
     let pending: [AskRequest]
     let recentRecords: [ConnectionRecord]
+    /// What `openConnections` returns; `nil` answers like a netd without open snapshots.
+    let openRecords: [ConnectionRecord]?
     /// Bodies `content(id:)` serves; a missing id fails like netd does.
     let stored = Locked<[UUID: (StoredContent, Data)]>([:])
     let contentRequests = Locked<[UUID]>([])
     let clears = Locked(0)
     let storedBytes = Locked<Int64?>(nil)
 
-    init(pending: [AskRequest] = [], recent: [ConnectionRecord] = [], reloads: Locked<Int> = Locked(0)) {
+    init(pending: [AskRequest] = [], recent: [ConnectionRecord] = [], open: [ConnectionRecord]? = [], reloads: Locked<Int> = Locked(0)) {
         (events, sink) = AsyncStream.makeStream(of: ControlEvent.self)
         self.pending = pending
         recentRecords = recent
+        openRecords = open
         self.reloads = reloads
     }
 
@@ -217,6 +220,10 @@ final class FakeNetdClient: NetdClient, @unchecked Sendable {
     func answer(_ answer: AskAnswer) async throws { answers.mutate { $0.append(answer) } }
     func pendingAsks() async throws -> [AskRequest] { pending }
     func recent(limit: Int) async throws -> [ConnectionRecord] { Array(recentRecords.suffix(limit)) }
+    func openConnections() async throws -> [ConnectionRecord] {
+        guard let openRecords else { throw SandvaultError.io("netd: cannot decode request") }
+        return openRecords
+    }
     func reloadConfig() async throws { reloads.mutate { $0 += 1 } }
 
     func close() {

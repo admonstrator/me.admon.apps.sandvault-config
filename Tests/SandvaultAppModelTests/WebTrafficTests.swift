@@ -22,6 +22,22 @@ import Testing
         )
     }
 
+    @Test func anOpenConnectionShowsAsOpen() throws {
+        let encrypted = ConnectionRecord(
+            timestamp: Self.start, kind: .transparentTLS, host: "github.com", port: 443, decision: .allowed,
+            process: "git", bytesIn: 4_000, bytesOut: 200, durationMs: 1_000
+        )
+        let row = try #require(WebRequestRow.rows([encrypted, Self.inspected(at: 5)], open: [encrypted.id]).last)
+        #expect(row.isOpen && row.host == "github.com")
+        #expect(row.statusText == "Open" && row.resultText == "Open" && row.durationText == "Still open")
+        #expect(row.subtitle == "git · contents not visible · still open")
+        #expect(row.sizeText == "4.2 kB")
+
+        let tunnel = Self.inspected()
+        let requests = WebRequestRow.rows([tunnel], open: [tunnel.id])
+        #expect(requests.map(\.statusText) == ["404", "200"], "requests of an open connection show their own status")
+    }
+
     @Test func oneRowPerRequestNewestFirstWithoutDNSAndTCP() {
         let encrypted = ConnectionRecord(
             timestamp: Self.start.addingTimeInterval(10), kind: .transparentTLS, host: "github.com", port: 443, decision: .allowed,

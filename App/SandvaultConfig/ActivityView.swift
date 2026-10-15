@@ -89,6 +89,10 @@ struct ActivityRow: View {
             Spacer()
             Text(item.status)
                 .foregroundStyle(item.tint.color)
+            if let host = item.host, item.requests > 0 {
+                Button("Requests") { activity.showRequests(of: host) }
+                    .help("Show the requests to this host under Web traffic")
+            }
             if let host = item.host {
                 if item.blocked {
                     Button("Allow") { Task { await activity.allow(host) } }

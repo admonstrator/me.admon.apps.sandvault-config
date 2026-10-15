@@ -6,7 +6,7 @@ import SandvaultCore
 /// Client of the netd control socket, shared by svctl and the app.
 ///
 /// `request` sends one `ControlRequest` and returns its response; events of subscribed topics
-/// (`.connection`, `.ask`, `.askResolved`, periodic `.status`) arrive on `events`.
+/// (`.connection`, `.update`, `.ask`, `.askResolved`, periodic `.status`) arrive on `events`.
 public final class ControlClient: @unchecked Sendable {
     public let socketPath: String
     /// Pushed events, in arrival order. Finishes when the connection closes.
@@ -124,6 +124,12 @@ public final class ControlClient: @unchecked Sendable {
         return records
     }
 
+    /// Snapshots of the open connections; a netd without them answers with an error.
+    public func openConnections() async throws -> [ConnectionRecord] {
+        guard case .openConnections(let records) = try Self.check(await request(.openConnections)) else { throw Self.unexpected() }
+        return records
+    }
+
     public func content(id: UUID) async throws -> (StoredContent, Data) {
         guard case .content(let meta, let data) = try Self.check(await request(.content(id: id))) else { throw Self.unexpected() }
         return (meta, data)
@@ -178,6 +184,7 @@ public final class ControlClient: @unchecked Sendable {
         case .recent: return { if case .recent = $0 { true } else if case .error = $0 { true } else { false } }
         case .pendingAsks: return { if case .pending = $0 { true } else if case .error = $0 { true } else { false } }
         case .content: return { if case .content = $0 { true } else if case .error = $0 { true } else { false } }
+        case .openConnections: return { if case .openConnections = $0 { true } else if case .error = $0 { true } else { false } }
         case .subscribe, .reloadConfig, .answer, .clearContent:
             return { if case .ack = $0 { true } else if case .error = $0 { true } else { false } }
         }

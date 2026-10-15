@@ -38,6 +38,10 @@ final class ByteCountingHandler: ChannelDuplexHandler, RemovableChannelHandler {
 }
 
 /// Builds one `ConnectionRecord` and hands it to the log exactly once.
+///
+/// Once `opened` marks a tunnel as established, every change (a request summary) also goes to `update` as a
+/// snapshot of the unfinished record (D50), so a connection that stays open for minutes shows its requests while
+/// it lasts. Snapshots are handed over inside the lock, so none can follow the finished record.
 final class ConnectionTracker: @unchecked Sendable {
     static let maxHTTPSummaries = 200
 
@@ -45,12 +49,17 @@ final class ConnectionTracker: @unchecked Sendable {
     private var record: ConnectionRecord
     private let start = DispatchTime.now()
     private var finished = false
+    private var counter: ByteCounter?
     private let sink: @Sendable (ConnectionRecord) -> Void
+    private let update: @Sendable (ConnectionRecord) -> Void
 
-    init(record: ConnectionRecord, sink: @escaping @Sendable (ConnectionRecord) -> Void) {
+    init(record: ConnectionRecord, sink: @escaping @Sendable (ConnectionRecord) -> Void, update: @escaping @Sendable (ConnectionRecord) -> Void = { _ in }) {
         self.record = record
         self.sink = sink
+        self.update = update
     }
+
+    var id: UUID { record.id }
 
     func setInspected() { lock.withLock { record.inspected = true } }
 
@@ -59,9 +68,20 @@ final class ConnectionTracker: @unchecked Sendable {
         lock.withLock { if record.error == nil { record.error = reason } }
     }
 
+    /// The tunnel is established; `counter` gives the bytes of its snapshots.
+    func opened(counter: ByteCounter) {
+        lock.withLock {
+            guard !finished, self.counter == nil else { return }
+            self.counter = counter
+            update(snapshot())
+        }
+    }
+
     func add(_ summary: HTTPSummary) {
         lock.withLock {
-            if record.http.count < Self.maxHTTPSummaries { record.http.append(summary) }
+            guard record.http.count < Self.maxHTTPSummaries else { return }
+            record.http.append(summary)
+            if !finished, counter != nil { update(snapshot()) }
         }
     }
 
@@ -72,11 +92,36 @@ final class ConnectionTracker: @unchecked Sendable {
             finished = true
             record.bytesIn = bytesIn
             record.bytesOut = bytesOut
-            record.durationMs = Int((DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000)
+            record.durationMs = elapsedMs
             return record
         }
         if let done { sink(done) }
     }
+
+    /// The record so far, with the bytes and the time up to now. Called with the lock held.
+    private func snapshot() -> ConnectionRecord {
+        var current = record
+        if let totals = counter?.totals {
+            current.bytesIn = totals.sent
+            current.bytesOut = totals.received
+        }
+        current.durationMs = elapsedMs
+        return current
+    }
+
+    private var elapsedMs: Int { Int((DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000) }
+}
+
+/// The latest snapshot of every open tunnel, for `ControlRequest.openConnections` (D50).
+final class OpenConnections: @unchecked Sendable {
+    private let lock = NSLock()
+    private var records: [UUID: ConnectionRecord] = [:]
+
+    func set(_ record: ConnectionRecord) { lock.withLock { records[record.id] = record } }
+    func remove(_ id: UUID) { lock.withLock { _ = records.removeValue(forKey: id) } }
+
+    /// Oldest first.
+    var snapshots: [ConnectionRecord] { lock.withLock { records.values.sorted { ($0.timestamp, $0.id.uuidString) < ($1.timestamp, $1.id.uuidString) } } }
 }
 
 /// Live counters for `NetdStatus`.

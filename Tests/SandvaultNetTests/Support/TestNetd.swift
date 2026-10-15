@@ -57,7 +57,11 @@ struct TestNetd {
             if let match = daemon.runtime.log.recent(limit: 1000).last(where: predicate) { return match }
             try await Task.sleep(nanoseconds: 20_000_000)
         }
-        throw SandvaultError.timedOut("no matching connection record; log: \(daemon.runtime.log.recent(limit: 20).map { "\($0.host) \($0.decision)" }) messages: \(messages.all)")
+        let log = daemon.runtime.log.recent(limit: 20).map { record in
+            "\(record.host) \(record.kind.rawValue) \(record.decision) inspected=\(record.inspected) http=\(record.http.count) "
+                + "ms=\(record.durationMs) error=\(record.error ?? "-")"
+        }
+        throw SandvaultError.timedOut("no matching connection record; log: \(log) messages: \(messages.all)")
     }
 }
 

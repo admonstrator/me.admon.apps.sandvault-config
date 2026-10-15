@@ -29,6 +29,8 @@ final class NetRuntime: Sendable {
     let contents: ContentStore
     let hub: ControlHub
     let counters = NetdCounters()
+    /// Open tunnels and the requests seen on them so far (D50).
+    let open = OpenConnections()
     let inspection: InspectionService
     /// Upstream ports of the transparent listeners (80 and 443 in production).
     let transparentHTTPPort: Int
@@ -158,17 +160,26 @@ final class NetRuntime: Sendable {
         return await attributor.destination(forLocalPort: port, proto: proto)
     }
 
-    /// A tracker whose record goes to the log, the subscribers and the counters when finished.
+    /// A tracker whose record goes to the log, the subscribers and the counters when finished. While the
+    /// tunnel is open its snapshots go to `open` and the `.live` subscribers.
     func track(_ result: GateResult, kind: ConnectionKind) -> ConnectionTracker {
         counters.opened()
         let record = ConnectionRecord(
             kind: kind, host: result.host, port: result.port, decision: result.decision, ruleID: result.ruleID,
             pid: result.owner?.pid, process: result.owner?.name
         )
-        return ConnectionTracker(record: record) { [self] record in
-            counters.closed()
-            self.record(record)
-        }
+        return ConnectionTracker(
+            record: record,
+            sink: { [self] record in
+                counters.closed()
+                open.remove(record.id)
+                self.record(record)
+            },
+            update: { [self] snapshot in
+                open.set(snapshot)
+                hub.publish(.update(snapshot), topic: .live)
+            }
+        )
     }
 
     func record(_ record: ConnectionRecord) {

@@ -30,6 +30,8 @@ public struct WebRequestRow: Identifiable, Sendable, Equatable {
     public var bytesIn: Int64
     public var bytesOut: Int64
     public var connectionDurationMs: Int
+    /// The connection is still open; its sizes and duration are from netd's latest snapshot (D50).
+    public var isOpen = false
 
     public var blocked: Bool { decision.blocked }
     public var method: String? { summary?.method }
@@ -51,12 +53,13 @@ public struct WebRequestRow: Identifiable, Sendable, Equatable {
         }
     }
 
-    /// Newest first; `filter` matches host and path, case-insensitively.
-    public static func rows(_ records: [ConnectionRecord], filter: String = "") -> [WebRequestRow] {
+    /// Newest first; `filter` matches host and path, case-insensitively. `open` names the records whose
+    /// connection is still open.
+    public static func rows(_ records: [ConnectionRecord], open: Set<UUID> = [], filter: String = "") -> [WebRequestRow] {
         let wanted = filter.trimmingCharacters(in: .whitespaces).lowercased()
         var rows: [WebRequestRow] = []
         for record in records where isWeb(record.kind) {
-            rows += make(record)
+            rows += make(record, open: open.contains(record.id))
         }
         if !wanted.isEmpty {
             rows = rows.filter { $0.host.lowercased().contains(wanted) || ($0.path?.lowercased().contains(wanted) ?? false) }
@@ -64,12 +67,13 @@ public struct WebRequestRow: Identifiable, Sendable, Equatable {
         return rows.sorted { ($0.time, $1.id) > ($1.time, $0.id) }
     }
 
-    static func make(_ record: ConnectionRecord) -> [WebRequestRow] {
+    static func make(_ record: ConnectionRecord, open: Bool = false) -> [WebRequestRow] {
         func row(id: String, time: Date, summary: HTTPSummary?, visibility: Visibility) -> WebRequestRow {
             WebRequestRow(
                 id: id, recordID: record.id, time: time, process: record.process ?? "unknown", host: record.host, port: record.port,
                 kind: record.kind, decision: record.decision, ruleID: record.ruleID, error: record.error, summary: summary,
-                visibility: visibility, bytesIn: record.bytesIn, bytesOut: record.bytesOut, connectionDurationMs: record.durationMs
+                visibility: visibility, bytesIn: record.bytesIn, bytesOut: record.bytesOut, connectionDurationMs: record.durationMs,
+                isOpen: open
             )
         }
         guard record.http.isEmpty else {
@@ -100,6 +104,7 @@ public struct WebRequestRow: Identifiable, Sendable, Equatable {
         if blocked { return "Blocked" }
         if let status = summary?.status { return String(status) }
         if error != nil { return "Failed" }
+        if isOpen && summary == nil { return "Open" }
         switch visibility {
         case .encrypted: return "Encrypted"
         case .connectionOnly: return "Connected"
@@ -121,6 +126,7 @@ public struct WebRequestRow: Identifiable, Sendable, Equatable {
     }
 
     public var durationText: String {
+        if isOpen && summary == nil { return "Still open" }
         guard let ms = summary == nil ? connectionDurationMs : summary?.durationMs else { return "–" }
         return Format.milliseconds(ms)
     }
@@ -130,6 +136,7 @@ public struct WebRequestRow: Identifiable, Sendable, Equatable {
         var parts = [process]
         if !isTLS { parts.append("plain HTTP") }
         if visibility == .encrypted { parts.append("contents not visible") }
+        if isOpen && summary == nil { parts.append("still open") }
         return parts.joined(separator: " · ")
     }
 
@@ -147,6 +154,7 @@ public struct WebRequestRow: Identifiable, Sendable, Equatable {
             return HTTPStatus.reason(status).map { "\(status) \($0)" } ?? String(status)
         }
         if let error { return error }
+        if isOpen && summary == nil { return "Open" }
         return summary == nil ? "Connected" : "No answer"
     }
 

@@ -67,6 +67,12 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   es als `executablePath`.
 
 ### Behoben
+- Untersuchter HTTPS-Verkehr war in der App praktisch unsichtbar: netd gab die Anfragen einer Verbindung erst
+  weiter, wenn sie endete, und Programme wie claude halten ihre Verbindung lange offen. Offene Verbindungen schickt
+  netd jetzt nach jeder Anfrage als Zwischenstand (`ControlTopic.live`, `ControlEvent.update`,
+  `ControlRequest.openConnections`), die App zeigt ihre Anfragen sofort und die Verbindung selbst als „Open“.
+  Hosts hat bei Hosts mit festgehaltenen Anfragen einen Knopf „Requests“, der Web traffic auf den Host gefiltert
+  öffnet, und zählt bei untersuchten Hosts die Anfragen statt der Verbindungen. netd muss neu gestartet werden.
 - `xcodegen generate` schaltete die automatische Signierung jedes Mal ab. `project.yml` signiert jetzt alle Targets
   automatisch mit dem Team `5CVUCAZ4AV` und mit Hardened Runtime, die App zusätzlich mit der Berechtigung für Apple
   Events (für Terminal, iTerm2 und Ghostty). Mindestversion ist macOS 26.
@@ -102,7 +108,8 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   - Der geführte Gerätetest scheiterte vorher an `--follow --suggest`, das die CLI ablehnte.
 
 ### Bekannte Grenzen
-- Anfragen einer langen Keep-Alive-Verbindung erscheinen in Web traffic erst, wenn die Verbindung endet.
+- Je Verbindung hält netd höchstens 200 Anfragen fest; was eine sehr lange Verbindung danach schickt, fehlt in
+  Web traffic.
 - Die Dateiaufnahme beruht auf dem Ausgabeformat von `eslogger`, das hier nur nachgebildet ist; die ersten echten
   Aufnahmen auf dem Mac können Korrekturen am Parser nötig machen.
 - Private Netze (LAN, VPN, Tailscale) laufen weiterhin nicht über netd und brauchen eine Port-Ausnahme; pf kann an

@@ -17,8 +17,10 @@ public final class NetdLink {
 
     public private(set) var state: State = .stopped
     public private(set) var status: NetdStatus?
-    /// Most recent connection records, oldest first.
+    /// Most recent connection records, oldest first; open connections are in it with what netd saw so far (D50).
     public private(set) var records: [ConnectionRecord] = []
+    /// Records in `records` whose connection is still open.
+    public private(set) var openRecordIDs: Set<UUID> = []
     public private(set) var pendingAsks: [AskRequest] = []
     /// Successful connections so far (a reconnect after a netd restart counts again).
     public private(set) var connectCount = 0
@@ -113,13 +115,18 @@ public final class NetdLink {
                 }
                 self.client = client
                 try await client.subscribe(Self.topics)
+                // A netd without open snapshots refuses the topic and the request; it still works without them.
+                let live = (try? await client.subscribe([.live])) != nil
                 let status = try? await client.status()
                 let asks = try await client.pendingAsks()
                 let recent = try await client.recent(limit: Self.recordLimit)
+                let open = live ? (try? await client.openConnections()) ?? [] : []
                 try Task.checkCancellation()
                 self.status = status
                 pendingAsks = asks
                 records = Self.trimmed(Array(recent.suffix(Self.recordLimit)))
+                openRecordIDs = []
+                for record in open { upsert(record, open: true) }
                 state = .connected
                 connectCount += 1
                 backoff.reset()
@@ -136,6 +143,7 @@ public final class NetdLink {
             // A restarted netd has forgotten its asks; a stale status would claim it still runs.
             pendingAsks = []
             status = nil
+            openRecordIDs = []
             let delay = backoff.next()
             state = .waiting(retryIn: delay, reason: reason)
             try? await clock.sleep(delay)
@@ -147,14 +155,33 @@ public final class NetdLink {
         case .status(let status):
             self.status = status
         case .connection(let record):
-            records.append(record)
-            records = Self.trimmed(records)
+            upsert(record, open: false)
+        case .update(let record):
+            upsert(record, open: true)
         case .ask(let ask):
             if !pendingAsks.contains(where: { $0.id == ask.id }) { pendingAsks.append(ask) }
         case .askResolved(let id, _):
             pendingAsks.removeAll { $0.id == id }
-        case .hello, .recent, .pending, .content, .ack, .error:
+        case .hello, .recent, .pending, .openConnections, .content, .ack, .error:
             break
+        }
+    }
+
+    /// Replaces the record with the same id (an open connection's newer snapshot, or its finished record), or
+    /// appends it. Events that arrived while connecting may repeat a record `recent` already returned.
+    func upsert(_ record: ConnectionRecord, open: Bool) {
+        if let index = records.lastIndex(where: { $0.id == record.id }) {
+            // A snapshot never replaces the finished record.
+            guard open ? openRecordIDs.contains(record.id) : true else { return }
+            records[index] = record
+        } else {
+            records.append(record)
+            records = Self.trimmed(records)
+        }
+        if open {
+            openRecordIDs.insert(record.id)
+        } else {
+            openRecordIDs.remove(record.id)
         }
     }
 }
