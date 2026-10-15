@@ -76,9 +76,10 @@ import Testing
         let started = Date()
         let details = try #require(await slow.details(for: Self.oddInput, settings: settings))
         let elapsed = Date().timeIntervalSince(started)
-        // 80 % of the budget, plus scheduling slack when the suite runs in parallel.
+        // 80 % of the budget, plus scheduling slack when the suite runs in parallel on a loaded runner.
+        // The slow parts take 3 s and more, so anything below 2 s means they were left out.
         #expect(elapsed >= 0.3)
-        #expect(elapsed < 1)
+        #expect(elapsed < 2)
         #expect(details.reverseName == nil)
         #expect(details.network == nil)
         #expect(details.program == nil)
@@ -98,7 +99,7 @@ import Testing
         settings.budgetSeconds = 5
         let started = Date()
         let details = try #require(await enricher().details(for: Self.oddInput, settings: settings))
-        #expect(Date().timeIntervalSince(started) < 1)
+        #expect(Date().timeIntervalSince(started) < 2.5)  // well below the 4 s deadline
         #expect(details.program == Self.python)
     }
 

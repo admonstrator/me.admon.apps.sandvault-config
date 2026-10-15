@@ -4,7 +4,8 @@ import Testing
 @testable import SandvaultEnforce
 
 /// The lab's helper logic against a temporary root. Off macOS `clonefileat` is replaced by a plain copy.
-@Suite struct LabEngineTests {
+/// Serialized: the engine does blocking file work on the calling task, which in parallel starves the timing tests.
+@Suite(.serialized) struct LabEngineTests {
     let root: TempRoot
     let fake = FakeCommandRunner()
     var home: String { root.path + "/Users/sandvault-alice" }

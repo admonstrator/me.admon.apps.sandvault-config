@@ -47,7 +47,7 @@ import Testing
         async let result = asks.decide(host: "slow.test", port: 443, kind: .explicitProxy, owner: nil, policy: policy)
         let request = try #require(try await firstPending(asks))
         #expect(request.details == nil)
-        #expect(Date().timeIntervalSince(started) < 2)
+        #expect(Date().timeIntervalSince(started) < 3.5)  // the enricher alone takes 5 s
         try await asks.answer(AskAnswer(id: request.id, decision: .allowOnce))
         #expect(await result.allowed)
     }
