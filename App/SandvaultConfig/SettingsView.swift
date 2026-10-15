@@ -15,7 +15,7 @@ struct SettingsView: View {
                     .tag(pane)
             }
         }
-        .frame(minWidth: 560, idealWidth: 620, minHeight: 460, idealHeight: 560)
+        .frame(minWidth: 600, idealWidth: 660, minHeight: 520, idealHeight: 640)
     }
 }
 
@@ -30,25 +30,38 @@ struct SettingsPaneView: View {
             if pane == .recording {
                 MessageArea(message: model.recording.message) { model.recording.message = nil }
             }
+            if pane == .general {
+                MessageArea(message: model.sandbox.message) { model.sandbox.message = nil }
+            }
             Form {
                 switch pane {
                 case .general:
                     ModeSection(model: model)
                     if model.mode != .expert {
-                        HelperSection(settings: settings)
-                        NetdSection(settings: settings, netd: model.netd)
+                        SimpleServiceSection(settings: settings, netd: model.netd)
                     }
-                    HandoffDefaultsSection(settings: settings)
-                    AppSection(settings: settings)
+                    HandoffDefaultsSection(settings: settings, mode: model.mode)
+                    AppSection(settings: settings, mode: model.mode)
+                    if model.mode == .easy && model.sandbox.installed {
+                        SandboxManageSection(sandbox: model.sandbox)
+                    }
                 case .websites:
                     DeveloperBasicsSection(settings: settings)
+                    Section {
+                        LabeledContent("Websites the sandbox used") {
+                            Button("Show Websites") { AppRuntime.showMainWindow(.websites) }
+                        }
+                    } footer: {
+                        Text("Every website with what the sandbox did there. Allow or block it in one click.")
+                    }
                 case .connectionRequests:
                     ConnectionRequestsSection(settings: settings)
                 case .recording:
-                    RecordingSections(recording: model.recording)
+                    RecordingSections(recording: model.recording, mode: model.mode)
                 case .service:
                     HelperSection(settings: settings)
                     NetdSection(settings: settings, netd: model.netd)
+                    SvctlSection(settings: settings)
                 }
             }
             .formStyle(.grouped)
@@ -56,27 +69,89 @@ struct SettingsPaneView: View {
     }
 }
 
-/// Easy, Advanced or Expert, with what each adds.
+/// Easy, Advanced or Expert as three cards, with what each adds.
 struct ModeSection: View {
     let model: AppModel
 
     var body: some View {
-        Section("Mode") {
-            Picker("Mode", selection: mode) {
-                ForEach(InterfaceMode.allCases) { mode in
-                    Label(mode.title, systemImage: mode.symbolName).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            Text(model.mode.explanation)
-                .font(.callout)
-                .foregroundStyle(.secondary)
+        Section {
+            ModeCards(selected: model.mode) { mode in model.setMode(mode) }
+        } header: {
+            Text("Interface")
+        } footer: {
+            Text("Switching never changes your protection. Hidden pages keep their settings.")
         }
     }
+}
 
-    private var mode: Binding<InterfaceMode> {
-        Binding<InterfaceMode>(get: { model.mode }, set: { mode in model.setMode(mode) })
+/// The three modes side by side; Settings > General and first launch.
+struct ModeCards: View {
+    let selected: InterfaceMode
+    let choose: (InterfaceMode) -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            ForEach(InterfaceMode.allCases) { mode in
+                ModeCard(mode: mode, selected: mode == selected) { choose(mode) }
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.vertical, 4)
+    }
+}
+
+struct ModeCard: View {
+    let mode: InterfaceMode
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Image(systemName: mode.symbolName)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 28, height: 28)
+                        .background(color, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    Spacer(minLength: 0)
+                    if selected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Color.accentColor)
+                    }
+                }
+                Text(mode.title)
+                    .font(.headline)
+                if mode == .easy {
+                    Text("Recommended")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.green)
+                }
+                Text(mode.explanation)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(selected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.04), in: shape)
+            .overlay {
+                shape.strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.1), lineWidth: selected ? 2 : 1)
+            }
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private var color: Color {
+        switch mode {
+        case .easy: .green
+        case .advanced: .blue
+        case .expert: .purple
+        }
     }
 }
 
@@ -86,18 +161,41 @@ struct DeveloperBasicsSection: View {
 
     var body: some View {
         Section {
-            Toggle("Allow developer basics", isOn: enabled)
+            Toggle(isOn: enabled) {
+                DetailLabel("Allow developer basics", note: "Websites most coding tools need, allowed without asking.", symbol: "checkmark.shield", color: .green)
+            }
             ForEach(DeveloperBasicsGroup.catalog) { group in
                 Toggle(isOn: binding(group)) {
-                    Label(group.title, systemImage: group.symbolName)
-                    Text(group.patterns.joined(separator: ", "))
+                    DetailLabel(group.title, note: Self.websites(group), symbol: group.symbolName, color: Self.color(group))
                 }
                 .disabled(!settings.developerBasics.enabled)
             }
         } header: {
             Text("Developer basics")
         } footer: {
-            Text("These websites open without asking. Only web traffic and DNS; a rule of yours for the same website wins.")
+            Text("These websites open without asking, for web traffic only. A rule of yours for the same website always wins. Turn off what you do not use.")
+        }
+    }
+
+    /// `github.com, githubusercontent.com`: a `*.` pattern also covers the website itself.
+    static func websites(_ group: DeveloperBasicsGroup) -> String {
+        var seen: Set<String> = []
+        return group.patterns
+            .map { $0.hasPrefix("*.") ? String($0.dropFirst(2)) : $0 }
+            .filter { seen.insert($0).inserted }
+            .joined(separator: ", ")
+    }
+
+    static func color(_ group: DeveloperBasicsGroup) -> Color {
+        switch group.id {
+        case "github": .gray
+        case "npm": .red
+        case "python": .blue
+        case "homebrew", "rust": .orange
+        case "go": .teal
+        case "docker": .indigo
+        case "ai": .purple
+        default: .gray
         }
     }
 
@@ -107,6 +205,87 @@ struct DeveloperBasicsSection: View {
 
     private func binding(_ group: DeveloperBasicsGroup) -> Binding<Bool> {
         Binding<Bool>(get: { settings.developerBasics.isOn(group) }, set: { on in Task { await settings.setDeveloperBasics(group, on) } })
+    }
+}
+
+/// General below Expert: the helper and netd in plain words, each with one button.
+struct SimpleServiceSection: View {
+    let settings: SettingsModel
+    let netd: NetdLink
+
+    var body: some View {
+        Section {
+            LabeledContent {
+                Button(settings.helperInstalled ? "Reinstall…" : "Install…") { Task { await settings.installHelper() } }
+                    .disabled(settings.bundled.helper == nil || settings.isBusy)
+            } label: {
+                DetailLabel(
+                    "Helper", note: settings.helperInstalled ? "Installed." : "Not installed. The protection needs it.",
+                    symbol: "lock.shield", color: .red
+                )
+            }
+            LabeledContent {
+                Button(netd.isConnected ? "Restart" : "Start") { Task { await settings.startNetd() } }
+                    .disabled(settings.bundled.netd == nil || !settings.netdSupported || settings.isBusy)
+            } label: {
+                DetailLabel(
+                    "Network monitor", note: netd.isConnected ? "Running." : "Not running. Websites do not work without it.",
+                    symbol: "network", color: .blue
+                )
+            }
+        } header: {
+            Text("Service")
+        } footer: {
+            Text("Both run in the background. Installing the helper asks for your administrator password once.")
+        }
+    }
+}
+
+/// Rebuild and Delete for Easy, which has no Sandbox page.
+struct SandboxManageSection: View {
+    let sandbox: SandboxModel
+    @State private var confirmDelete = false
+
+    var body: some View {
+        Section("Sandbox") {
+            LabeledContent {
+                Button("Rebuild") { Task { await sandbox.rebuild() } }
+                    .disabled(sandbox.isBusy)
+            } label: {
+                DetailLabel("Rebuild", note: "Repairs the sandbox if something stopped working.", symbol: "arrow.clockwise", color: .gray)
+            }
+            LabeledContent {
+                Button("Delete…", role: .destructive) { confirmDelete = true }
+                    .disabled(sandbox.isBusy)
+                    .confirmationDialog("Delete the sandbox?", isPresented: $confirmDelete) {
+                        Button("Delete Sandbox", role: .destructive) { Task { await sandbox.delete() } }
+                    } message: {
+                        Text(sandbox.deleteExplanation)
+                    }
+            } label: {
+                DetailLabel("Delete Sandbox", note: "Removes the sandbox user. The shared workspace stays.", symbol: "trash", color: .red)
+            }
+        }
+    }
+}
+
+/// Settings > Service: the command line tool that comes with the app.
+struct SvctlSection: View {
+    let settings: SettingsModel
+
+    var body: some View {
+        Section {
+            LabeledContent("svctl", value: settings.bundled.svctl ?? "not bundled")
+            if let command = settings.svctlLinkCommand {
+                Text(command)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+        } header: {
+            Text("Command line")
+        } footer: {
+            Text("Everything in this window is also available as svctl.")
+        }
     }
 }
 
@@ -312,9 +491,10 @@ private struct DetailToggle: View {
 
 struct HandoffDefaultsSection: View {
     let settings: SettingsModel
+    var mode: InterfaceMode = .expert
 
     var body: some View {
-        Section("Hand-off") {
+        Section("Starting") {
             Picker("Default agent", selection: agent) {
                 ForEach(AgentKind.allCases, id: \.self) { agent in
                     Text(agent.displayName).tag(agent)
@@ -325,13 +505,15 @@ struct HandoffDefaultsSection: View {
                     Text(terminal.displayName).tag(terminal)
                 }
             }
-            LabeledContent("Clone folder") {
-                HStack {
-                    Text(settings.handoff.cloneDirectory)
-                        .textSelection(.enabled)
-                    Button("Choose…") {
-                        if let path = FolderPicker.chooseFolder(message: "Choose where repository URLs are cloned before they go to a Linux VM.") {
-                            Task { await settings.setCloneDirectory(path) }
+            if mode >= .advanced {
+                LabeledContent("Clone folder") {
+                    HStack {
+                        Text(settings.handoff.cloneDirectory)
+                            .textSelection(.enabled)
+                        Button("Choose…") {
+                            if let path = FolderPicker.chooseFolder(message: "Choose where repository URLs are cloned before they go to a Linux VM.") {
+                                Task { await settings.setCloneDirectory(path) }
+                            }
                         }
                     }
                 }
@@ -350,20 +532,17 @@ struct HandoffDefaultsSection: View {
 
 struct AppSection: View {
     let settings: SettingsModel
+    var mode: InterfaceMode = .expert
 
     var body: some View {
         Section("App") {
             Toggle("Show in Dock", isOn: showInDock)
-            Picker("Refresh while visible", selection: interval) {
-                ForEach([1.0, 2.0, 5.0, 10.0, 30.0], id: \.self) { seconds in
-                    Text(verbatim: "every \(Int(seconds)) s").tag(seconds)
+            if mode == .expert {
+                Picker("Refresh while visible", selection: interval) {
+                    ForEach([1.0, 2.0, 5.0, 10.0, 30.0], id: \.self) { seconds in
+                        Text(verbatim: "every \(Int(seconds)) s").tag(seconds)
+                    }
                 }
-            }
-            LabeledContent("svctl", value: settings.bundled.svctl ?? "not bundled")
-            if let command = settings.svctlLinkCommand {
-                Text(command)
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
             }
         }
     }

@@ -5,6 +5,8 @@ import SwiftUI
 /// Settings > Recording: web traffic, files and programs, storage.
 struct RecordingSections: View {
     let recording: RecordingModel
+    /// Opening and closing is for Expert only; the other switches are in every mode that has this tab.
+    var mode: InterfaceMode = .expert
 
     var body: some View {
         Section {
@@ -25,7 +27,7 @@ struct RecordingSections: View {
         } header: {
             Text("Web traffic")
         } footer: {
-            Text("Look inside HTTPS applies to hosts whose rule has Inspect; Web traffic offers it per host.")
+            Text("Look inside HTTPS applies to websites whose rule has Inspect. Web traffic offers it per website.")
         }
 
         Section("Files & programs") {
@@ -39,9 +41,11 @@ struct RecordingSections: View {
                     .font(.callout)
                     .foregroundStyle(.orange)
             }
-            Toggle(isOn: bind(recording.activity.openAndClose) { await recording.setOpenAndClose($0) }) {
-                DetailLabel("Include opening and closing", note: "Every single open and close, not just the result. Much longer lists.",
-                            symbol: "arrow.left.arrow.right", color: .gray)
+            if mode == .expert {
+                Toggle(isOn: bind(recording.activity.openAndClose) { await recording.setOpenAndClose($0) }) {
+                    DetailLabel("Include opening and closing", note: "Every single open and close, not just the result. Much longer lists.",
+                                symbol: "arrow.left.arrow.right", color: .gray)
+                }
             }
             Toggle(isOn: bind(recording.activity.hideSystemFiles) { await recording.setHideSystemFiles($0) }) {
                 DetailLabel("Hide system files", note: "Leaves out reads under /System, /usr and /Library that every program does.",

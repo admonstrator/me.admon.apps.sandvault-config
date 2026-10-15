@@ -2,10 +2,15 @@ import AppKit
 import SandvaultAppModel
 import SandvaultCore
 import SwiftUI
+import TipKit
 
 @main
 struct SandvaultConfigApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+
+    init() {
+        try? Tips.configure()
+    }
 
     var body: some Scene {
         MenuBarExtra {
@@ -37,6 +42,28 @@ enum AppRuntime {
     static var openMainWindow: (() -> Void)?
     /// The panels of the waiting asks; the app delegate creates them at launch.
     static var askPanels: AskPanelController?
+    /// The main window should open as soon as `openMainWindow` is registered (first launch).
+    static var mainWindowPending = false
+    /// The level before the last emergency stop of this run; ending the stop brings it back.
+    static var levelBeforeStop: ProtectionLevel?
+
+    /// Blocks the sandbox's network and ends its programs (the window's toolbar and the menu bar window).
+    static func emergencyStop() async {
+        if !model.firewall.panicActive { levelBeforeStop = model.firewall.protection }
+        await model.firewall.panic()
+    }
+
+    /// The level that ends the stop: the one before it, else Ask.
+    static var resumeLevel: ProtectionLevel {
+        ProtectionLevel.resume(from: levelBeforeStop, mode: model.mode)
+    }
+
+    /// Ends an emergency stop by applying `resumeLevel` (every deliberate apply ends a stop).
+    static func endEmergencyStop() async {
+        let level = resumeLevel
+        levelBeforeStop = nil
+        await model.firewall.setProtection(level)
+    }
 
     /// Brings every waiting ask's panel to the front (Review in the menu bar window).
     static func showAskPanels() {
@@ -62,7 +89,13 @@ struct WindowOpenerRegistration: View {
 
     var body: some View {
         Color.clear
-            .onAppear { AppRuntime.openMainWindow = { openWindow(id: MainWindow.id) } }
+            .onAppear {
+                AppRuntime.openMainWindow = { openWindow(id: MainWindow.id) }
+                if AppRuntime.mainWindowPending {
+                    AppRuntime.mainWindowPending = false
+                    AppRuntime.showMainWindow()
+                }
+            }
             .onChange(of: AppRuntime.model.settingsRequests) {
                 openSettings()
                 NSApplication.shared.activate()
@@ -87,6 +120,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppRuntime.askPanels = AskPanelController(asks: model.asks, notifier: AskNotifier(asks: model.asks))
         model.start()
         if model.settings.preferences.showInDock { DockPresence.apply(true) }
+        // First launch: the window's sheet asks for the mode and a sandbox preset.
+        if model.needsOnboarding {
+            if AppRuntime.openMainWindow != nil {
+                AppRuntime.showMainWindow()
+            } else {
+                AppRuntime.mainWindowPending = true
+            }
+        }
     }
 
     /// Clicking the Dock icon opens the window when none is visible.
@@ -106,8 +147,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(item("Open Shell", #selector(openShell)))
         if agent != .shell { menu.addItem(item("Start \(agent.displayName)", #selector(startDefaultAgent))) }
         menu.addItem(.separator())
-        menu.addItem(item("Sandbox…", #selector(showSandbox)))
-        menu.addItem(item("Activity…", #selector(showActivity)))
+        let screens = AppRuntime.model.screens
+        menu.addItem(item("Websites…", #selector(showWebsites)))
+        if screens.contains(.sandbox) { menu.addItem(item("Sandbox…", #selector(showSandbox))) }
+        if screens.contains(.activity) { menu.addItem(item("Activity…", #selector(showActivity))) }
         return menu
     }
 
@@ -124,6 +167,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func startDefaultAgent() {
         let model = AppRuntime.model
         Task { await model.sandbox.open(model.editor.config.handoff.defaultAgent) }
+    }
+
+    @objc private func showWebsites() {
+        AppRuntime.showMainWindow(.websites)
     }
 
     @objc private func showSandbox() {

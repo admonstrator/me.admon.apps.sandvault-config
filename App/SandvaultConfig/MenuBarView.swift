@@ -32,7 +32,7 @@ struct MenuBarView: View {
         let summary = model.menuBar
         VStack(alignment: .leading, spacing: 2) {
             header(summary)
-            ProtectionButtons(firewall: model.firewall)
+            ProtectionButtons(firewall: model.firewall, mode: model.mode)
             Text(summary.explanation)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -137,7 +137,7 @@ struct MenuBarView: View {
     private func stats(_ summary: MenuBarSummary) -> some View {
         HStack(spacing: 4) {
             StatTile(title: "Sessions", value: summary.sessions, hot: false)
-            StatTile(title: "Processes", value: summary.processes, hot: false)
+            StatTile(title: expert ? "Processes" : "Programs", value: summary.processes, hot: false)
             StatTile(title: "Blocked, 1 h", value: summary.deniedLastHour, hot: summary.deniedLastHour > 0)
         }
         .padding(.horizontal, 6)
@@ -171,15 +171,16 @@ struct MenuBarView: View {
 
 // MARK: Protection
 
-/// The four levels as round buttons, like Focus or AirDrop in Control Center. A setting only expert mode makes
-/// leaves all four unselected.
+/// The levels the mode offers as round buttons, like Focus or AirDrop in Control Center. A setting only Expert
+/// makes leaves all of them unselected.
 struct ProtectionButtons: View {
     let firewall: FirewallModel
+    var mode: InterfaceMode = .expert
 
     var body: some View {
         let current = firewall.panicActive ? nil : firewall.protection
         HStack(spacing: 4) {
-            ForEach(ProtectionLevel.allCases) { level in
+            ForEach(ProtectionLevel.choices(for: mode)) { level in
                 Button {
                     Task { await firewall.setProtection(level) }
                 } label: {
@@ -356,7 +357,7 @@ struct StartRows: View {
             IconRow(symbol: "chevron.right", prominent: false, title: "Open Shell", detail: "sv shell") {
                 Task { await sandbox.open(.shell) }
             }
-            IconRow(symbol: "folder", prominent: false, title: "Hand Off a Repository…", detail: "Or drop a folder here", action: chooseAndHandOff)
+            IconRow(symbol: "folder", prominent: false, title: "Hand Off a Project…", detail: "Or drop a folder here", action: chooseAndHandOff)
         }
         .disabled(sandbox.isBusy)
     }
@@ -388,7 +389,7 @@ struct BlockedHostRow: View {
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
             PillButton(title: "Allow", kind: .quiet, compact: true, action: allow)
-                .help("Allow rule for exactly this host")
+                .help("Allow exactly this website")
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
         }
@@ -406,15 +407,19 @@ struct BlockedHostRow: View {
 
 // MARK: Emergency stop
 
-/// Two steps, so a stray click never ends every sandbox process; the confirmation opens in place.
+/// Two steps, so a stray click never ends every sandbox process; the confirmation opens in place. During a stop
+/// the row ends it with the level from before (the same actions as the main window's toolbar button).
 struct EmergencyStop: View {
     @Binding var armed: Bool
     let firewall: FirewallModel
 
     var body: some View {
-        if armed {
+        if firewall.panicActive {
+            MenuRow("End Emergency Stop") { Task { await AppRuntime.endEmergencyStop() } }
+                .disabled(firewall.isBusy)
+        } else if armed {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Block the network and end every process in the sandbox? Your files stay as they are.")
+                Text("Block the network and end every program in the sandbox? Your files stay as they are.")
                     .font(.system(size: 12.5))
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 6) {
@@ -423,7 +428,7 @@ struct EmergencyStop: View {
                         .keyboardShortcut(.cancelAction)
                     PillButton(title: "Stop Sandbox", kind: .destructive) {
                         armed = false
-                        Task { await firewall.panic() }
+                        Task { await AppRuntime.emergencyStop() }
                     }
                 }
             }
