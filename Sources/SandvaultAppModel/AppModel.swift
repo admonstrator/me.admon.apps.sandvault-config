@@ -76,6 +76,8 @@ public final class AppModel {
     public let sandbox: SandboxModel
     /// Docker Sandboxes VMs (D47).
     public let docker: DockerSandboxesModel
+    /// What one process and the programs it started did (D51).
+    public let processDetail: ProcessDetailModel
 
     public private(set) var selection: Screen = .overview
     public private(set) var visibleSurfaces: Set<Surface> = []
@@ -100,6 +102,9 @@ public final class AppModel {
         activity = ActivityModel(network: network, processes: processes, netd: netd, editor: editor, clock: environment.clock)
         let files = FileActivityModel(recorder: environment.activity, editor: editor, clock: environment.clock, environment: environment.environment)
         self.files = files
+        processDetail = ProcessDetailModel(
+            processes: processes, files: files, netd: netd, editor: editor, environment: environment.environment, clock: environment.clock
+        )
         let firewall = FirewallModel(
             editor: editor, policy: environment.policy, sandboxUID: environment.sandboxUID, localPorts: environment.localPorts,
             ca: environment.ca, clock: environment.clock

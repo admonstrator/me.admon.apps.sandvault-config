@@ -1,10 +1,12 @@
 import SandvaultAppModel
+import SandvaultObserve
 import SwiftUI
 
 struct ProcessesView: View {
     @Bindable var processes: ProcessesModel
     @State private var selection: Int32?
     @State private var confirmEndAll = false
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(spacing: 0) {
@@ -16,7 +18,7 @@ struct ProcessesView: View {
             }
             switch processes.grouping {
             case .tree:
-                ProcessTable(rows: processes.rows, selection: $selection)
+                ProcessTable(rows: processes.rows, selection: $selection, showDetails: showDetails)
             case .sessions:
                 SessionList(groups: processes.sessionGroups, selection: $selection) { id in
                     Task { await processes.terminateSession(id) }
@@ -31,6 +33,11 @@ struct ProcessesView: View {
                 }
             }
             .pickerStyle(.segmented)
+            Button("Details") {
+                if let pid = selection { showDetails(pid) }
+            }
+            .disabled(selection == nil)
+            .help("Web, connections, files and programs of this process (double-click a row)")
             Button("Terminate") {
                 if let pid = selection { Task { await processes.terminate(pid) } }
             }
@@ -57,11 +64,17 @@ struct ProcessesView: View {
             Text("Uses sv's own rules: launchctl bootout, then pkill -9 for survivors.")
         }
     }
+
+    /// Process details (D51) in their own window.
+    private func showDetails(_ pid: Int32) {
+        openWindow(id: ProcessDetailView.windowID, value: ProcessReference(pid: pid))
+    }
 }
 
 struct ProcessTable: View {
     let rows: [ProcessRow]
     @Binding var selection: Int32?
+    var showDetails: @MainActor (Int32) -> Void = { _ in }
 
     var body: some View {
         Table(rows, selection: $selection) {
@@ -95,6 +108,11 @@ struct ProcessTable: View {
                     .foregroundStyle(.secondary)
                     .help(row.command)
             }
+        }
+        .contextMenu(forSelectionType: Int32.self) { pids in
+            if let pid = pids.first { Button("Show What It Did") { showDetails(pid) } }
+        } primaryAction: { pids in
+            if let pid = pids.first { showDetails(pid) }
         }
     }
 }

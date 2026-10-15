@@ -65,6 +65,14 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   mit dem Schlüssel der Prüf-CA als vertrauenswürdig, ohne Schlüsselbund und ohne Wirkung auf andere Browser.
   Argumente wie `--headless=new --remote-debugging-port=9222` werden durchgereicht; Playwright und Puppeteer nehmen
   es als `executablePath`.
+- **Was hat ein Prozess getan?** „Details“ an einer Sitzung auf der Übersicht, „Show What … Did“ unter Activity
+  (Web traffic und Files & programs) und „Details“ oder Doppelklick auf der Seite Processes öffnen ein eigenes
+  Fenster pro Prozess: Aufrufkette (claude › node › sh), Signatur, Laufzeit und Arbeitsordner, ein roter Streifen für
+  Zugriffe auf Schlüssel, Logins, Schlüsselbund und Anmeldeobjekte, fünf Kacheln (alles, Web, Seiten und DNS,
+  Dateien, gestartete Programme) als Filter einer Zeitleiste. Gleiches ist zusammengefasst („312 requests“, „Read 63
+  files in src“), auf Wunsch jedes Ereignis einzeln; gestartete Programme lassen sich ein- und ausblenden und mit
+  „Open“ einzeln öffnen. Die Daten kommen aus der Datei- und Programmaufzeichnung, dem Verbindungsprotokoll von netd
+  und der Prozessliste, zugeordnet über PID, Elternprozess und Startzeit. `svctl activity process <pid>`.
 
 ### Behoben
 - Untersuchter HTTPS-Verkehr war in der App praktisch unsichtbar: netd gab die Anfragen einer Verbindung erst
@@ -119,6 +127,9 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   der Stelle nicht nach Benutzer unterscheiden.
 - Die lokale Netzwerktabelle kennt nur IPv4.
 - Noch nicht auf dem Mac geprüft: die neuen pf-Regeln, Programmprüfung per `codesign`, echte RDAP-Antworten.
+- Prozessdetails: Elternprozess, Startzeit und Signatur liest der Parser aus `eslogger`-Feldern, die nur nach Apples
+  Dokumentation nachgebildet sind. Ältere Aufzeichnungen haben sie nicht; dort ordnet die App nur über die PID zu.
+  DNS über `mDNSResponder` hat keinen Prozess und fehlt in den Details.
 ### Tests
 - Fixtures für dscl, dseditgroup, `ls -led`, sudoers und das sv-Profil durch echte Ausgaben ersetzt; neue echte
   Fixtures für ps ohne Session, lsof ohne Sockets, nettop ohne Zeilen, das Unified Log und `launchctl print` ohne

@@ -1,5 +1,6 @@
 import SandvaultAppModel
 import SandvaultCore
+import SandvaultObserve
 import SwiftUI
 
 struct OverviewView: View {
@@ -173,6 +174,7 @@ struct SessionRow: View {
             Spacer()
             Text(verbatim: "\(session.processCount) processes · \(Format.duration(session.elapsedSeconds))")
                 .foregroundStyle(.secondary)
+            ShowProcessButton(title: "Details", reference: ProcessReference(pid: session.rootPID))
         }
     }
 }

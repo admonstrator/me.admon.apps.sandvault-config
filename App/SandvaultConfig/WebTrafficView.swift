@@ -232,6 +232,8 @@ struct WebRequestDetail: View {
             }
             Button("Show All from \(row.host)") { activity.showAll(from: row.host) }
                 .buttonStyle(.borderless)
+            ShowProcessButton(title: "Show What \(row.process) Did", reference: row.processReference)
+                .buttonStyle(.borderless)
         }
     }
 }

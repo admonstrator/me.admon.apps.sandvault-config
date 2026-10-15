@@ -30,6 +30,8 @@ public enum PathDisplay {
 public struct SensitivePlace: Sendable, Equatable, Hashable {
     public enum Kind: String, Sendable, CaseIterable {
         case ssh, keychain, cloudCredentials, gnupg, browserProfile, envFile
+        /// Launch agents and daemons: what is placed there starts on its own (D51).
+        case loginItem
         /// A home folder other than the sandbox user's (the host user's included: the sandbox should not be there).
         case otherHome
     }
@@ -87,6 +89,9 @@ public struct SensitivePlace: Sendable, Equatable, Hashable {
         }
         for entry in credentials where contains(parts, entry.suffix) {
             return SensitivePlace(.cloudCredentials, entry.title, entry.explanation)
+        }
+        if contains(parts, ["Library", "LaunchAgents"]) || contains(parts, ["Library", "LaunchDaemons"]) {
+            return SensitivePlace(.loginItem, "a login item", "A program placed here starts on its own at every login.")
         }
         if browsers.contains(where: { contains(parts, $0) }) {
             return SensitivePlace(.browserProfile, "a browser profile", "Holds cookies, saved passwords and history.")

@@ -20,6 +20,8 @@ struct SandvaultConfigApp: App {
             MainWindow(model: AppRuntime.model)
         }
         .defaultSize(width: 1080, height: 720)
+
+        ProcessDetailScene(model: AppRuntime.model)
     }
 }
 

@@ -41,6 +41,34 @@ import Testing
         #expect(events[10].path == "/Users/Shared/sv-alice/old.log")
     }
 
+    @Test func keepsParentStartAndSignatureForProcessDetails() throws {
+        let events = try events()
+        let exec = events[0]
+        // The started program's signature (git, a platform binary), the parent and start of the process.
+        #expect(exec.ppid == 9001)
+        #expect(exec.processStart == Date(timeIntervalSince1970: 1_791_619_800))
+        #expect(exec.signature == .apple && exec.signingID == "com.apple.git")
+        #expect(exec.cwd == "/Users/Shared/sv-alice")
+        // claude: valid, not ad hoc, no team in the fixture.
+        #expect(events[1].signature == .developer(team: nil) && events[1].signingID == "com.anthropic.claude-code")
+        #expect(events[1].cwd == nil)
+    }
+
+    @Test func signatureFromCodesigningFlags() throws {
+        func signature(_ fields: String) throws -> AskProgram.Signature? {
+            let line = #"{"time":"2026-10-10T08:15:01Z","process":{"audit_token":{"pid":5,"euid":601,"ruid":601},"#
+                + fields + #""executable":{"path":"/tmp/x"}},"event":{"unlink":{"target":{"path":"/tmp/y"}}}}"#
+            return try #require(ESLoggerParser.event(fromLine: line, uid: 601)).signature
+        }
+        #expect(try signature(#""codesigning_flags":3,"#) == .adHoc)
+        #expect(try signature(#""codesigning_flags":0,"#) == .unsigned)
+        #expect(try signature(#""codesigning_flags":1,"team_id":"ABCDE12345","#) == .developer(team: "ABCDE12345"))
+        #expect(try signature(#""is_platform_binary":true,"codesigning_flags":1,"#) == .apple)
+        #expect(try signature("") == nil)
+        // A field of another type than expected costs the field, not the event.
+        #expect(try signature(#""ppid":"x","start_time":5,"#) == nil)
+    }
+
     @Test func keepsProcessesWhoseRealUIDIsTheSandbox() throws {
         // sudo started by the sandbox: euid 0, ruid 601.
         let sudo = try #require(try events().last)

@@ -1,5 +1,6 @@
 import Foundation
 import SandvaultCore
+import SandvaultObserve
 
 /// One line of Activity > Web traffic (D42): one `HTTPSummary`, or one web connection whose requests netd did not
 /// see (HTTPS without inspection, blocked before a request, requests not recorded).
@@ -32,6 +33,11 @@ public struct WebRequestRow: Identifiable, Sendable, Equatable {
     public var connectionDurationMs: Int
     /// The connection is still open; its sizes and duration are from netd's latest snapshot (D50).
     public var isOpen = false
+    /// The program's pid, when netd found it.
+    public var pid: Int32?
+
+    /// Show What X Did (D51): the program alive when the request was made.
+    public var processReference: ProcessReference? { pid.map { ProcessReference(pid: $0, at: time) } }
 
     public var blocked: Bool { decision.blocked }
     public var method: String? { summary?.method }
@@ -73,7 +79,7 @@ public struct WebRequestRow: Identifiable, Sendable, Equatable {
                 id: id, recordID: record.id, time: time, process: record.process ?? "unknown", host: record.host, port: record.port,
                 kind: record.kind, decision: record.decision, ruleID: record.ruleID, error: record.error, summary: summary,
                 visibility: visibility, bytesIn: record.bytesIn, bytesOut: record.bytesOut, connectionDurationMs: record.durationMs,
-                isOpen: open
+                isOpen: open, pid: record.pid
             )
         }
         guard record.http.isEmpty else {

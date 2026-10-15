@@ -97,10 +97,22 @@ public struct FileActivityEvent: Codable, Sendable, Equatable, Hashable, Identif
     public var modified: Bool
     /// `exec` only.
     public var arguments: [String]
+    /// The parent at the time the process was created (eslogger's `original_ppid`, else `ppid`); `nil` in events
+    /// stored before D51. Process details (D51) build the call chain from it.
+    public var ppid: Int32?
+    /// When the process was created (eslogger's `start_time`); with `pid` it names one process, as pids are reused.
+    public var processStart: Date?
+    /// `exec`: the started program's code signature; other kinds: the acting process's.
+    public var signature: AskProgram.Signature?
+    /// The code signing identifier (`com.apple.git`, `node`), when signed.
+    public var signingID: String?
+    /// `exec` only: the working directory the program was started in.
+    public var cwd: String?
 
     public init(
         id: UUID = UUID(), timestamp: Date, kind: Kind, path: String, destination: String? = nil, pid: Int32,
-        process: String, executable: String? = nil, forWriting: Bool = false, modified: Bool = false, arguments: [String] = []
+        process: String, executable: String? = nil, forWriting: Bool = false, modified: Bool = false, arguments: [String] = [],
+        ppid: Int32? = nil, processStart: Date? = nil, signature: AskProgram.Signature? = nil, signingID: String? = nil, cwd: String? = nil
     ) {
         self.id = id
         self.timestamp = timestamp
@@ -113,6 +125,11 @@ public struct FileActivityEvent: Codable, Sendable, Equatable, Hashable, Identif
         self.forWriting = forWriting
         self.modified = modified
         self.arguments = arguments
+        self.ppid = ppid
+        self.processStart = processStart
+        self.signature = signature
+        self.signingID = signingID
+        self.cwd = cwd
     }
 }
 

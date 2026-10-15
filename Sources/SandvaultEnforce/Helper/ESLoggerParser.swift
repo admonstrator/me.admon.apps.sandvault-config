@@ -9,6 +9,9 @@ public enum ESLoggerParser {
 
     /// Kernel `FWRITE` in `open.fflag` (eslogger reports fflags, not `O_*` flags).
     static let fwrite = 0x2
+    /// `CS_VALID` and `CS_ADHOC` in `codesigning_flags` (`<kern/cs_blobs.h>`).
+    static let csValid: UInt32 = 0x1
+    static let csAdhoc: UInt32 = 0x2
 
     /// One event for `uid`: kept when the acting process's effective or real uid matches, else `nil`.
     public static func event(fromLine line: String, uid: UInt32) -> FileActivityEvent? {
@@ -22,20 +25,25 @@ public enum ESLoggerParser {
 
     static func event(from message: Message) -> FileActivityEvent? {
         guard let timestamp = parseTime(message.time), let pid = message.process.auditToken.pid else { return nil }
-        let executable = message.process.executable?.path
+        let actor = message.process
+        let executable = actor.executable?.path
         let process = executable.map { ($0 as NSString).lastPathComponent } ?? "pid \(pid)"
         func make(_ kind: FileActivityEvent.Kind, _ path: String?, destination: String? = nil, forWriting: Bool = false,
-                  modified: Bool = false, arguments: [String] = []) -> FileActivityEvent? {
+                  modified: Bool = false, arguments: [String] = [], image: Process? = nil, cwd: String? = nil) -> FileActivityEvent? {
             guard let path, !path.isEmpty else { return nil }
+            // exec keeps the pid; the signature is the new image's.
+            let signed = image ?? actor
             return FileActivityEvent(
                 timestamp: timestamp, kind: kind, path: path, destination: destination, pid: pid, process: process,
-                executable: executable, forWriting: forWriting, modified: modified, arguments: arguments
+                executable: executable, forWriting: forWriting, modified: modified, arguments: arguments,
+                ppid: actor.originalPPID.flatMap { $0 > 0 ? $0 : nil } ?? actor.ppid, processStart: parseTime(actor.startTime),
+                signature: signed.signature, signingID: signed.signingID, cwd: cwd
             )
         }
 
         let body = message.event
         if let exec = body.exec {
-            return make(.exec, exec.target?.executable?.path, arguments: exec.args ?? [])
+            return make(.exec, exec.target?.executable?.path, arguments: exec.args ?? [], image: exec.target, cwd: exec.cwd?.path)
         }
         if let open = body.open {
             return make(.open, open.file?.path, forWriting: (open.fflag ?? 0) & fwrite != 0)
@@ -105,9 +113,45 @@ public enum ESLoggerParser {
     struct Process: Decodable {
         var auditToken: AuditToken
         var executable: File?
+        var ppid: Int32?
+        var originalPPID: Int32?
+        var startTime: String?
+        var signingID: String?
+        var teamID: String?
+        var platformBinary: Bool?
+        var codesigningFlags: UInt32?
 
         enum CodingKeys: String, CodingKey {
-            case auditToken = "audit_token", executable
+            case auditToken = "audit_token", executable, ppid, originalPPID = "original_ppid", startTime = "start_time"
+            case signingID = "signing_id", teamID = "team_id", platformBinary = "is_platform_binary"
+            case codesigningFlags = "codesigning_flags"
+        }
+
+        /// Every field is optional: these are reconstructed from Apple's `es_process_t` serialisation, not from a
+        /// capture of this macOS version, and a missing or renamed one must not cost the event.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            auditToken = try c.decode(AuditToken.self, forKey: .auditToken)
+            executable = try? c.decodeIfPresent(File.self, forKey: .executable)
+            ppid = try? c.decodeIfPresent(Int32.self, forKey: .ppid)
+            originalPPID = try? c.decodeIfPresent(Int32.self, forKey: .originalPPID)
+            startTime = try? c.decodeIfPresent(String.self, forKey: .startTime)
+            signingID = try? c.decodeIfPresent(String.self, forKey: .signingID)
+            teamID = try? c.decodeIfPresent(String.self, forKey: .teamID)
+            platformBinary = try? c.decodeIfPresent(Bool.self, forKey: .platformBinary)
+            codesigningFlags = try? c.decodeIfPresent(UInt32.self, forKey: .codesigningFlags)
+        }
+
+        /// Apple for platform binaries, then ad hoc, a developer team, unsigned; `nil` without any of the fields.
+        var signature: AskProgram.Signature? {
+            if platformBinary == true { return .apple }
+            if let flags = codesigningFlags {
+                if flags & ESLoggerParser.csAdhoc != 0 { return .adHoc }
+                if flags & ESLoggerParser.csValid == 0 { return .unsigned }
+            }
+            if let team = teamID, !team.isEmpty { return .developer(team: team) }
+            if codesigningFlags != nil || signingID != nil { return .developer(team: nil) }
+            return nil
         }
     }
 
@@ -134,6 +178,7 @@ public enum ESLoggerParser {
     struct Exec: Decodable {
         var target: Process?
         var args: [String]?
+        var cwd: File?
     }
 
     struct Open: Decodable {

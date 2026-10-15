@@ -13,9 +13,10 @@ struct ActivityCommand: AsyncParsableCommand {
             Only the sandbox user's processes are recorded; what is stored follows Settings > Recording.
               svctl activity record
               svctl activity show --since 10m
+              svctl activity process 4121
               svctl activity clear
             """,
-        subcommands: [Record.self, Show.self, Clear.self],
+        subcommands: [Record.self, Show.self, Trace.self, Clear.self],
         defaultSubcommand: Show.self
     )
 

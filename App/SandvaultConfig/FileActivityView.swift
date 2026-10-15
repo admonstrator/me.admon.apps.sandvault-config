@@ -1,6 +1,7 @@
 import AppKit
 import SandvaultAppModel
 import SandvaultCore
+import SandvaultObserve
 import SwiftUI
 
 /// Activity > Files & programs (D44, D45): the recorder's state, five tiles, and per program either the summary
@@ -34,11 +35,11 @@ struct FileActivityView: View {
                         switch files.mode {
                         case .changes:
                             ForEach(report.groups) { group in
-                                ChangesGroup(group: group)
+                                ChangesGroup(group: group, reference: files.reference(forProgram: group.process))
                             }
                         case .everything:
                             ForEach(files.everything) { group in
-                                EverythingGroup(group: group)
+                                EverythingGroup(group: group, reference: files.reference(forProgram: group.process))
                             }
                         }
                     }
@@ -198,6 +199,8 @@ private struct GroupHeader: View {
     let process: String
     let subtitle: String
     let folder: String?
+    /// The newest process of the program, for Show What It Did (D51).
+    let reference: ProcessReference?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -210,6 +213,8 @@ private struct GroupHeader: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            ShowProcessButton(title: "Show What \(process) Did", reference: reference)
+                .buttonStyle(.borderless)
             if let folder {
                 Button("Show in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: folder)])
@@ -223,6 +228,7 @@ private struct GroupHeader: View {
 /// One program in Changes: one sentence per kind and folder, sensitive places first.
 private struct ChangesGroup: View {
     let group: ProcessActivity
+    let reference: ProcessReference?
 
     private var subtitle: String {
         let span = group.firstSeen == group.lastSeen ? Format.time(group.firstSeen) : "\(Format.time(group.firstSeen)) – \(Format.time(group.lastSeen))"
@@ -231,7 +237,7 @@ private struct ChangesGroup: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            GroupHeader(process: group.process, subtitle: subtitle, folder: group.folder)
+            GroupHeader(process: group.process, subtitle: subtitle, folder: group.folder, reference: reference)
             ForEach(group.lines) { line in
                 ChangeLine(line: line)
             }
@@ -313,10 +319,11 @@ private struct PathText: View {
 /// One program in Everything: its raw events, newest first, in plain words.
 private struct EverythingGroup: View {
     let group: ProcessEvents
+    let reference: ProcessReference?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            GroupHeader(process: group.process, subtitle: Format.count(group.lines.count + group.more, "event"), folder: nil)
+            GroupHeader(process: group.process, subtitle: Format.count(group.lines.count + group.more, "event"), folder: nil, reference: reference)
             ForEach(group.lines) { line in
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     ActionBadge(action: line.action)

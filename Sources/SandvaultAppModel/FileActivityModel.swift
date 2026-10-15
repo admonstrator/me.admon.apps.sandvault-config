@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SandvaultCore
+import SandvaultObserve
 
 /// Activity > Files & programs (D44, D45): runs the recorder while recording is switched on, keeps the stored events
 /// and summarises them. Recording starts at launch when `AppConfig.activity.enabled` is set; after a failure it
@@ -97,6 +98,12 @@ public final class FileActivityModel {
 
     public func storageBytes() async -> Int64 {
         await recorder.storageBytes()
+    }
+
+    /// The newest process that ran the program `name`, for Show What It Did (D51); groups here are by program name.
+    public func reference(forProgram name: String) -> ProcessReference? {
+        guard let event = events.last(where: { $0.process == name }) else { return nil }
+        return ProcessReference(pid: event.pid, at: event.timestamp)
     }
 
     /// Ends the recorder without changing the setting (app quits).
