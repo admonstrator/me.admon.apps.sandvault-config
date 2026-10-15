@@ -6,7 +6,7 @@ import SandvaultWorkflow
 enum WorkflowCommands {
     static let all: [any ParsableCommand.Type] = [
         HandoffCommand.self, ReposCommand.self, ToolsCommand.self, AndroidCommand.self, MigrateCommand.self, KeysCommand.self, DefaultsCommand.self,
-        SbxCommand.self,
+        SbxCommand.self, LabCommand.self,
     ]
 }
 

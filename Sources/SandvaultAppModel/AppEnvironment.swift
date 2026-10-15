@@ -265,6 +265,8 @@ public struct AppEnvironment: Sendable {
     public var dockerSandboxes: DockerSandboxService
     /// The host's Android SDK and devices for the sandbox.
     public var android: AndroidService
+    /// Lab mode checkpoints (D52).
+    public var lab: LabService
 
     public init(
         environment: SandvaultEnvironment, paths: AppPaths, runner: CommandRunner, configStore: ConfigStore,
@@ -276,7 +278,8 @@ public struct AppEnvironment: Sendable {
         handoff: HandoffService, repos: RepoService, tools: ToolService, migration: MigrationService, keys: KeyService,
         sandbox: SandboxService, networkDatabase: NetworkDatabaseService, activity: ActivityRecording = NoActivityRecorder(),
         dockerSandboxes: DockerSandboxService = NoDockerSandboxes(),
-        android: AndroidService = UnavailableAndroid()
+        android: AndroidService = UnavailableAndroid(),
+        lab: LabService = UnavailableLab()
     ) {
         self.environment = environment
         self.paths = paths
@@ -309,6 +312,7 @@ public struct AppEnvironment: Sendable {
         self.activity = activity
         self.dockerSandboxes = dockerSandboxes
         self.android = android
+        self.lab = lab
     }
 
     /// The real thing: the factories of Observe, Enforce, Net and Workflow over one `ProcessCommandRunner`.
@@ -346,7 +350,8 @@ public struct AppEnvironment: Sendable {
             networkDatabase: NetworkDatabaseStore(path: paths.networkDatabase, runner: runner),
             activity: LiveActivityRecorder(paths: paths, runner: runner),
             dockerSandboxes: Workflow.makeDockerSandboxService(runner: runner),
-            android: Workflow.makeAndroidService(environment: environment, runner: runner)
+            android: Workflow.makeAndroidService(environment: environment, runner: runner),
+            lab: LiveLab(client: LabClient(runner: runner), connectionLog: paths.connectionLog)
         )
     }
 }

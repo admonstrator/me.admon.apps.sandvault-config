@@ -26,6 +26,8 @@ public struct AppConfig: Codable, Sendable, Equatable {
     public var repos: [HandoffRecord]
     /// Recording files and programs (D44, D45).
     public var activity: ActivityRecordingSettings
+    /// Lab mode checkpoints (D52).
+    public var lab: LabSettings
 
     public init(
         version: Int = AppConfig.currentVersion,
@@ -34,7 +36,8 @@ public struct AppConfig: Codable, Sendable, Equatable {
         handoff: HandoffSettings = HandoffSettings(),
         tools: [ToolGrant] = [],
         repos: [HandoffRecord] = [],
-        activity: ActivityRecordingSettings = ActivityRecordingSettings()
+        activity: ActivityRecordingSettings = ActivityRecordingSettings(),
+        lab: LabSettings = LabSettings()
     ) {
         self.version = version
         self.sandbox = sandbox
@@ -43,9 +46,10 @@ public struct AppConfig: Codable, Sendable, Equatable {
         self.tools = tools
         self.repos = repos
         self.activity = activity
+        self.lab = lab
     }
 
-    enum CodingKeys: String, CodingKey { case version, sandbox, network, handoff, tools, repos, activity }
+    enum CodingKeys: String, CodingKey { case version, sandbox, network, handoff, tools, repos, activity, lab }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -56,6 +60,7 @@ public struct AppConfig: Codable, Sendable, Equatable {
         tools = try c.value(.tools, default: [])
         repos = try c.value(.repos, default: [])
         activity = try c.value(.activity, default: ActivityRecordingSettings())
+        lab = try c.value(.lab, default: LabSettings())
     }
 }
 

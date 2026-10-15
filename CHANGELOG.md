@@ -73,6 +73,17 @@ Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-
   files in src“), auf Wunsch jedes Ereignis einzeln; gestartete Programme lassen sich ein- und ausblenden und mit
   „Open“ einzeln öffnen. Die Daten kommen aus der Datei- und Programmaufzeichnung, dem Verbindungsprotokoll von netd
   und der Prozessliste, zugeordnet über PID, Elternprozess und Startzeit. `svctl activity process <pid>`.
+- **Lab: Software ausprobieren und zurückspulen:** Eine Lab-Sitzung hält Zeitpunkte (Checkpoints) des Sandbox-Homes
+  und des Shared Workspace als APFS-Klone fest: beim Start, wenn ein neues Programm startet, jede Minute, sofern sich
+  etwas geändert hat, und per „Mark Now“. Jeder Checkpoint zeigt, was seit dem vorigen neu, geändert oder gelöscht
+  ist, und welche Server in der Zeit kontaktiert wurden; geänderte Textdateien zeigt ein Klick zeilenweise. Oben stehen
+  die Funde der ganzen Sitzung: Schlüssel und Zugangsdaten (auch nach Inhalt erkannt), Schlüsselbunde,
+  Anmeldeobjekte, geänderte Shell-Dateien wie `~/.zshrc`, `authorized_keys`. „Rewind to Here…“ beendet die Programme
+  der Sandbox und setzt die Dateien auf den Checkpoint zurück; der Stand davor wird vorher selbst ein Checkpoint, man
+  kann also auch wieder vorspulen. „End Session…“ behält die Änderungen oder verwirft alles bis zum Start. Ältere
+  automatische Checkpoints werden gelöscht, wenn der eingestellte Platz (Standard 10 GB, geschätzt) oder 120
+  Checkpoints erreicht sind; Start und aktueller Stand bleiben. `android/sdk` im Workspace bleibt außen vor.
+  `svctl lab list|start|mark|compare|show|rewind|finish|watch`. Braucht den neu installierten Helper.
 
 ### Behoben
 - Untersuchter HTTPS-Verkehr war in der App praktisch unsichtbar: netd gab die Anfragen einer Verbindung erst

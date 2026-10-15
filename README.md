@@ -69,7 +69,7 @@ Rolling back is always one command: `svctl firewall off`, `svctl rules reset`, `
 | Observe | `status`, `doctor`, `ps`, `sessions`, `kill`, `throttle`, `net`, `violations` (learn mode with `--suggest`) |
 | Enforce | `rules` (sandbox profile block, presets, diff, apply), `firewall` (modes, LAN, localhost, exceptions), `panic`, `helper` |
 | Network | `proxy` (domain rules, default action, inspection), `dns` (overrides), `ca`, `netlog`, `asks`, `netd` |
-| Workflow | `handoff`, `repos`, `tools` (check and grant commands), `migrate`, `keys` (`authorized_keys.d`), `defaults` (`SANDVAULT_ARGS`) |
+| Workflow | `handoff`, `repos`, `tools` (check and grant commands), `migrate`, `keys` (`authorized_keys.d`), `defaults` (`SANDVAULT_ARGS`), `lab` (checkpoints, compare, rewind) |
 
 Every command accepts `--json`.
 

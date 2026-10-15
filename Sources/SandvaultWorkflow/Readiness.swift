@@ -307,9 +307,7 @@ struct ReadinessCheck: Sendable {
 
     /// `.env`, `.env.local`, `.env.production`, ...; not `.envrc` and not templates such as `.env.example`.
     static func isDotenv(_ name: String) -> Bool {
-        guard name == ".env" || name.hasPrefix(".env.") else { return false }
-        let templates = [".example", ".sample", ".template", ".dist", ".defaults", ".schema"]
-        return !templates.contains { name.hasSuffix($0) }
+        SecretScan.isDotenv(name)
     }
 
     /// At most `findingLimit` findings of one group, then one that counts the rest.

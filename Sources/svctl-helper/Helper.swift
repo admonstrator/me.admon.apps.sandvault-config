@@ -43,6 +43,13 @@ struct Helper: AsyncParsableCommand {
             guard await ActivityStream.run() else { throw ExitCode.failure }
             return
         }
+        if subcommand == HelperSubcommand.lab.rawValue {
+            let response = await lab()
+            FileHandle.standardOutput.write((try? JSONCoding.lineEncoder.encode(response)) ?? Data())
+            FileHandle.standardOutput.write(Data("\n".utf8))
+            if !response.ok { throw ExitCode.failure }
+            return
+        }
         let result = await execute()
         if json {
             FileHandle.standardOutput.write((try? JSONCoding.lineEncoder.encode(result)) ?? Data())
@@ -70,6 +77,18 @@ struct Helper: AsyncParsableCommand {
         return await PrivilegedHelper(context: context).run(command, options: options, input: input)
         #else
         return HelperResult(ok: false, message: SandvaultError.unsupportedPlatform("svctl-helper runs on macOS only (\(command.rawValue))").description)
+        #endif
+    }
+
+    /// `lab`: a `LabRequest` on stdin, always a `LabResponse` as JSON on stdout (D52).
+    func lab() async -> LabResponse {
+        guard user == nil, source == nil, !releasePanic else { return LabResponse(ok: false, message: "lab takes no options besides --json") }
+        #if os(macOS)
+        guard geteuid() == 0 else { return LabResponse(ok: false, message: "svctl-helper must run as root (through sudo)") }
+        let helper = PrivilegedHelper(context: HelperContext(runner: ProcessCommandRunner(), processEnvironment: ProcessInfo.processInfo.environment))
+        return await helper.lab(Self.readStandardInput())
+        #else
+        return LabResponse(ok: false, message: SandvaultError.unsupportedPlatform("svctl-helper runs on macOS only (lab)").description)
         #endif
     }
 

@@ -30,6 +30,8 @@ public enum HelperSubcommand: String, Codable, Sendable, CaseIterable {
     case uninstall
     /// Run `eslogger` for the sandbox user's uid and print `ActivityStreamLine`s until terminated (D44).
     case activityRecord = "activity-record"
+    /// Lab mode checkpoints of the sandbox's files (D52): one `LabRequest` on stdin, one `LabResponse` on stdout.
+    case lab
 }
 
 /// The desired state the helper enforces; also persisted root-owned in `AppPaths.rootStateDir` for `restore`.

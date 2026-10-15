@@ -51,6 +51,7 @@ public struct PrivilegedHelper: Sendable {
             case .install: return try await install(try installEnvironment(options), source: options.source)
             case .uninstall: return await uninstall(try installEnvironment(options))
             case .activityRecord: throw SandvaultError.invalidInput("activity-record streams lines; run it through recordActivity(emit:)")
+            case .lab: throw SandvaultError.invalidInput("lab answers with a LabResponse; run it through lab(_:)")
             }
         } catch {
             return HelperResult(ok: false, message: "\(error)")
@@ -453,7 +454,7 @@ public struct PrivilegedHelper: Sendable {
     }
 
     /// argv the host user may run through `sudo -n` without a password: exactly what `HelperClient`,
-    /// `HelperPolicyApplier` and the activity recorder send. `install`, `uninstall` (which take `--user`/`--source`) and `restore` are
+    /// `HelperPolicyApplier`, the activity recorder and `LabClient` send. `install`, `uninstall` (which take `--user`/`--source`) and `restore` are
     /// deliberately absent: a bare `NOPASSWD: <helper>` would let anyone running as the host user install a
     /// different binary as root without a password.
     public static let unattendedArguments: [[String]] = [
@@ -465,6 +466,7 @@ public struct PrivilegedHelper: Sendable {
         [HelperSubcommand.panic.rawValue, "--json"],
         [HelperSubcommand.status.rawValue, "--json"],
         [HelperSubcommand.activityRecord.rawValue, "--json"],
+        [HelperSubcommand.lab.rawValue, "--json"],
     ]
 
     static func sudoersRule(user: String) -> String {

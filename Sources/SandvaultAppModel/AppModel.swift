@@ -78,6 +78,8 @@ public final class AppModel {
     public let docker: DockerSandboxesModel
     /// What one process and the programs it started did (D51).
     public let processDetail: ProcessDetailModel
+    /// Lab mode checkpoints (D52), shown by `LabView`.
+    public let lab: LabModel
 
     public private(set) var selection: Screen = .overview
     public private(set) var visibleSurfaces: Set<Surface> = []
@@ -134,6 +136,8 @@ public final class AppModel {
             environment: environment.environment
         )
 
+        lab = LabModel(service: environment.lab, processes: environment.processes, editor: editor, clock: environment.clock)
+
         handoff.onHandedOff = { [weak self] in await self?.repos.refresh() }
         settings.onSetupChanged = { [weak self] in await self?.setupChanged() }
     }
@@ -149,12 +153,14 @@ public final class AppModel {
             await firewall.refreshStatus()
             await overview.refresh()
             await sandbox.refresh()
+            await lab.refresh()
         }
     }
 
     public func stop() {
         netd.stop()
         files.shutDown()
+        lab.shutDown()
         rules.stopLearning()
         pollTask?.cancel()
         pollTask = nil
