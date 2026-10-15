@@ -94,6 +94,8 @@ public final class AppModel {
     public let processDetail: ProcessDetailModel
     /// Lab mode checkpoints (D52), shown by `LabView`.
     public let lab: LabModel
+    /// Websites page (D53).
+    public let websites: WebsitesModel
 
     public private(set) var selection: Screen = .overview
     public private(set) var visibleSurfaces: Set<Surface> = []
@@ -136,6 +138,7 @@ public final class AppModel {
         asks = AsksModel(netd: netd, editor: editor)
         let docker = DockerSandboxesModel(service: environment.dockerSandboxes, editor: editor)
         self.docker = docker
+        websites = WebsitesModel(netd: netd, editor: editor, asks: asks, clock: environment.clock)
         handoff = HandoffModel(service: environment.handoff, editor: editor, docker: docker)
         repos = ReposModel(service: environment.repos)
         tools = ToolsModel(service: environment.tools, editor: editor)

@@ -16,33 +16,52 @@ struct ToolsView: View {
                         NotAvailableView(title: "Tool checks are not available yet", note: note)
                     }
                 }
-                Section("Check a command") {
+                Section {
                     HStack {
-                        TextField("Command name, e.g. jq", text: $tools.query)
+                        TextField("Command", text: $tools.query, prompt: Text("Command name, e.g. jq"))
+                            .labelsHidden()
                             .onSubmit { Task { await tools.check() } }
                         Button("Check") { Task { await tools.check() } }
                             .disabled(tools.query.isEmpty || tools.isBusy)
+                    }
+                    if tools.isBusy {
+                        ProgressView()
+                            .controlSize(.small)
                     }
                     if let status = tools.status {
                         ToolStatusView(status: status) { method in
                             Task { await tools.grant(method) }
                         }
                     }
+                } header: {
+                    Text("Check a command")
+                } footer: {
+                    Text("Use this when an agent says a program is missing.")
                 }
-                AndroidSection(android: android)
-                Section("Granted") {
+                Section {
                     if tools.grants.isEmpty {
                         Text("Nothing granted yet.")
                             .foregroundStyle(.secondary)
                     }
                     ForEach(tools.grants) { grant in
-                        LabeledContent(grant.name, value: "\(grant.method.displayName) · \(grant.source)")
+                        LabeledContent {
+                            Text(verbatim: grant.source)
+                        } label: {
+                            Text(verbatim: grant.name)
+                            Text(grant.method.displayName)
+                        }
                     }
+                } header: {
+                    Text("Granted")
+                } footer: {
+                    Text("Programs you made available to the sandbox.")
                 }
+                AndroidSection(android: android)
             }
             .formStyle(.grouped)
         }
         .navigationTitle(Screen.tools.title)
+        .navigationSubtitle("Apps and commands in the sandbox")
     }
 }
 
@@ -99,7 +118,7 @@ struct AndroidSection: View {
                     }
                     Spacer()
                     if android.status?.sharedSDKPresent == true {
-                        Button("Stop Sharing...") { confirmUnshare = true }
+                        Button("Stop Sharing…") { confirmUnshare = true }
                         Button("Check in Sandbox") { Task { await android.runCheck() } }
                     }
                     Button(android.shareTitle) { Task { await android.share() } }

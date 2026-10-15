@@ -277,6 +277,10 @@ public struct AskPresentation: Sendable, Equatable {
     public var tiles: [AskTile]
     public var options: [AskRememberOption]
     public var prefersDeny: Bool
+    /// Expert only: the raw line under the tiles (`host:port · kind · pid`), D53.
+    public var technical: String?
+    /// Easy only: what to do when unsure, shown while no tile is selected (D53).
+    public var advice: String?
 
     public init(ask: AskRequest, at date: Date, options: [AskRememberOption], prefersDeny: Bool) {
         let details = ask.details
@@ -505,5 +509,103 @@ public enum AskFormat {
     /// `RU` becomes `Russia` where the system knows the code, else stays as given.
     public static func countryName(_ code: String) -> String {
         Locale(identifier: "en_US").localizedString(forRegionCode: code) ?? code
+    }
+}
+
+// MARK: - Per interface mode (D53)
+
+extension AsksModel {
+    /// The panel for `mode`: Easy three tiles, the destination without port and two remember choices; Advanced
+    /// six tiles and every scope; Expert also the technical line.
+    public func presentation(for ask: AskRequest, at date: Date, mode: InterfaceMode) -> AskPresentation {
+        var panel = presentation(for: ask, at: date)
+        panel.options = rememberOptions(for: ask, mode: mode)
+        panel.tiles = AskFormat.tiles(panel.tiles, for: mode)
+        switch mode {
+        case .easy:
+            panel.destination = AskFormat.endpoint(ask.host, nil)
+            panel.subtitle = ask.details?.history.flatMap { $0.allowed + $0.denied == 0 ? "A website the sandbox has not used before." : nil }
+            panel.advice = "Allow it if you expect \(panel.process) to use this website. Unsure? Deny."
+        case .advanced:
+            break
+        case .expert:
+            panel.technical = AskFormat.technicalLine(ask)
+        }
+        return panel
+    }
+
+    /// "Only this time", then the rule choices: Easy only the most specific one ("Always for this site"),
+    /// from Advanced every scope netd can save (the whole domain, any port). netd has no time-limited answers.
+    public func rememberOptions(for ask: AskRequest, mode: InterfaceMode) -> [AskRememberOption] {
+        let available = scopes(for: ask)
+        let offered = mode == .easy ? Array(available.prefix(1)) : available
+        return [.onlyThisTime] + offered.map { scope in
+            let text = AskFormat.rememberLabel(scope, ask: ask, pattern: rulePattern(for: ask, scope: scope), mode: mode)
+            return AskRememberOption(scope: scope, label: text.label, target: text.target)
+        }
+    }
+
+    /// Easy: `Allow registry.npmjs.org?` without the port; otherwise `notificationTitle(for:)`.
+    public func notificationTitle(for ask: AskRequest, mode: InterfaceMode) -> String {
+        mode == .easy ? "Allow \(AskFormat.endpoint(ask.host, nil))?" : notificationTitle(for: ask)
+    }
+
+    /// Easy: `node wants to connect · Looks normal`; otherwise `notificationBody(for:)`.
+    public func notificationBody(for ask: AskRequest, mode: InterfaceMode) -> String {
+        guard mode == .easy else { return notificationBody(for: ask) }
+        let verdict = ask.details?.assessment.map { AskVerdict(assessment: $0).title }
+        return (["\(ask.process ?? "A program") wants to connect"] + [verdict].compactMap { $0 }).joined(separator: " · ")
+    }
+
+    /// The notification's answer buttons: Easy only answers this request, from Advanced also with a rule.
+    public static func notificationDecisions(for mode: InterfaceMode) -> [AskDecision] {
+        mode == .easy ? [.allowOnce, .denyOnce] : [.allowOnce, .allowAlways, .denyOnce, .denyAlways]
+    }
+
+    /// The closed menu: the chosen entry's label.
+    public func rememberTitle(for ask: AskRequest, mode: InterfaceMode) -> String {
+        let scope = rememberedScope(for: ask)
+        if let option = rememberOptions(for: ask, mode: mode).first(where: { $0.scope == scope }) { return option.label }
+        return scope == nil ? AskRememberOption.onlyThisTime.label : "Always"
+    }
+}
+
+extension AskRememberOption {
+    /// Answer only this request (D53 wording).
+    public static let onlyThisTime = AskRememberOption(scope: nil, label: "Only this time", target: "Asks again next time")
+}
+
+extension AskFormat {
+    /// The kinds Easy prefers, in this order; missing ones are filled from the model's order.
+    public static let easyTiles: [AskDetailKind] = [.name, .program, .history]
+
+    /// At most three tiles in Easy (name, program, history first), six otherwise.
+    public static func tiles(_ tiles: [AskTile], for mode: InterfaceMode) -> [AskTile] {
+        guard mode == .easy else { return Array(tiles.prefix(6)) }
+        let preferred = easyTiles.compactMap { kind in tiles.first { $0.kind == kind } }
+        let rest = tiles.filter { !easyTiles.contains($0.kind) }
+        return Array((preferred + rest).prefix(3))
+    }
+
+    /// `registry.npmjs.org:443 · tls · pid 4242 · 104.16.27.35`.
+    public static func technicalLine(_ ask: AskRequest) -> String {
+        var parts = [destination(ask), ask.kind.displayName]
+        if let pid = ask.pid { parts.append("pid \(pid)") }
+        if let address = ask.details?.address, HostName.normalize(address) != HostName.normalize(ask.host) { parts.append(address) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Menu label and second line of one rule choice; Easy names no port.
+    public static func rememberLabel(_ scope: AskScope, ask: AskRequest, pattern: String, mode: InterfaceMode) -> (label: String, target: String) {
+        let thing = HostName.isIPLiteral(HostName.normalize(ask.host)) ? "this address" : "this site"
+        let otherPort = AskScope.options(port: ask.port, hasDomain: false).contains(.hostAndPort)
+        switch scope {
+        case .host:
+            return (otherPort ? "Always for \(thing), any port" : "Always for \(thing)", pattern)
+        case .domain:
+            return ("Always for \(pattern)", "Every subdomain")
+        case .hostAndPort:
+            return mode == .easy ? ("Always for \(thing)", endpoint(pattern, nil)) : ("Always for \(thing) and port", endpoint(pattern, ask.port))
+        }
     }
 }

@@ -52,7 +52,10 @@ final class AskPanelController {
             panels[ask.id] = panel
             panel.orderFrontRegardless()
             if !NSApplication.shared.isActive {
-                notifier.post(ask, title: asks.notificationTitle(for: ask), body: asks.notificationBody(for: ask))
+                let mode = AppRuntime.model.mode
+                notifier.post(
+                    ask, title: asks.notificationTitle(for: ask, mode: mode), body: asks.notificationBody(for: ask, mode: mode), mode: mode
+                )
             }
         }
     }
@@ -104,7 +107,9 @@ struct AskPanelView: View {
     @State private var selectedTile: AskDetailKind?
 
     var body: some View {
-        let panel = asks.presentation(for: ask, at: Date())
+        // Easy shows three tiles and two remember choices, Advanced six tiles, Expert also the raw line (D53).
+        let mode = AppRuntime.model.mode
+        let panel = asks.presentation(for: ask, at: Date(), mode: mode)
         VStack(alignment: .leading, spacing: 14) {
             AskHeader(asks: asks, ask: ask, panel: panel)
             if let verdict = panel.verdict {
@@ -112,14 +117,23 @@ struct AskPanelView: View {
             }
             if !panel.tiles.isEmpty {
                 AskTileGrid(tiles: panel.tiles, selected: $selectedTile)
-                Text(panel.tiles.first { $0.kind == selectedTile }?.explanation ?? "")
+                Text(panel.tiles.first { $0.kind == selectedTile }?.explanation ?? panel.advice ?? "")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2, reservesSpace: true)
                     .padding(.horizontal, 2)
                     .padding(.top, -6)
             }
-            AskAnswerRow(asks: asks, ask: ask, panel: panel)
+            if let technical = panel.technical {
+                Text(verbatim: technical)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .lineLimit(2)
+                    .padding(.horizontal, 2)
+                    .padding(.top, -6)
+            }
+            AskAnswerRow(asks: asks, ask: ask, panel: panel, mode: mode)
             if let message = asks.message, message.kind != .success {
                 Text(message.title)
                     .font(.caption)
@@ -320,6 +334,7 @@ private struct AskAnswerRow: View {
     let asks: AsksModel
     let ask: AskRequest
     let panel: AskPresentation
+    let mode: InterfaceMode
 
     var body: some View {
         HStack(spacing: 8) {
@@ -333,7 +348,7 @@ private struct AskAnswerRow: View {
                     }
                 }
             } label: {
-                Text(asks.rememberTitle(for: ask))
+                Text(asks.rememberTitle(for: ask, mode: mode))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }

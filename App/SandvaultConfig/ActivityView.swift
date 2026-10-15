@@ -24,12 +24,24 @@ struct ActivityView: View {
             ToolbarItem(placement: .principal) {
                 Picker("View", selection: $activity.page) {
                     ForEach(ActivityPage.allCases) { page in
-                        Text(page.title).tag(page)
+                        Label(page.title, systemImage: page.pickerSymbol).tag(page)
                     }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+                .help("Hosts the sandbox talks to, each web request, or files and programs")
             }
+        }
+    }
+}
+
+extension ActivityPage {
+    /// The toolbar picker's symbol.
+    fileprivate var pickerSymbol: String {
+        switch self {
+        case .hosts: "globe"
+        case .web: "arrow.left.arrow.right"
+        case .files: "doc.on.doc"
         }
     }
 }
@@ -56,7 +68,7 @@ struct HostsView: View {
             let items = activity.items
             if items.isEmpty {
                 ContentUnavailableView("No activity", systemImage: "dot.radiowaves.left.and.right",
-                                       description: Text("Hosts, connections and pings of the sandbox appear here."))
+                                       description: Text(activity.filter.isEmpty ? "Hosts, connections and pings of the sandbox appear here." : "Nothing matches the filter."))
             } else {
                 List(items) { item in
                     ActivityRow(item: item, activity: activity)
