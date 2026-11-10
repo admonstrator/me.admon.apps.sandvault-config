@@ -7,7 +7,7 @@ import Testing
     let brew = "/opt/homebrew/bin/brew"
     static let machO = Data([0xCF, 0xFA, 0xED, 0xFE, 0x0C, 0x00, 0x00, 0x01])
 
-    func hostLookup(_ name: String) -> [String] { ["/bin/zsh", "-lc", "command -v -- \(name)"] }
+    func hostLookup(_ name: String) -> [String] { ToolAccess.hostLookupInvocation(name: name).argv }
 
     func lookup(_ sandbox: Sandbox, _ name: String) -> [String] {
         ToolAccess.sandboxLookupInvocation(sandbox.environment, name: name).argv
@@ -35,7 +35,7 @@ import Testing
         let sandbox = try Sandbox()
         defer { sandbox.cleanup() }
         let fake = FakeCommandRunner()
-        fake.on(hostLookup("jq"), stdout: "/opt/homebrew/bin/jq\n")
+        fake.on(hostLookup("jq"), stdout: "sandvault-config:lookup\n" + "/opt/homebrew/bin/jq\n")
         fake.on(lookup(sandbox, "jq"), .result(try result("sandbox-lookup-found.txt")))
         let status = try await service(sandbox, fake).status(of: "jq")
         #expect(status.reachableInSandbox)
@@ -57,7 +57,7 @@ import Testing
         try FileManager.default.createDirectory(atPath: sandbox.home + "/bin", withIntermediateDirectories: true)
         try Self.machO.write(to: URL(fileURLWithPath: path))
         let fake = FakeCommandRunner()
-        fake.on(hostLookup("gh"), stdout: path + "\n")
+        fake.on(hostLookup("gh"), stdout: "sandvault-config:lookup\n" + path + "\n")
         fake.on(["/usr/bin/otool", "-L", path], .result(try result("otool-L-system-only.txt")))
         fake.on(lookup(sandbox, "gh"), .result(try result("sandbox-lookup-missing.txt", exitCode: 1)))
         fake.on([brew, "info", "--json=v2", "gh"], stdout: "", exitCode: 1, stderr: try fixture("brew-info-missing.stderr.txt"))
@@ -77,7 +77,7 @@ import Testing
         try FileManager.default.createDirectory(atPath: sandbox.home + "/.local/bin", withIntermediateDirectories: true)
         try Self.machO.write(to: URL(fileURLWithPath: path))
         let fake = FakeCommandRunner()
-        fake.on(hostLookup("jq"), stdout: path + "\n")
+        fake.on(hostLookup("jq"), stdout: "sandvault-config:lookup\n" + path + "\n")
         fake.on(["/usr/bin/otool", "-L", path], .result(try result("otool-L-homebrew.txt")))
         fake.on(lookup(sandbox, "jq"), .result(try result("sandbox-lookup-missing.txt", exitCode: 1)))
         fake.on([brew, "info", "--json=v2", "jq"], .result(try result("brew-info-jq.json")))
@@ -96,8 +96,8 @@ import Testing
         try sandbox.write("#!/usr/bin/env python3\nprint('hi')\n", to: good, mode: 0o755)
         try sandbox.write("#!\(sandbox.home)/.pyenv/shims/python -u\n", to: bad, mode: 0o755)
         let fake = FakeCommandRunner()
-        fake.on(hostLookup("tidy"), stdout: good + "\n")
-        fake.on(hostLookup("lint"), stdout: bad + "\n")
+        fake.on(hostLookup("tidy"), stdout: "sandvault-config:lookup\n" + good + "\n")
+        fake.on(hostLookup("lint"), stdout: "sandvault-config:lookup\n" + bad + "\n")
         for name in ["tidy", "lint"] { fake.on(lookup(sandbox, name), .result(try result("sandbox-lookup-missing.txt", exitCode: 1))) }
         fake.on(lookup(sandbox, "python3"), stdout: "sandvault-config:lookup\n/usr/bin/python3\n")
         fake.on([brew, "info", "--json=v2"], stdout: "", exitCode: 1)
@@ -114,7 +114,7 @@ import Testing
         let sandbox = try Sandbox()
         defer { sandbox.cleanup() }
         let fake = FakeCommandRunner()
-        fake.on(hostLookup("jq"), stdout: "", exitCode: 1)
+        fake.on(hostLookup("jq"), stdout: "sandvault-config:lookup\n" + "", exitCode: 1)
         fake.on(lookup(sandbox, "jq"), stdout: "", exitCode: 1, stderr: "sudo: a password is required\n")
         fake.on([brew, "info", "--json=v2", "jq"], .result(try result("brew-info-jq.json")))
         let status = try await service(sandbox, fake).status(of: "jq")
@@ -130,7 +130,7 @@ import Testing
         try FileManager.default.createDirectory(atPath: sandbox.home + "/bin", withIntermediateDirectories: true)
         try (Self.machO + Data(repeating: 1, count: 4096)).write(to: URL(fileURLWithPath: path))
         let runner = MixedRunner()
-        runner.fake.on(hostLookup("gh"), stdout: path + "\n")
+        runner.fake.on(hostLookup("gh"), stdout: "sandvault-config:lookup\n" + path + "\n")
         runner.fake.on(["/usr/bin/otool", "-L", path], .result(try result("otool-L-system-only.txt")))
         runner.fake.on([brew, "info", "--json=v2", "gh"], stdout: "", exitCode: 1)
         runner.queue(lookup(sandbox, "gh"), try result("sandbox-lookup-missing.txt", exitCode: 1),
@@ -148,7 +148,7 @@ import Testing
         let sandbox = try Sandbox()
         defer { sandbox.cleanup() }
         let runner = MixedRunner()
-        runner.fake.on(hostLookup("jq"), stdout: "", exitCode: 1)
+        runner.fake.on(hostLookup("jq"), stdout: "sandvault-config:lookup\n" + "", exitCode: 1)
         runner.fake.on([brew, "info", "--json=v2", "jq"], .result(try result("brew-info-jq.json")))
         runner.fake.on([brew, "install", "jq"], stdout: "==> Pouring jq--1.7.1.arm64_sonoma.bottle.tar.gz\n")
         runner.queue(lookup(sandbox, "jq"), try result("sandbox-lookup-missing.txt", exitCode: 1), try result("sandbox-lookup-found.txt"))
@@ -162,7 +162,7 @@ import Testing
         let sandbox = try Sandbox()
         defer { sandbox.cleanup() }
         let runner = MixedRunner()
-        runner.fake.on(hostLookup("jq"), stdout: "", exitCode: 1)
+        runner.fake.on(hostLookup("jq"), stdout: "sandvault-config:lookup\n" + "", exitCode: 1)
         runner.fake.on([brew, "info", "--json=v2", "jq"], .result(try result("brew-info-jq.json")))
         runner.fake.on([brew, "install", "jq"], stdout: "")
         runner.queue(lookup(sandbox, "jq"), try result("sandbox-lookup-missing.txt", exitCode: 1))

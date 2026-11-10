@@ -27,13 +27,18 @@ public struct ProgramMigration: ProgramService {
 
     // MARK: - Suggestion
 
-    public func suggest(_ name: String) async throws -> CustomProgram {
-        try ToolAccess.validate(name: name)
-        if let saved = try configStore.load().programs.first(where: { $0.name == name }) { return saved }
-        let status = try await tools.status(of: name)
-        guard let path = status.hostPath else { throw SandvaultError.invalidInput("\(name) is not on the host's PATH: \(status.reason)") }
+    /// `input` is a command name or the program's path.
+    public func suggest(_ input: String) async throws -> CustomProgram {
+        let (name, givenPath) = try ToolAccess.target(input, home: layout.environment.hostHome)
+        if let saved = try configStore.load().programs.first(where: { $0.name == name }), givenPath == nil || givenPath == saved.hostPath {
+            return saved
+        }
+        let status = try await tools.status(of: input)
+        guard let path = status.hostPath else {
+            throw SandvaultError.invalidInput("\(name) is not on the host's PATH (\(status.reason)); enter its path instead, e.g. ~/.local/bin/\(name)")
+        }
         let real = HostPath.resolved(path) ?? path
-        var program = CustomProgram(name: name)
+        var program = CustomProgram(name: name, hostPath: givenPath)
         if (FileKind.size(real) ?? .max) <= Self.maxFileBytes, let data = FileManager.default.contents(atPath: real), data.starts(with: Array("#!".utf8)) {
             let found = Self.scan(String(decoding: data, as: UTF8.self))
             program.dependencies = found.commands.filter { $0 != name }
@@ -73,6 +78,9 @@ public struct ProgramMigration: ProgramService {
 
     public func migrate(_ program: CustomProgram) async throws -> ProgramReport {
         for command in [program.name] + program.dependencies { try ToolAccess.validate(name: command) }
+        if let hostPath = program.hostPath, try ToolAccess.target(hostPath, home: layout.environment.hostHome).name != program.name {
+            throw SandvaultError.invalidInput("\(hostPath) is not called \(program.name)")
+        }
         for file in program.files { try Self.validate(file: file) }
         guard Set(program.allowedSecrets).isSubset(of: program.files) else {
             throw SandvaultError.invalidInput("allowed credential files must be among the program's files")
@@ -82,9 +90,10 @@ public struct ProgramMigration: ProgramService {
 
         var steps: [ProgramStep] = []
         // Helpers first: a script copies only when the sandbox can run its interpreter.
-        for command in program.dependencies + [program.name] {
-            steps.append(await grant(command, preferCopy: command == program.name))
+        for command in program.dependencies {
+            steps.append(await grant(command, preferCopy: false))
         }
+        steps.append(await grant(program.hostPath ?? program.name, preferCopy: true))
         for file in program.files {
             steps.append(copy(file, allowSecret: program.allowedSecrets.contains(file)))
         }
@@ -110,15 +119,16 @@ public struct ProgramMigration: ProgramService {
     }
 
     /// Available already, or the best grant; a program in the home copies rather than taking a Homebrew formula of the same name.
-    private func grant(_ command: String, preferCopy: Bool) async -> ProgramStep {
+    private func grant(_ input: String, preferCopy: Bool) async -> ProgramStep {
+        let command = (input as NSString).lastPathComponent
         do {
-            let status = try await tools.status(of: command)
+            let status = try await tools.status(of: input)
             if status.reachableInSandbox { return ProgramStep(kind: .command, subject: command, done: true, detail: status.reason) }
             let copyFirst = (preferCopy || status.location == .hostHome) && status.options.contains(.copy)
             guard let method = copyFirst ? .copy : status.options.first else {
                 return ProgramStep(kind: .command, subject: command, done: false, detail: status.reason + "; no automatic way, install it inside the sandbox")
             }
-            let grant = try await tools.grant(command, method: method)
+            let grant = try await tools.grant(input, method: method)
             return ProgramStep(kind: .command, subject: command, done: true, detail: "\(method.rawValue) from \(grant.source)")
         } catch {
             return ProgramStep(kind: .command, subject: command, done: false, detail: "\(error)")

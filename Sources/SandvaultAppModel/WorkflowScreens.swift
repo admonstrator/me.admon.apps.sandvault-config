@@ -255,6 +255,8 @@ public final class ReposModel {
 public final class ToolsModel {
     public var query = ""
     public private(set) var status: ToolStatus?
+    /// What `check` looked at (a name or a path); `grant` uses it again.
+    private var checked: String?
     public private(set) var availability = Availability.unknown
     public private(set) var isBusy = false
     public var message: UserMessage?
@@ -277,6 +279,7 @@ public final class ToolsModel {
         switch await WorkflowCall.run("Check \(name)", { try await self.service.status(of: name) }) {
         case .value(let status):
             self.status = status
+            checked = name
             availability = .available
             message = nil
         case .notAvailable(let note):
@@ -288,14 +291,14 @@ public final class ToolsModel {
     }
 
     public func grant(_ method: ToolGrantMethod) async {
-        guard let name = status?.name else { return }
+        guard let name = status?.name, let input = checked else { return }
         isBusy = true
         defer { isBusy = false }
-        switch await WorkflowCall.run("Grant \(name)", { try await self.service.grant(name, method: method) }) {
+        switch await WorkflowCall.run("Grant \(name)", { try await self.service.grant(input, method: method) }) {
         case .value(let grant):
             editor.reload()
             message = .success("Granted \(grant.name)", detail: method.displayName)
-            status = (try? await service.status(of: name)) ?? status
+            status = (try? await service.status(of: input)) ?? status
         case .notAvailable(let note):
             availability = .notAvailableYet(note)
         case .failed(let failure):

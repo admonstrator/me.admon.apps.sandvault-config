@@ -4,11 +4,11 @@ import Testing
 @testable import SandvaultWorkflow
 
 @Suite struct ProgramTests {
-    func hostLookup(_ name: String) -> [String] { ["/bin/zsh", "-lc", "command -v -- \(name)"] }
+    func hostLookup(_ name: String) -> [String] { ToolAccess.hostLookupInvocation(name: name).argv }
 
     /// `name` resolves on the host and in the sandbox, so it needs no grant.
     func available(_ fake: FakeCommandRunner, _ sandbox: Sandbox, _ name: String) {
-        fake.on(hostLookup(name), stdout: "/opt/homebrew/bin/\(name)\n")
+        fake.on(hostLookup(name), stdout: "sandvault-config:lookup\n" + "/opt/homebrew/bin/\(name)\n")
         fake.on(ToolAccess.sandboxLookupInvocation(sandbox.environment, name: name).argv,
                 stdout: "sandvault-config:lookup\n/opt/homebrew/bin/\(name)\n")
     }
@@ -26,6 +26,41 @@ import Testing
         let found = ProgramMigration.scan(script)
         #expect(found.commands == ["jq", "fzf", "lms"])
         #expect(found.ports == [1234, 8080])
+    }
+
+    @Test func hostLookupReadsZshrcAndSkipsItsOutput() async throws {
+        // PATH additions in .zshrc (~/.local/bin) need an interactive shell; the app from Finder has no such PATH.
+        #expect(ToolAccess.hostLookupInvocation(name: "claude-lm").argv
+            == ["/bin/zsh", "-ilc", "print -r -- sandvault-config:lookup; command -v -- claude-lm"])
+        let sandbox = try Sandbox()
+        defer { sandbox.cleanup() }
+        let fake = FakeCommandRunner()
+        fake.on(hostLookup("claude-lm"), stdout: "Welcome back!\nsandvault-config:lookup\n/Users/alice/.local/bin/claude-lm\n")
+        fake.on(ToolAccess.sandboxLookupInvocation(sandbox.environment, name: "claude-lm").argv,
+                stdout: "sandvault-config:lookup\n/Users/Shared/sv-alice/user/bin/claude-lm\n")
+        let tools = ToolAccess(environment: sandbox.environment, runner: fake, configStore: sandbox.configStore, shared: sandbox.shared)
+        #expect(try await tools.status(of: "claude-lm").hostPath == "/Users/alice/.local/bin/claude-lm")
+    }
+
+    @Test func aProgramNotOnThePathIsTakenByItsPath() async throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.cleanup() }
+        try sandbox.write("#!/bin/zsh\ncurl http://localhost:1234/\n", to: sandbox.home + "/.local/bin/claude-lm", mode: 0o755)
+        #expect(try ToolAccess.target("~/.local/bin/claude-lm", home: sandbox.home) == ("claude-lm", sandbox.home + "/.local/bin/claude-lm"))
+        #expect(throws: SandvaultError.self) { try ToolAccess.target("~/.local/bin/missing", home: sandbox.home) }
+        #expect(throws: SandvaultError.self) { try ToolAccess.target("/tmp/a b", home: sandbox.home) }
+
+        // No host lookup: the path is the host program; the sandbox still finds it by name.
+        let fake = FakeCommandRunner()
+        fake.on(ToolAccess.sandboxLookupInvocation(sandbox.environment, name: "claude-lm").argv,
+                stdout: "sandvault-config:lookup\n/Users/Shared/sv-alice/user/bin/claude-lm\n")
+        let service = ProgramMigration(environment: sandbox.environment, runner: fake, configStore: sandbox.configStore, shared: sandbox.shared)
+        let program = try await service.suggest("~/.local/bin/claude-lm")
+        #expect(program.name == "claude-lm" && program.hostPath == sandbox.home + "/.local/bin/claude-lm" && program.hostPorts == [1234])
+        #expect(!fake.invocations.contains { $0.argv == hostLookup("claude-lm") })
+        let report = try await service.migrate(program)
+        #expect(report.steps.first { $0.kind == .command }?.subject == "claude-lm")
+        #expect(try sandbox.configStore.load().programs.first?.hostPath == program.hostPath)
     }
 
     @Test func filePathsStayBelowTheHome() throws {

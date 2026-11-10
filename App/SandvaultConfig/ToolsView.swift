@@ -20,7 +20,7 @@ struct ToolsView: View {
                 }
                 Section {
                     HStack {
-                        TextField("Command", text: $tools.query, prompt: Text("Command name, e.g. jq"))
+                        TextField("Command", text: $tools.query, prompt: Text("Command name or path, e.g. jq"))
                             .labelsHidden()
                             .onSubmit { Task { await tools.check() } }
                         Button("Check") { Task { await tools.check() } }
@@ -110,7 +110,7 @@ struct ProgramsSection: View {
                 Text(note).foregroundStyle(.secondary)
             }
             HStack {
-                TextField("Program", text: $programs.query, prompt: Text("Command name, e.g. claude-lm"))
+                TextField("Program", text: $programs.query, prompt: Text("Command name or path, e.g. claude-lm or ~/.local/bin/claude-lm"))
                     .labelsHidden()
                     .onSubmit { Task { await programs.suggest() } }
                 Button("Look at It") { Task { await programs.suggest() } }

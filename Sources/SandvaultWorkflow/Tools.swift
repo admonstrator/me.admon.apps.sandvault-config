@@ -33,11 +33,33 @@ public struct ToolAccess: ToolService {
         }
     }
 
-    public func status(of name: String) async throws -> ToolStatus {
-        try Self.validate(name: name)
+    /// A command name, or the path (`/…`, `~/…`) of a program that is not on the host's PATH; in the sandbox it is
+    /// called by its file name.
+    public static func target(_ input: String, home: String) throws -> (name: String, path: String?) {
+        guard input.hasPrefix("/") || input.hasPrefix("~/") else {
+            try validate(name: input)
+            return (input, nil)
+        }
+        guard !Text.hasControlCharacters(input) else { throw SandvaultError.invalidInput("the path contains control characters") }
+        let path = HostPath.absolute(input, home: home)
+        let name = (path as NSString).lastPathComponent
+        try validate(name: name)
+        guard FileManager.default.isExecutableFile(atPath: path) else { throw SandvaultError.invalidInput("\(path) is not an executable file") }
+        return (name, path)
+    }
+
+    /// `input` is a command name or a program's path (`target`).
+    public func status(of input: String) async throws -> ToolStatus {
         let environment = layout.environment
-        let lookup = try await runner.run(CommandInvocation("/bin/zsh", ["-lc", "command -v -- " + ShellQuoting.quote(name)], timeout: 15))
-        let found = lookup.succeeded ? Text.lines(lookup.stdoutString).first?.trimmingCharacters(in: .whitespaces) : nil
+        let (name, path) = try Self.target(input, home: environment.hostHome)
+        let found: String?
+        if let path {
+            found = path
+        } else if case .found(let hit) = Self.parseLookup(try await runner.run(Self.hostLookupInvocation(name: name))) {
+            found = hit.trimmingCharacters(in: .whitespaces)
+        } else {
+            found = nil
+        }
 
         var status = ToolStatus(name: name, hostPath: nil, location: .missing, reachableInSandbox: false, reason: "")
         var copyable = false
@@ -71,8 +93,10 @@ public struct ToolAccess: ToolService {
         return status
     }
 
-    public func grant(_ name: String, method: ToolGrantMethod) async throws -> ToolGrant {
-        let before = try await status(of: name)
+    /// `input` is a command name or a program's path (`target`); the grant is recorded under the name.
+    public func grant(_ input: String, method: ToolGrantMethod) async throws -> ToolGrant {
+        let before = try await status(of: input)
+        let name = before.name
         guard before.options.contains(method) else {
             let offered = before.options.isEmpty ? "none" : before.options.map(\.rawValue).joined(separator: ", ")
             throw SandvaultError.invalidInput("\(method.rawValue) is not an option for \(name) (options: \(offered)); \(before.reason)")
@@ -98,7 +122,7 @@ public struct ToolAccess: ToolService {
             try layout.shared.write(data, to: "\(layout.userRelative)/bin/\(name)", permissions: 0o750)
             source = real
         }
-        let after = method == .available ? before : try await status(of: name)
+        let after = method == .available ? before : try await status(of: input)
         guard after.reachableInSandbox else {
             throw SandvaultError.io("\(method.rawValue) finished, but the sandbox still cannot run \(name): \(after.reason)")
         }
@@ -108,6 +132,13 @@ public struct ToolAccess: ToolService {
         config.tools.append(grant)
         try configStore.save(config)
         return grant
+    }
+
+    /// `command -v` as in Terminal: an interactive login shell, because PATH additions such as `~/.local/bin` often
+    /// live in `.zshrc`, which a login shell alone skips, and the app started from Finder has only the system PATH.
+    /// The marker separates the answer from whatever the shell files print.
+    public static func hostLookupInvocation(name: String) -> CommandInvocation {
+        CommandInvocation("/bin/zsh", ["-ilc", "print -r -- \(marker); command -v -- " + ShellQuoting.quote(name)], timeout: 15)
     }
 
     // MARK: - Sandbox lookup

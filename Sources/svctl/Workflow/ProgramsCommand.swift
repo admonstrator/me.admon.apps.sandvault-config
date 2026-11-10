@@ -35,7 +35,7 @@ struct ProgramsCommand: AsyncParsableCommand {
     struct Suggest: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "What the program probably needs; changes nothing.")
         @OptionGroup var global: GlobalOptions
-        @Argument(help: "Command name on your PATH.") var name: String
+        @Argument(help: "Command name on your PATH, or the program's path (~/.local/bin/claude-lm).") var name: String
 
         func run() async throws {
             let program = try await ProgramsCommand.service(global).suggest(name)
@@ -47,7 +47,7 @@ struct ProgramsCommand: AsyncParsableCommand {
     struct Add: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Bring the program in (again); every step is reported.")
         @OptionGroup var global: GlobalOptions
-        @Argument(help: "Command name on your PATH.") var name: String
+        @Argument(help: "Command name on your PATH, or the program's path (~/.local/bin/claude-lm).") var name: String
         @Option(name: .customLong("helper"), help: "A command it calls (repeatable).") var helpers: [String] = []
         @Option(name: .customLong("port"), help: "A TCP port on 127.0.0.1 it talks to (repeatable).") var ports: [UInt16] = []
         @Option(name: .customLong("file"), help: "A file relative to your home it reads (repeatable).") var files: [String] = []

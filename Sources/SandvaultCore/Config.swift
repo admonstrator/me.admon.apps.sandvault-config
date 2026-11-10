@@ -578,8 +578,10 @@ public struct HandoffRecord: Codable, Sendable, Equatable, Hashable, Identifiabl
 /// the home copied into `$SHARED_WORKSPACE/user`, and TCP ports on this Mac's loopback opened as port exceptions.
 /// It starts as an agent with `sv shell -- <name>`.
 public struct CustomProgram: Codable, Sendable, Equatable, Hashable, Identifiable {
-    /// Command name on the host's PATH and in the sandbox.
+    /// Command name in the sandbox (and on the host's PATH unless `hostPath` is set).
     public var name: String
+    /// The program on the host when it is not on the host's PATH (`~/.local/bin/claude-lm`).
+    public var hostPath: String?
     /// Commands it calls (`jq`, `lms`), granted like tools.
     public var dependencies: [String]
     /// TCP ports on 127.0.0.1 it talks to (LM Studio's 1234).
@@ -596,9 +598,10 @@ public struct CustomProgram: Codable, Sendable, Equatable, Hashable, Identifiabl
 
     public init(
         name: String, dependencies: [String] = [], hostPorts: [UInt16] = [], files: [String] = [], allowedSecrets: [String] = [],
-        takesPrompt: Bool = false, migratedAt: Date? = nil
+        takesPrompt: Bool = false, migratedAt: Date? = nil, hostPath: String? = nil
     ) {
         self.name = name
+        self.hostPath = hostPath
         self.dependencies = dependencies
         self.hostPorts = hostPorts
         self.files = files
@@ -607,11 +610,12 @@ public struct CustomProgram: Codable, Sendable, Equatable, Hashable, Identifiabl
         self.migratedAt = migratedAt
     }
 
-    enum CodingKeys: String, CodingKey { case name, dependencies, hostPorts, files, allowedSecrets, takesPrompt, migratedAt }
+    enum CodingKeys: String, CodingKey { case name, hostPath, dependencies, hostPorts, files, allowedSecrets, takesPrompt, migratedAt }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         name = try c.decode(String.self, forKey: .name)
+        hostPath = try c.decodeIfPresent(String.self, forKey: .hostPath)
         dependencies = try c.value(.dependencies, default: [])
         hostPorts = try c.value(.hostPorts, default: [])
         files = try c.value(.files, default: [])
