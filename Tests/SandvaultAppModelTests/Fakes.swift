@@ -157,12 +157,16 @@ final class FakePolicy: PolicyControl, @unchecked Sendable {
 final class FakeHelperSetup: HelperInstalling, @unchecked Sendable {
     let installed = Locked(false)
     let calls = Locked<[String]>([])
+    /// Whether the installed helper matches the bundled one; installing makes it current.
+    let current = Locked(true)
 
     var isInstalled: Bool { installed.get() }
+    func isCurrent(bundled: String) -> Bool { current.get() }
 
     func install(source: String, user: String) async throws -> HelperResult {
         calls.mutate { $0.append("install \(source) \(user)") }
         installed.set(true)
+        current.set(true)
         return HelperResult(ok: true, message: "installed")
     }
 
@@ -466,6 +470,7 @@ struct TestWorld {
     let networkDatabase = FakeNetworkDatabase()
     let activity = FakeActivityRecorder()
     var checks: [Check] = []
+    var bundledVersion: String?
 
     init(checks: [Check] = []) {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("appmodel-\(UUID().uuidString)")
@@ -479,7 +484,7 @@ struct TestWorld {
     var appEnvironment: AppEnvironment {
         AppEnvironment(
             environment: environment, paths: AppPaths(environment: environment), runner: FakeCommandRunner(), configStore: store,
-            bundled: BundledTools(svctl: "/Applications/Sandvault Config.app/Contents/MacOS/svctl", helper: "/Applications/Sandvault Config.app/Contents/MacOS/svctl-helper", netd: "/Applications/Sandvault Config.app/Contents/MacOS/sandvault-netd"),
+            bundled: BundledTools(svctl: "/Applications/Sandvault Config.app/Contents/MacOS/svctl", helper: "/Applications/Sandvault Config.app/Contents/MacOS/svctl-helper", netd: "/Applications/Sandvault Config.app/Contents/MacOS/sandvault-netd", version: bundledVersion),
             clock: clock.clock, preferences: preferences,
             processes: processes, processControl: processes, connections: connections, violations: violations,
             doctor: FakeDoctor(checks: checks), status: FakeStatus(),

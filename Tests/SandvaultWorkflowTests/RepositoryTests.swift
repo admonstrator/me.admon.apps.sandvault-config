@@ -212,6 +212,23 @@ import Testing
         try FileManager.default.removeItem(atPath: file)
     }
 
+    @Test func recordsOfVanishedClonesAreDropped() async throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.cleanup() }
+        try FileManager.default.createDirectory(atPath: sandbox.workspace + "/repos/app", withIntermediateDirectories: true)
+        var config = AppConfig()
+        config.repos = [
+            HandoffRecord(hostPath: "/h/app", repoName: "app", sandboxPath: sandbox.workspace + "/repos/app", agent: .claude),
+            HandoffRecord(hostPath: "/h/gone", repoName: "gone", sandboxPath: sandbox.workspace + "/repos/gone", agent: .claude),
+            HandoffRecord(hostPath: "/h/vm", repoName: "vm", sandboxPath: "sbx:vm", agent: .claude, dockerSandbox: "vm"),
+        ]
+        try sandbox.configStore.save(config)
+        let listed = try await SandboxRepositories(environment: sandbox.environment, runner: FakeCommandRunner(), configStore: sandbox.configStore,
+                                                   shared: sandbox.shared, isMacOS: false).repositories()
+        #expect(listed.map(\.name) == ["app", "vm"])
+        #expect(try sandbox.configStore.load().repos.map(\.repoName) == ["app", "vm"])
+    }
+
     @Test func listsOnlyRealDirectories() async throws {
         let setup = try await setUp()
         defer { setup.sandbox.cleanup() }

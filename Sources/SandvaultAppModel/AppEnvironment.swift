@@ -115,8 +115,16 @@ public protocol NetdAgentControl: Sendable {
 /// Installing the root helper needs an administrator password (D27).
 public protocol HelperInstalling: Sendable {
     var isInstalled: Bool { get }
+    /// The installed helper is byte for byte the one at `bundled` (false when it is missing or unreadable).
+    func isCurrent(bundled: String) -> Bool
     func install(source: String, user: String) async throws -> HelperResult
     func uninstall(binary: String, user: String) async throws -> HelperResult
+}
+
+extension HelperInstalling {
+    public func isCurrent(bundled: String) -> Bool {
+        FileManager.default.contentsEqual(atPath: AppPaths.helperPath, andPath: bundled)
+    }
 }
 
 public struct CAStatus: Sendable, Equatable {
@@ -149,11 +157,14 @@ public struct BundledTools: Sendable, Equatable {
     public var svctl: String?
     public var helper: String?
     public var netd: String?
+    /// The app's version and build (`0.1.0 (1)`); a change means helper and netd may be older than the app.
+    public var version: String?
 
-    public init(svctl: String? = nil, helper: String? = nil, netd: String? = nil) {
+    public init(svctl: String? = nil, helper: String? = nil, netd: String? = nil, version: String? = nil) {
         self.svctl = svctl
         self.helper = helper
         self.netd = netd
+        self.version = version
     }
 }
 
@@ -182,10 +193,14 @@ public struct AppPreferences: Codable, Sendable, Equatable {
     public var showInDock: Bool
     /// First launch is done (mode and sandbox preset chosen, or skipped).
     public var onboarded: Bool
+    /// The app version whose helper and netd were brought up to date last; `nil` before this field existed.
+    public var lastVersion: String?
 
     public init(
-        refreshInterval: Double = AppModelInfo.refreshInterval, mode: InterfaceMode = .easy, showInDock: Bool = true, onboarded: Bool = false
+        refreshInterval: Double = AppModelInfo.refreshInterval, mode: InterfaceMode = .easy, showInDock: Bool = true, onboarded: Bool = false,
+        lastVersion: String? = nil
     ) {
+        self.lastVersion = lastVersion
         self.refreshInterval = refreshInterval
         self.mode = mode
         self.showInDock = showInDock
@@ -193,7 +208,7 @@ public struct AppPreferences: Codable, Sendable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case refreshInterval, mode, showInDock, onboarded
+        case refreshInterval, mode, showInDock, onboarded, lastVersion
         /// Before D53: `true` for every page, which is Expert now.
         case expertMode
     }
@@ -207,6 +222,7 @@ public struct AppPreferences: Codable, Sendable, Equatable {
         mode = try container.decodeIfPresent(InterfaceMode.self, forKey: .mode) ?? (expert ? .expert : .easy)
         showInDock = try container.decodeIfPresent(Bool.self, forKey: .showInDock) ?? true
         onboarded = try container.decodeIfPresent(Bool.self, forKey: .onboarded) ?? true
+        lastVersion = try container.decodeIfPresent(String.self, forKey: .lastVersion)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -215,6 +231,7 @@ public struct AppPreferences: Codable, Sendable, Equatable {
         try container.encode(mode, forKey: .mode)
         try container.encode(showInDock, forKey: .showInDock)
         try container.encode(onboarded, forKey: .onboarded)
+        try container.encodeIfPresent(lastVersion, forKey: .lastVersion)
     }
 
     public static let refreshRange: ClosedRange<Double> = 1...30

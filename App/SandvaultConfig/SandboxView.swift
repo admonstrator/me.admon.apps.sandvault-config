@@ -42,9 +42,10 @@ struct SandboxView: View {
         .navigationTitle(Screen.sandbox.title)
         .navigationSubtitle(sandbox.environment.sandvaultUser)
         .confirmationDialog("Delete the sandbox?", isPresented: $confirmDelete) {
-            Button("Delete Sandbox", role: .destructive) { Task { await sandbox.delete() } }
+            Button("Delete Sandbox, Keep Files", role: .destructive) { Task { await sandbox.delete() } }
+            Button("Delete Everything", role: .destructive) { Task { await sandbox.deleteEverything() } }
         } message: {
-            Text(sandbox.deleteExplanation)
+            Text(sandbox.deleteExplanation + "\n\nDelete Everything: " + sandbox.deleteEverythingExplanation)
         }
         .confirmationDialog(
             "Switch to \(pendingPreset?.title ?? "")?", isPresented: isSwitching, presenting: pendingPreset
@@ -210,7 +211,7 @@ struct ManageSection: View {
                     Button("Delete…", role: .destructive) { confirmDelete = true }
                 } label: {
                     Text("Delete Sandbox")
-                    Text("Removes the sandbox user and its home. The shared workspace stays.")
+                    Text("Removes the sandbox user and its home. You choose whether the shared workspace with its repositories goes too.")
                 }
             } else {
                 HStack {

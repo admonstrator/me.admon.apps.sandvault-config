@@ -493,6 +493,23 @@ public struct SandboxLaunch: Codable, Sendable, Equatable {
     }
 }
 
+extension SandboxCommand {
+    /// Runs after `sv uninstall` when everything goes: every entry of the shared workspace except the app's own
+    /// `_sandvault-config` (published CA, Chrome launcher), with sudo because the sandbox user owns files there.
+    public static func wipeWorkspace(_ environment: SandvaultEnvironment) throws -> [String] {
+        let workspace = environment.sharedWorkspace
+        let prefix = "/Users/Shared/sv-"
+        let user = workspace.hasPrefix(prefix) ? workspace.dropFirst(prefix.count) : ""
+        let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+        guard !user.isEmpty, user.allSatisfy(allowed.contains) else {
+            throw SandvaultError.invalidInput("refusing to wipe '\(workspace)': not a shared workspace path")
+        }
+        let keep = (environment.sharedConfigDir as NSString).lastPathComponent
+        return ["/usr/bin/sudo", "/usr/bin/find", workspace, "-mindepth", "1", "-maxdepth", "1", "!", "-name", keep,
+                "-exec", "/bin/rm", "-rf", "--", "{}", "+"]
+    }
+}
+
 public protocol SandboxService: Sendable {
     func state() async -> SandboxState
     /// Opens a terminal window with `sv`; each `followUp` argv runs after it, only when everything before succeeded.

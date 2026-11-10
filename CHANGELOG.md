@@ -4,7 +4,20 @@
 
 Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-on-mac.sh capture`).
 
+### Behoben
+- Repositories, deren Klon nicht mehr existiert, verschwinden aus der Liste und aus config.json.
+- Tools und eigene Programme finden Befehle, die erst `.zshrc` in den PATH legt (etwa `~/.local/bin`), auch wenn
+  die App aus dem Finder startet. Statt eines Namens geht auch der Pfad (`~/.local/bin/claude-lm`).
+
 ### Neu
+- **Nach einem Update:** Beim ersten Start einer neuen Version zeigt die App, was außerhalb von ihr noch alt ist
+  (privilegierter Helper, netd), und bringt es mit „Update Now“ auf den neuen Stand. „Later“ fragt beim nächsten
+  Start wieder.
+- **Statusprüfung mit Reparatur:** Ist der Helper veraltet, steht netd oder startet netd ein Programm außerhalb
+  dieser App, zeigt das Fenster oben einen Hinweis mit Knopf zum Reparieren.
+- **Sandbox ganz löschen:** „Delete Everything“ leert nach `sv uninstall` auch den Shared Workspace (Repositories,
+  `user/`, Android-Kopie) und entfernt Hand-off-Einträge, kopierte Tools und den Bereit-Zustand eigener Programme
+  aus config.json. „Delete Sandbox, Keep Files“ verhält sich wie bisher.
 - **Eigene Programme und Agents:** Tools → „Your own programs“ bringt Programme in die Sandbox, die sv nicht kennt,
   zum Beispiel ein Skript wie `claude-lm`, das Claude Code mit LM Studio startet. Die App schlägt vor, was es braucht
   (aufgerufene Befehle, Ports auf diesem Mac wie 1234, Dateien aus dem Home), und bringt alles in einem Schritt hinein:

@@ -96,6 +96,31 @@ public final class SandboxModel {
         }
     }
 
+    /// `sv uninstall`, then the shared workspace is emptied: repositories, `user/`, the Android copy, everything an
+    /// agent left. Hand-off records of sv, copied tools and the ready state of custom programs go from config.json.
+    public func deleteEverything() async {
+        let wipe: [String]
+        do {
+            wipe = try SandboxCommand.wipeWorkspace(environment)
+            try await editor.edit(reloadNetd: false) { config in
+                config.repos.removeAll { $0.dockerSandbox == nil }
+                config.tools.removeAll { $0.method == .copy }
+                for index in config.programs.indices { config.programs[index].migratedAt = nil }
+            }
+        } catch {
+            message = UserMessage(error: error, action: "Delete everything")
+            return
+        }
+        await launch(.uninstall, action: "Delete everything", followUp: [wipe]) {
+            "sv uninstall runs in \(self.editor.config.handoff.terminal.displayName), then the shared workspace is emptied; it asks for your password"
+        }
+    }
+
+    public var deleteEverythingExplanation: String {
+        "Also empties \(environment.sharedWorkspace): handed-off repositories with unfetched commits, \(environment.sharedUserDir) "
+            + "with copied tools and settings, and the Android copy. This cannot be undone."
+    }
+
     /// What the uninstall keeps, for the confirmation.
     public var deleteExplanation: String {
         "Removes \(environment.sandvaultUser), its home folder, sv's profile and SSH key. "

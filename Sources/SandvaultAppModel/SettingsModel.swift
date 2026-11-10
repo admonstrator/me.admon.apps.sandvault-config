@@ -9,6 +9,12 @@ import SandvaultNet
 @MainActor @Observable
 public final class SettingsModel {
     public private(set) var helperInstalled = false
+    /// The installed helper is not the one in this app (an update replaced the app, not the root copy).
+    public private(set) var helperOutdated = false
+    /// `refresh` ran once, so `problems` and the update welcome are based on real state.
+    public private(set) var refreshed = false
+    /// "Later" on the update welcome: it comes back on the next launch.
+    public private(set) var updateDeferred = false
     public private(set) var netdAgent: NetdLaunchAgent.Status?
     public private(set) var netdAgentError: String?
     public private(set) var preferences: AppPreferences
@@ -49,6 +55,8 @@ public final class SettingsModel {
 
     public func refresh() async {
         helperInstalled = helperSetup.isInstalled
+        helperOutdated = helperInstalled && bundled.helper.map { !helperSetup.isCurrent(bundled: $0) } == true
+        defer { refreshed = true }
         networkDatabase = await database.status()
         guard agent.platformSupported else {
             netdAgent = nil
@@ -159,6 +167,60 @@ public final class SettingsModel {
 
     public func setOnboarded() {
         preferences.onboarded = true
+        // A first launch installs this version's helper and netd itself; no update welcome for it.
+        preferences.lastVersion = bundled.version
+        store.save(preferences)
+    }
+
+    // MARK: Health and updates
+
+    /// The parts outside the app that are out of date or not running, each with its repair.
+    public var problems: [ServiceProblem] {
+        var result: [ServiceProblem] = []
+        if helperOutdated { result.append(.helperOutdated) }
+        if let agent = netdAgent, agent.installed {
+            if netdExecutableMismatch {
+                result.append(.netdWrongProgram)
+            } else if !agent.loaded || agent.pid == nil {
+                result.append(.netdStopped)
+            }
+        }
+        return result
+    }
+
+    public func repair(_ problem: ServiceProblem) async {
+        switch problem {
+        case .helperOutdated: await installHelper()
+        case .netdStopped: await startNetd()
+        case .netdWrongProgram: await installNetd()
+        }
+    }
+
+    /// The app runs a new version for the first time (preferences from an older one count as an update).
+    public var needsUpdateWelcome: Bool {
+        refreshed && !updateDeferred && preferences.onboarded && bundled.version != nil && preferences.lastVersion != bundled.version
+    }
+
+    /// What "Update Now" does, for the welcome.
+    public var updateSteps: [String] {
+        var steps: [String] = []
+        if helperOutdated { steps.append("Install the new privileged helper (asks for your administrator password)") }
+        if netdAgent?.installed == true { steps.append(netdExecutableMismatch ? "Point netd at this app and start it" : "Restart netd so the new version runs") }
+        return steps
+    }
+
+    /// Brings helper and netd to this version and remembers it; `apply: false` asks again on the next launch.
+    public func finishUpdate(apply: Bool) async {
+        guard apply else {
+            updateDeferred = true
+            return
+        }
+        if helperOutdated { await installHelper() }
+        if netdAgent?.installed == true {
+            if netdExecutableMismatch || netdAgent?.loaded != true { await installNetd() } else { await restartNetd() }
+        }
+        // A cancelled password leaves the helper old: the health banner keeps offering the repair.
+        preferences.lastVersion = bundled.version
         store.save(preferences)
     }
 
@@ -320,6 +382,37 @@ public final class SettingsModel {
             try await editor.edit(reloadNetd: false) { change(&$0.handoff) }
         } catch {
             message = UserMessage(error: error, action: action)
+        }
+    }
+}
+
+/// A part outside the app that needs attention, shown with a repair button.
+public enum ServiceProblem: String, CaseIterable, Identifiable, Sendable {
+    case helperOutdated, netdStopped, netdWrongProgram
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .helperOutdated: "The privileged helper is out of date"
+        case .netdStopped: "netd is not running"
+        case .netdWrongProgram: "netd runs a program outside this app"
+        }
+    }
+
+    public var detail: String {
+        switch self {
+        case .helperOutdated: "The app was updated, the helper that applies rules and the firewall was not."
+        case .netdStopped: "Without it there is no proxy, no DNS and no requests for websites."
+        case .netdWrongProgram: "The app was moved or replaced; netd still starts the old copy."
+        }
+    }
+
+    public var repairTitle: String {
+        switch self {
+        case .helperOutdated: "Update Helper"
+        case .netdStopped: "Start netd"
+        case .netdWrongProgram: "Repair netd"
         }
     }
 }

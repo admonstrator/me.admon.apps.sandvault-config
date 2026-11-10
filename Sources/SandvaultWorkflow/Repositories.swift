@@ -38,6 +38,12 @@ public struct SandboxRepositories: RepoService {
             return docker
         }
         let names = try cloneNames()
+        // Records of clones that are gone (sandbox deleted with its workspace, clone removed by hand) are dropped.
+        if records.contains(where: { $0.dockerSandbox == nil && !names.contains($0.repoName) }) {
+            var config = try configStore.load()
+            config.repos.removeAll { $0.dockerSandbox == nil && !names.contains($0.repoName) }
+            try configStore.save(config)
+        }
         let local = await withTaskGroup(of: RepoStatus.self) { group in
             for name in names {
                 let record = records.last { $0.repoName == name && $0.dockerSandbox == nil }

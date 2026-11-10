@@ -48,3 +48,15 @@ import Testing
         #expect(invocation.executable == "/usr/bin/osascript" && invocation.arguments.last == "sv uninstall")
     }
 }
+
+@Suite struct WipeWorkspaceTests {
+    @Test func wipesEverythingButTheAppsOwnFolder() throws {
+        let argv = try SandboxCommand.wipeWorkspace(SandvaultEnvironment(hostUser: "alice", hostHome: "/Users/alice"))
+        #expect(argv == ["/usr/bin/sudo", "/usr/bin/find", "/Users/Shared/sv-alice", "-mindepth", "1", "-maxdepth", "1",
+                         "!", "-name", "_sandvault-config", "-exec", "/bin/rm", "-rf", "--", "{}", "+"])
+        #expect(throws: SandvaultError.self) {
+            try SandboxCommand.wipeWorkspace(SandvaultEnvironment(hostUser: "a/../../..", hostHome: "/Users/a"))
+        }
+        #expect(throws: SandvaultError.self) { try SandboxCommand.wipeWorkspace(SandvaultEnvironment(hostUser: "", hostHome: "/Users/a")) }
+    }
+}

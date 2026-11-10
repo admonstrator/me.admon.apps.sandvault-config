@@ -193,3 +193,60 @@ import Testing
         #expect(settings.message?.kind == .notAvailable)
     }
 }
+
+@MainActor
+@Suite struct ServiceHealthTests {
+    @Test func outdatedHelperAndStoppedNetdAreProblemsWithRepairs() async throws {
+        let world = TestWorld()
+        defer { world.cleanUp() }
+        let settings = world.model().settings
+        await settings.refresh()
+        #expect(settings.problems.isEmpty)
+
+        world.helperSetup.installed.set(true)
+        world.helperSetup.current.set(false)
+        try await world.agent.install(executable: "/Applications/Sandvault Config.app/Contents/MacOS/sandvault-netd")
+        await settings.refresh()
+        #expect(settings.problems == [.helperOutdated, .netdStopped])
+
+        await settings.repair(.helperOutdated)
+        #expect(world.helperSetup.calls.get().last?.hasPrefix("install ") == true)
+        #expect(settings.problems == [.netdStopped])
+        await settings.repair(.netdStopped)
+        #expect(world.agent.calls.get().filter { $0.hasPrefix("install") }.count == 2)
+    }
+
+    @Test func updateWelcomeAppearsOnceAfterAVersionChange() async throws {
+        var world = TestWorld()
+        world.bundledVersion = "0.2.0 (2)"
+        defer { world.cleanUp() }
+        world.preferences.stored.set(AppPreferences(onboarded: true, lastVersion: "0.1.0 (1)"))
+        world.helperSetup.installed.set(true)
+        world.helperSetup.current.set(false)
+        let settings = world.model().settings
+        #expect(!settings.needsUpdateWelcome) // not before the first refresh
+        await settings.refresh()
+        #expect(settings.needsUpdateWelcome)
+        #expect(settings.updateSteps.count == 1)
+
+        await settings.finishUpdate(apply: false)
+        #expect(!settings.needsUpdateWelcome)
+        #expect(world.preferences.stored.get().lastVersion == "0.1.0 (1)")
+
+        await settings.finishUpdate(apply: true)
+        #expect(world.helperSetup.calls.get().count == 1)
+        #expect(world.preferences.stored.get().lastVersion == "0.2.0 (2)")
+        #expect(!settings.needsUpdateWelcome && settings.problems.isEmpty)
+    }
+
+    @Test func firstLaunchRecordsTheVersionWithoutAWelcome() async {
+        var world = TestWorld()
+        world.bundledVersion = "0.2.0 (2)"
+        defer { world.cleanUp() }
+        let settings = world.model().settings
+        settings.setOnboarded()
+        await settings.refresh()
+        #expect(!settings.needsUpdateWelcome)
+        #expect(world.preferences.stored.get().lastVersion == "0.2.0 (2)")
+    }
+}

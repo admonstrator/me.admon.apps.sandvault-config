@@ -74,6 +74,28 @@ import Testing
         #expect(model.sandbox.message?.kind == .error)
     }
 
+    @Test func deleteEverythingWipesTheWorkspaceAndForgetsWhatLivedThere() async throws {
+        let world = TestWorld()
+        defer { world.cleanUp() }
+        var config = AppConfig()
+        config.repos = [
+            HandoffRecord(hostPath: "/h/app", repoName: "app", sandboxPath: "/Users/Shared/sv-alice/repos/app", agent: .claude),
+            HandoffRecord(hostPath: "/h/vm", repoName: "vm", sandboxPath: "sbx:vm", agent: .claude, dockerSandbox: "vm"),
+        ]
+        config.tools = [ToolGrant(name: "lms", source: "/x/lms", method: .copy), ToolGrant(name: "jq", source: "jq", method: .brew)]
+        config.programs = [CustomProgram(name: "claude-lm", migratedAt: Date())]
+        try world.store.save(config)
+        let model = world.model()
+        await model.sandbox.deleteEverything()
+        let run = try #require(world.sandbox.runs.get().last)
+        #expect(run.command == .uninstall)
+        #expect(run.followUp == [try SandboxCommand.wipeWorkspace(world.environment)])
+        let saved = try world.store.load()
+        #expect(saved.repos.map(\.repoName) == ["vm"])
+        #expect(saved.tools.map(\.name) == ["jq"])
+        #expect(saved.programs.first?.migratedAt == nil)
+    }
+
     @Test func incompleteSandboxesSayHowToRepair() async {
         let world = TestWorld()
         defer { world.cleanUp() }

@@ -14,6 +14,13 @@ struct MainWindow: View {
             Sidebar(model: model)
         } detail: {
             ScreenView(model: model)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    ServiceProblemsBanner(settings: model.settings)
+                }
+                .sheet(isPresented: updateWelcome) {
+                    UpdateWelcomeView(settings: model.settings)
+                        .interactiveDismissDisabled()
+                }
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -32,13 +39,100 @@ struct MainWindow: View {
                 .interactiveDismissDisabled()
         }
         .background(WindowOpenerRegistration())
-        .onAppear { model.setVisible(.window, true) }
+        .onAppear {
+            model.setVisible(.window, true)
+            // Catch a helper or netd that broke while the window was closed.
+            Task { await model.settings.refresh() }
+        }
         .onDisappear { model.setVisible(.window, false) }
+    }
+
+    /// After an update, not on first launch (that sheet comes first).
+    private var updateWelcome: Binding<Bool> {
+        Binding<Bool>(get: { !model.needsOnboarding && model.settings.needsUpdateWelcome }, set: { _ in })
     }
 
     /// First launch: the sheet stays until `finishOnboarding` marks it done.
     private var onboarding: Binding<Bool> {
         Binding<Bool>(get: { model.needsOnboarding }, set: { _ in })
+    }
+}
+
+/// Parts outside the app that are out of date or stopped, each with its repair (like Docker Desktop's banner).
+struct ServiceProblemsBanner: View {
+    let settings: SettingsModel
+
+    var body: some View {
+        let problems = settings.needsUpdateWelcome ? [] : settings.problems
+        if !problems.isEmpty {
+            VStack(spacing: 6) {
+                ForEach(problems) { problem in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(problem.title).bold()
+                            Text(problem.detail)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button(problem.repairTitle) { Task { await settings.repair(problem) } }
+                            .disabled(settings.isBusy)
+                    }
+                }
+                if let message = settings.message {
+                    MessageBanner(message: message) { settings.message = nil }
+                }
+            }
+            .padding(12)
+            .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+        }
+    }
+}
+
+/// After an update: what changes outside the app, done with one button.
+struct UpdateWelcomeView: View {
+    let settings: SettingsModel
+    @State private var working = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Sandvault Config was updated", systemImage: "sparkles")
+                .font(.title2.bold())
+            Text("You now run version \(settings.bundled.version ?? "?").")
+                .foregroundStyle(.secondary)
+            let steps = settings.updateSteps
+            if steps.isEmpty {
+                Text("Nothing outside the app needs updating.")
+            } else {
+                Text("These parts run outside the app and still have the old version:")
+                ForEach(steps, id: \.self) { step in
+                    Label(step, systemImage: "arrow.triangle.2.circlepath")
+                }
+            }
+            HStack {
+                if working { ProgressView().controlSize(.small) }
+                Spacer()
+                if !steps.isEmpty {
+                    Button("Later") { Task { await settings.finishUpdate(apply: false) } }
+                        .disabled(working)
+                }
+                Button(steps.isEmpty ? "Continue" : "Update Now") {
+                    working = true
+                    Task {
+                        await settings.finishUpdate(apply: true)
+                        working = false
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(working)
+            }
+        }
+        .padding(24)
+        .frame(width: 460)
     }
 }
 

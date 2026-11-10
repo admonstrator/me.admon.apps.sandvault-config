@@ -192,6 +192,8 @@ extension BundledTools {
         func path(_ name: String) -> String? {
             Bundle.main.url(forAuxiliaryExecutable: name)?.path
         }
-        return BundledTools(svctl: path("svctl"), helper: path("svctl-helper"), netd: path("sandvault-netd"))
+        let info = Bundle.main.infoDictionary
+        let version = (info?["CFBundleShortVersionString"] as? String).map { "\($0) (\(info?["CFBundleVersion"] as? String ?? "?"))" }
+        return BundledTools(svctl: path("svctl"), helper: path("svctl-helper"), netd: path("sandvault-netd"), version: version)
     }
 }
