@@ -45,6 +45,13 @@ public struct SandboxLifecycle: SandboxService {
                 throw SandvaultError.invalidInput("invalid start directory")
             }
             argv = ["sv"] + svOptions + [agent.svCommand] + (directory.map { [$0] } ?? [])
+        case let .program(name, directory):
+            try SvOptions.validate(svOptions)
+            try ToolAccess.validate(name: name)
+            if let directory, directory.isEmpty || Text.hasControlCharacters(directory) {
+                throw SandvaultError.invalidInput("invalid start directory")
+            }
+            argv = ["sv"] + svOptions + [AgentKind.shell.svCommand] + (directory.map { [$0] } ?? []) + ["--", name]
         case .build:
             argv = ["sv", "build"]
         case .rebuild:

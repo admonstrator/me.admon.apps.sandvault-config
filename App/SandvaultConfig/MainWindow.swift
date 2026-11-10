@@ -177,7 +177,7 @@ struct ScreenView: View {
         case .network: NetworkView(network: model.network, netd: model.netd)
         case .firewall: FirewallView(firewall: model.firewall)
         case .rules: RulesView(rules: model.rules)
-        case .tools: ToolsView(tools: model.tools, android: model.android)
+        case .tools: ToolsView(tools: model.tools, android: model.android, programs: model.programs)
         case .handoff: HandoffView(model: model)
         case .migration: MigrationView(migration: model.migration, keys: model.keys)
         case .settings: EmptyView()

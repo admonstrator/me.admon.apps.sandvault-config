@@ -28,6 +28,8 @@ public struct AppConfig: Codable, Sendable, Equatable {
     public var activity: ActivityRecordingSettings
     /// Lab mode checkpoints (D52).
     public var lab: LabSettings
+    /// Host programs brought into the sandbox (D54).
+    public var programs: [CustomProgram]
 
     public init(
         version: Int = AppConfig.currentVersion,
@@ -37,7 +39,8 @@ public struct AppConfig: Codable, Sendable, Equatable {
         tools: [ToolGrant] = [],
         repos: [HandoffRecord] = [],
         activity: ActivityRecordingSettings = ActivityRecordingSettings(),
-        lab: LabSettings = LabSettings()
+        lab: LabSettings = LabSettings(),
+        programs: [CustomProgram] = []
     ) {
         self.version = version
         self.sandbox = sandbox
@@ -47,9 +50,10 @@ public struct AppConfig: Codable, Sendable, Equatable {
         self.repos = repos
         self.activity = activity
         self.lab = lab
+        self.programs = programs
     }
 
-    enum CodingKeys: String, CodingKey { case version, sandbox, network, handoff, tools, repos, activity, lab }
+    enum CodingKeys: String, CodingKey { case version, sandbox, network, handoff, tools, repos, activity, lab, programs }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -61,6 +65,7 @@ public struct AppConfig: Codable, Sendable, Equatable {
         repos = try c.value(.repos, default: [])
         activity = try c.value(.activity, default: ActivityRecordingSettings())
         lab = try c.value(.lab, default: LabSettings())
+        programs = try c.value(.programs, default: [])
     }
 }
 
@@ -549,10 +554,12 @@ public struct HandoffRecord: Codable, Sendable, Equatable, Hashable, Identifiabl
     public var createdAt: Date
     /// The Docker Sandboxes VM (`sbx run --name`); `nil` for sv.
     public var dockerSandbox: String?
+    /// The custom program that ran instead of `agent` (then `.shell`, D54).
+    public var program: String?
 
     public init(
         id: UUID = UUID(), hostPath: String, repoName: String, sandboxPath: String, agent: AgentKind, createdAt: Date = Date(),
-        dockerSandbox: String? = nil
+        dockerSandbox: String? = nil, program: String? = nil
     ) {
         self.id = id
         self.hostPath = hostPath
@@ -561,9 +568,60 @@ public struct HandoffRecord: Codable, Sendable, Equatable, Hashable, Identifiabl
         self.agent = agent
         self.createdAt = createdAt
         self.dockerSandbox = dockerSandbox
+        self.program = program
     }
 
     public var target: HandoffTarget { dockerSandbox == nil ? .sandvault : .dockerSandbox }
+}
+
+/// A host program brought into the sandbox (D54): the command and its helpers made available like tools, files from
+/// the home copied into `$SHARED_WORKSPACE/user`, and TCP ports on this Mac's loopback opened as port exceptions.
+/// It starts as an agent with `sv shell -- <name>`.
+public struct CustomProgram: Codable, Sendable, Equatable, Hashable, Identifiable {
+    /// Command name on the host's PATH and in the sandbox.
+    public var name: String
+    /// Commands it calls (`jq`, `lms`), granted like tools.
+    public var dependencies: [String]
+    /// TCP ports on 127.0.0.1 it talks to (LM Studio's 1234).
+    public var hostPorts: [UInt16]
+    /// Paths relative to the home, copied to the same place relative to `$SHARED_WORKSPACE/user`.
+    public var files: [String]
+    /// The subset of `files` the user let through although they look like credentials.
+    public var allowedSecrets: [String]
+    /// A hand-off task is passed as its first argument (`claude-lm "<prompt>"` hands it to claude).
+    public var takesPrompt: Bool
+    public var migratedAt: Date?
+
+    public var id: String { name }
+
+    public init(
+        name: String, dependencies: [String] = [], hostPorts: [UInt16] = [], files: [String] = [], allowedSecrets: [String] = [],
+        takesPrompt: Bool = false, migratedAt: Date? = nil
+    ) {
+        self.name = name
+        self.dependencies = dependencies
+        self.hostPorts = hostPorts
+        self.files = files
+        self.allowedSecrets = allowedSecrets
+        self.takesPrompt = takesPrompt
+        self.migratedAt = migratedAt
+    }
+
+    enum CodingKeys: String, CodingKey { case name, dependencies, hostPorts, files, allowedSecrets, takesPrompt, migratedAt }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        dependencies = try c.value(.dependencies, default: [])
+        hostPorts = try c.value(.hostPorts, default: [])
+        files = try c.value(.files, default: [])
+        allowedSecrets = try c.value(.allowedSecrets, default: [])
+        takesPrompt = try c.value(.takesPrompt, default: false)
+        migratedAt = try c.decodeIfPresent(Date.self, forKey: .migratedAt)
+    }
+
+    /// The note on its port exceptions, so removing the program finds them.
+    public var exceptionNote: String { "program \(name)" }
 }
 
 // MARK: - Persistence

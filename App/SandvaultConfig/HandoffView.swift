@@ -114,9 +114,9 @@ struct HandoffPage: View {
 
     private var agentSection: some View {
         Section {
-            Picker("Agent", selection: $handoff.agent) {
-                ForEach(handoff.agents, id: \.self) { agent in
-                    Text(agent.displayName).tag(agent)
+            Picker("Agent", selection: $handoff.choice) {
+                ForEach(handoff.choices, id: \.self) { choice in
+                    Text(choice.displayName).tag(choice)
                 }
             }
             TextField("Task for the agent (optional)", text: $handoff.task, prompt: Text("Fix the failing tests"), axis: .vertical)

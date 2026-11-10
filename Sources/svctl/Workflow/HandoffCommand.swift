@@ -20,6 +20,7 @@ struct HandoffCommand: AsyncParsableCommand {
     @OptionGroup var global: GlobalOptions
     @Argument(help: "Local repository path or remote URL.") var source: String
     @Option(help: "claude, codex, opencode, gemini, pi, muse or shell.") var agent: String?
+    @Option(help: "A custom program from svctl programs, instead of --agent (sv only).") var program: String?
     @Option(help: "The task for the agent.") var task: String?
     @Option(name: .customLong("task-file"), help: "Read the task from a file (- for stdin).") var taskFile: String?
     @Flag(name: .customLong("include-uncommitted"), help: "Carry uncommitted changes of tracked files as a patch.") var includeUncommitted = false
@@ -43,6 +44,7 @@ struct HandoffCommand: AsyncParsableCommand {
             throw ValidationError("--include-uncommitted, --deploy-key and --sv-option apply only to --target sv")
         }
         if checkOnly && printOnly { throw ValidationError("use --check-only or --print, not both") }
+        if program != nil && (agent != nil || target == .docker) { throw ValidationError("--program replaces --agent and needs --target sv") }
     }
 
     func run() async throws {
@@ -65,7 +67,8 @@ struct HandoffCommand: AsyncParsableCommand {
             terminal: try terminal.map { try WorkflowCLI.parse($0, as: "terminal") } ?? settings.terminal,
             svOptions: target == .docker ? [] : svOptions.isEmpty ? settings.svOptions : svOptions,
             deployKey: deployKey.mode,
-            target: target.target
+            target: target.target,
+            program: program
         )
         let result = try await service.handOff(request, launch: !printOnly)
         if global.json { return try Output.json(Report(readiness: report, result: result)) }
@@ -79,7 +82,7 @@ struct HandoffCommand: AsyncParsableCommand {
         } else {
             Output.line("not started: run the command above in a terminal")
         }
-        if result.briefingPath != nil, HandoffCommandLine.promptArguments(request.agent, "") == nil {
+        if result.briefingPath != nil, request.program == nil, HandoffCommandLine.promptArguments(request.agent, "") == nil {
             Output.line("note: \(request.agent.rawValue) takes no first prompt; point it at the briefing yourself")
         }
     }

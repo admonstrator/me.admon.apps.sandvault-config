@@ -93,6 +93,13 @@ struct StartSection: View {
                     ForEach(AgentKind.allCases.filter { $0 != .shell && $0 != defaultAgent }, id: \.self) { agent in
                         Button(agent.displayName) { Task { await sandbox.open(agent) } }
                     }
+                    if !sandbox.programs.isEmpty {
+                        Section("Your programs") {
+                            ForEach(sandbox.programs) { program in
+                                Button(program.name) { Task { await sandbox.open(program: program.name) } }
+                            }
+                        }
+                    }
                 }
                 .fixedSize()
                 Spacer()

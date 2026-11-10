@@ -77,15 +77,18 @@ public struct HandoffRequest: Codable, Sendable, Equatable {
     public var deployKey: DeployKeyMode
     /// sv's account or a Docker Sandboxes VM; svOptions, deployKey and the briefing apply only to sv.
     public var target: HandoffTarget
+    /// A custom program (D54) started with `sv shell -- <program>` instead of `agent`; sv only.
+    public var program: String?
 
     public enum DeployKeyMode: String, Codable, Sendable, CaseIterable { case none, readOnly, readWrite }
 
     public init(
         source: String, agent: AgentKind, task: String? = nil, includeUncommitted: Bool = false,
         terminal: TerminalApp = .terminal, svOptions: [String] = [], deployKey: DeployKeyMode = .none,
-        target: HandoffTarget = .sandvault
+        target: HandoffTarget = .sandvault, program: String? = nil
     ) {
         self.source = source
+        self.program = program
         self.agent = agent
         self.task = task
         self.includeUncommitted = includeUncommitted
@@ -362,6 +365,56 @@ public protocol RepoService: Sendable {
     func fetchBack(_ record: HandoffRecord) async throws -> RepoStatus
 }
 
+/// One step of bringing a custom program into the sandbox (D54).
+public struct ProgramStep: Codable, Sendable, Equatable, Hashable {
+    public enum Kind: String, Codable, Sendable { case command, file, port }
+    public var kind: Kind
+    /// Command name, path relative to the home, or port.
+    public var subject: String
+    public var done: Bool
+    public var detail: String
+
+    public init(kind: Kind, subject: String, done: Bool, detail: String) {
+        self.kind = kind
+        self.subject = subject
+        self.done = done
+        self.detail = detail
+    }
+}
+
+public struct ProgramReport: Codable, Sendable, Equatable {
+    public var program: CustomProgram
+    public var steps: [ProgramStep]
+    /// New port exceptions: they take effect when the firewall is applied.
+    public var firewallChanged: Bool
+
+    public init(program: CustomProgram, steps: [ProgramStep], firewallChanged: Bool) {
+        self.program = program
+        self.steps = steps
+        self.firewallChanged = firewallChanged
+    }
+
+    public var succeeded: Bool { steps.allSatisfy(\.done) }
+}
+
+/// Custom programs (D54): a suggestion from the program itself, bringing it in, and taking it out again.
+public protocol ProgramService: Sendable {
+    /// The saved entry, or what the program probably needs (its script text, known helpers); changes nothing.
+    func suggest(_ name: String) async throws -> CustomProgram
+    /// Grants the commands, copies the files, adds the port exceptions and saves the entry; a failed step does not stop the others.
+    func migrate(_ program: CustomProgram) async throws -> ProgramReport
+    /// Removes the entry, its files and port exceptions from the shared workspace and config, and its own copy in `user/bin`.
+    func remove(_ name: String) async throws
+}
+
+/// Builds without a program service.
+public struct UnavailablePrograms: ProgramService {
+    public init() {}
+    public func suggest(_ name: String) async throws -> CustomProgram { throw SandvaultError.notImplemented("custom programs") }
+    public func migrate(_ program: CustomProgram) async throws -> ProgramReport { throw SandvaultError.notImplemented("custom programs") }
+    public func remove(_ name: String) async throws { throw SandvaultError.notImplemented("custom programs") }
+}
+
 public protocol ToolService: Sendable {
     func status(of name: String) async throws -> ToolStatus
     func grant(_ name: String, method: ToolGrantMethod) async throws -> ToolGrant
@@ -397,6 +450,8 @@ public protocol KeyService: Sendable {
 public enum SandboxCommand: Sendable, Equatable {
     /// `sv <agent> [directory]`; `shell` opens a login shell.
     case open(AgentKind, directory: String?)
+    /// `sv shell [directory] -- <program>`: a custom program (D54).
+    case program(String, directory: String?)
     /// `sv build`: creates the sandbox account, profile and shared workspace (asks for the password in the terminal).
     case build
     /// `sv --rebuild build`: rewrites sv's configuration and permissions, which drops the managed rules block.

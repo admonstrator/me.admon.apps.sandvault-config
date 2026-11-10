@@ -18,6 +18,11 @@ public enum Workflow {
         ToolAccess(environment: environment, runner: runner, configStore: configStore)
     }
 
+    /// Custom programs with their helpers, files and loopback ports (D54).
+    public static func makeProgramService(environment: SandvaultEnvironment, runner: CommandRunner, configStore: ConfigStore) -> ProgramService {
+        ProgramMigration(environment: environment, runner: runner, configStore: configStore)
+    }
+
     /// The host's Android SDK and virtual devices for the sandbox.
     public static func makeAndroidService(environment: SandvaultEnvironment, runner: CommandRunner) -> AndroidService {
         AndroidSharing(environment: environment, runner: runner)

@@ -83,6 +83,8 @@ public final class AppModel {
     public let handoff: HandoffModel
     public let repos: ReposModel
     public let tools: ToolsModel
+    /// Custom programs (D54), on the Tools page.
+    public let programs: ProgramsModel
     public let android: AndroidModel
     public let migration: MigrationModel
     public let keys: KeysModel
@@ -142,6 +144,7 @@ public final class AppModel {
         handoff = HandoffModel(service: environment.handoff, editor: editor, docker: docker)
         repos = ReposModel(service: environment.repos)
         tools = ToolsModel(service: environment.tools, editor: editor)
+        programs = ProgramsModel(service: environment.programs, editor: editor)
         android = AndroidModel(service: environment.android)
         migration = MigrationModel(service: environment.migration)
         keys = KeysModel(service: environment.keys)
@@ -158,6 +161,12 @@ public final class AppModel {
         lab = LabModel(service: environment.lab, processes: environment.processes, editor: editor, clock: environment.clock)
 
         handoff.onHandedOff = { [weak self] in await self?.repos.refresh() }
+        // New loopback exceptions take effect at once, like a protection level (the user asked for the ports).
+        programs.onFirewallChanged = { [weak self] in
+            guard let firewall = self?.firewall, firewall.network.mode != .off else { return }
+            await firewall.prepareApply()
+            await firewall.confirmApply()
+        }
         settings.onSetupChanged = { [weak self] in await self?.setupChanged() }
     }
 

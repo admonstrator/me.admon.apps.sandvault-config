@@ -5,6 +5,13 @@
 Abgeglichen mit echten Ausgaben von macOS 27.0.1 und sv 1.32.0 (`scripts/verify-on-mac.sh capture`).
 
 ### Neu
+- **Eigene Programme und Agents:** Tools → „Your own programs“ bringt Programme in die Sandbox, die sv nicht kennt,
+  zum Beispiel ein Skript wie `claude-lm`, das Claude Code mit LM Studio startet. Die App schlägt vor, was es braucht
+  (aufgerufene Befehle, Ports auf diesem Mac wie 1234, Dateien aus dem Home), und bringt alles in einem Schritt hinein:
+  Befehle wie bei Tools, Dateien in `$SHARED_WORKSPACE/user`, Ports als Firewall-Ausnahmen auf 127.0.0.1. Dateien, die
+  nach Zugangsdaten aussehen (etwa LM Studios CLI-Schlüssel), gehen nur mit ausdrücklicher Freigabe pro Datei mit.
+  Danach steht das Programm als Agent bei Projects und unter Sandbox → Other Agent (`sv shell -- <name>`).
+  `svctl programs suggest|add|list|remove`, `svctl handoff <repo> --program <name>`.
 - **Einfaches Fenster:** Standardmäßig zeigt die App nur Übersicht, Aktivität, Repos & Hand-off und Einstellungen.
   Der Schalter „Expert mode“ in den Einstellungen blendet die übrigen Seiten wieder ein.
 - **Schutzstufen:** Off, Watch, Ask und Block All auf der Übersicht und im Menü. Die Wahl gilt sofort, ohne

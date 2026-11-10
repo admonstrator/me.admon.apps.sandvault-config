@@ -53,6 +53,16 @@ public final class SandboxModel {
         }
     }
 
+    public var programs: [CustomProgram] { editor.config.programs.sorted { $0.name < $1.name } }
+
+    /// `sv shell -- <program>` for a custom program (D54).
+    public func open(program: String) async {
+        let directory = startDirectory ?? (state?.workspace == true ? environment.sharedWorkspace : nil)
+        await launch(.program(program, directory: directory), action: "Start \(program)", followUp: []) {
+            "\(program) opens in \(self.editor.config.handoff.terminal.displayName)"
+        }
+    }
+
     // MARK: Life cycle
 
     /// Saves the preset's rules and protection level, then runs `sv build` and applies both once it succeeded.

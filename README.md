@@ -57,6 +57,8 @@ svctl firewall apply              # shows the pf rules, then loads them
 svctl asks --follow               # answer prompts for unknown domains (the app does this too)
 
 svctl handoff ~/src/my-app --agent claude --task "Fix the failing tests"
+svctl programs add claude-lm --allow-secret .lmstudio/.internal/lms-key-2   # your own program or agent
+svctl handoff ~/src/my-app --program claude-lm
 svctl repos                       # what the agents committed; svctl repos fetch my-app
 ```
 

@@ -39,8 +39,17 @@ public struct RepositoryHandoff: HandoffService {
 
     /// `launch: false` writes the briefing, records the hand-off and returns the command without opening a terminal.
     public func handOff(_ request: HandoffRequest, launch: Bool) async throws -> HandoffResult {
-        if request.target == .dockerSandbox { return try await handOffToDocker(request, launch: launch) }
+        if request.target == .dockerSandbox {
+            if request.program != nil { throw SandvaultError.invalidInput("custom programs run in sv's sandbox only, not in Docker Sandboxes") }
+            return try await handOffToDocker(request, launch: launch)
+        }
         try SvOptions.validate(request.svOptions)
+        let program = try request.program.map { name in
+            guard let program = try configStore.load().programs.first(where: { $0.name == name }) else {
+                throw SandvaultError.invalidInput("no custom program '\(name)'; bring it in first (svctl programs add \(name))")
+            }
+            return program
+        }
         let report = try await readiness(of: request.source)
         let blockers = report.findings.filter { $0.severity == .blocker }
         guard blockers.isEmpty else {
@@ -61,13 +70,15 @@ public struct RepositoryHandoff: HandoffService {
         }
         let command = HandoffCommandLine.arguments(
             source: report.repositoryPath, request: request,
-            prompt: briefingPath.map { "Read \($0) and continue the task described there." }
+            prompt: program?.takesPrompt == false ? nil : briefingPath.map { "Read \($0) and continue the task described there." }
         )
         let launched = launch && isMacOS
         if launched {
             _ = try await runner.checked(TerminalLaunch.invocation(request.terminal, command: ShellQuoting.join(command)))
         }
-        let record = HandoffRecord(hostPath: report.repositoryPath, repoName: name, sandboxPath: clonePath, agent: request.agent)
+        let record = HandoffRecord(
+            hostPath: report.repositoryPath, repoName: name, sandboxPath: clonePath, agent: program == nil ? request.agent : .shell, program: program?.name
+        )
         var config = try configStore.load()
         config.repos.removeAll { $0.dockerSandbox == nil && ($0.repoName == name || $0.sandboxPath == clonePath) }
         config.repos.append(record)
@@ -226,7 +237,12 @@ public enum HandoffCommandLine {
         case .readOnly: argv.append("-k")
         case .readWrite: argv.append("-w")
         }
-        argv += [source, "--"] + request.svOptions + [request.agent.svCommand]
+        argv += [source, "--"] + request.svOptions
+        if let program = request.program {
+            // sv runs the words after `shell --` as the command; the caller passes a prompt only when the program takes one.
+            return argv + [AgentKind.shell.svCommand, "--", program] + (prompt.map { [$0] } ?? [])
+        }
+        argv.append(request.agent.svCommand)
         if let prompt, let promptArguments = promptArguments(request.agent, prompt) {
             argv += ["--"] + promptArguments
         }
